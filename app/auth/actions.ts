@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { authCallbackUrl } from '../../lib/env';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { AUTH_NEXT_COOKIE, authNextCookieOptions, parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
+import { passwordResetOutcome } from '../../src/web/password-reset';
 
 /** Remembers where the email link should land (the callback URL itself stays query-free). */
 async function rememberAuthNext(path: '/app' | '/reset-password') {
@@ -19,7 +20,6 @@ export interface FormState {
 // Messages never reveal whether an account exists (anti-enumeration, §86).
 const GENERIC_LOGIN_ERROR = 'Correo o contraseña incorrectos, o cuenta sin confirmar.';
 const SIGNUP_SENT = 'Si el correo es válido, te enviamos un enlace para confirmar tu cuenta.';
-const RESET_SENT = 'Si existe una cuenta con ese correo, te enviamos un enlace para restablecer tu contraseña.';
 
 export async function login(_prev: FormState, form: FormData): Promise<FormState> {
   const email = parseEmail(form.get('email'));
@@ -55,8 +55,11 @@ export async function requestPasswordReset(_prev: FormState, form: FormData): Pr
   const supabase = await createSupabaseServerClient();
   await rememberAuthNext('/reset-password');
   const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: authCallbackUrl() });
-  if (error?.status === 429) return { error: 'Demasiados intentos. Espera unos minutos.' };
-  return { message: RESET_SENT };
+  // Same neutral answer whether or not the account exists, including Supabase's 429 (which only happens for
+  // registered emails). The failure is logged server-side for diagnosis, without the email address.
+  const outcome = passwordResetOutcome(error);
+  if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
+  return outcome.state;
 }
 
 export async function updatePassword(_prev: FormState, form: FormData): Promise<FormState> {

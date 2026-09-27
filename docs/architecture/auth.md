@@ -15,6 +15,12 @@
   silently falls back to the Site URL (root cause of the 2026-09-27 Preview failure: `…/auth/confirm?next=/app`
   vs entry `…/auth/confirm` → `http://localhost:3000/?code=…`). The destination after the link (`/app` or
   `/reset-password`) is kept in the httpOnly cookie `gf_auth_next` (path `/auth`, 1 h, consumed on success).
+- Password recovery always answers with the same neutral message (`src/web/password-reset.ts`). Supabase returns
+  429 `over_email_send_rate_limit` only for REGISTERED emails (unknown ones get 200 and no email), so surfacing it
+  would enumerate accounts. The failure is logged server-side as `password_reset_request_failed` (status + code,
+  never the email). Test: `tests/password-reset.test.ts` (action-level, Supabase stubbed, no emails).
+- Built-in Supabase SMTP: project-wide hourly email cap shared by /signup, /recover and /user (observed: the 3rd
+  email within an hour was refused on 2026-09-27). Custom SMTP required before public launch (spec §78/§86).
 - Security headers: X-Frame-Options DENY, nosniff, strict referrer, restrictive Permissions-Policy.
 
 ## Supabase dashboard settings (manual, Product Owner) — Authentication section

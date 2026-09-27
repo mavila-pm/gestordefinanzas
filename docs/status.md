@@ -4,7 +4,7 @@ States: IMPLEMENTED (code exists) / VERIFIED (reproducible evidence) / APPROVED 
 
 | Task | State | Evidence | Pending |
 |---|---|---|---|
-| TASK-003 — Auth + RLS dashboard on real Supabase | **VERIFIED** · **NOT APPROVED** | E2E 11/11 against project `jeloegnvaxlfqjntbbyy` (2026-09-27, `docs/runbooks/e2e.md`) | PO manual test via Vercel Preview: signup + email confirmation, password recovery + password change, login. First attempt (2026-09-27) FAILED: confirmation link went to `http://localhost:3000/?code=…`; fixed (query-free callback, see `docs/architecture/auth.md`); retest pending. |
+| TASK-003 — Auth + RLS dashboard on real Supabase | **VERIFIED** · **NOT APPROVED** | E2E 11/11 against project `jeloegnvaxlfqjntbbyy` (2026-09-27, `docs/runbooks/e2e.md`) | PO manual test via Vercel Preview: signup + email confirmation, password recovery + password change, login. First attempt (2026-09-27) FAILED: confirmation link went to `http://localhost:3000/?code=…`; fixed (query-free callback). Retest: signup + confirmation OK via Preview (`+t3` alias, 22:58 UTC); recovery blocked by Supabase built-in SMTP hourly cap (429 `over_email_send_rate_limit`, not an app bug). Anti-enumeration fix for that 429 applied. Pending: recovery + password change + login, once the email cap frees up (single attempt). |
 | TASK-004 — Review queue, manual entry, secure writes | **APPROVED** (PO, 2026-09-27) | Migration `20260927215130_secure_transaction_writes` applied and checked complete; E2E 46/46 on the real project; `npm run test:db` 39/39; unit tests | PO manual browser walkthrough (below). |
 | TASK-005 | Not started — design options under PO review | — | PO decision between route A and route B |
 
@@ -23,6 +23,8 @@ States: IMPLEMENTED (code exists) / VERIFIED (reproducible evidence) / APPROVED 
 | History display when currency changes | TASK-004 | Both amounts are shown in the current currency |
 | Direct-edit policy for cards/accounts/categories | TASK-004, ADR-0003 | Still client-writable under RLS (own rows); decide whether to move behind functions |
 | Movement deletion vs "Ignorar" | TASK-004, spec §10 | Deletion not offered; "Ignorar" excludes without destroying |
+| Signup 429 enumeration side channel | TASK-003 diagnosis | Signup still shows "Demasiados intentos" on 429; with the email cap exhausted a NEW email gets 429 while a registered one gets 200. Same fix pattern as recovery; not in the authorized scope yet |
+| Custom SMTP | TASK-003, spec §78/§86 | Built-in SMTP hourly cap blocks real testing and is not for production |
 
 ## External blockers
 - 2026-09-27: Vercel access was temporarily locked by 2FA — **resolved**. The PO created the Vercel project
