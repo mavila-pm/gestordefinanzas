@@ -25,6 +25,7 @@
 | 20260928000008_email_bridge.sql | email_bridge (checked: RLS everywhere, deliveries ledger server-only, rotate owned by app_writer) | 2026-09-27 |
 | 20260928000009_budgets.sql | budgets | 2026-09-27 |
 | 20260928000010_commitments.sql | commitments | 2026-09-27 |
+| 20260928000011_plans_entitlements.sql | plans_entitlements | 2026-09-27 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

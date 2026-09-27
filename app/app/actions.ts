@@ -284,3 +284,11 @@ export async function deactivateCommitmentAction(_prev: ActionState, form: FormD
   if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
   return done('Listo.');
 }
+
+export async function startTrialAction(_prev: ActionState, _form: FormData): Promise<ActionState> {
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { error } = await supabase.rpc('start_plus_trial');
+  if (error) return { error: error.message === 'trial_already_used' ? 'Ya usaste tu prueba de Plus.' : error.message === 'already_plus' ? 'Ya tienes Plus.' : errorText(null) };
+  return done('Prueba de Plus activada. No se te cobrará nada: al terminar vuelves a Free automáticamente.');
+}

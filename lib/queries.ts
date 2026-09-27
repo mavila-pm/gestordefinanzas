@@ -5,6 +5,7 @@ import type { Transaction } from '../src/domain/types';
 import { parseIngestionCodes } from '../src/engine/review-reasons';
 import { buildUserContext } from '../src/engine/user-context';
 import type { UserContext } from '../src/engine/ingest';
+import { entitlementsFor, planConfigFrom, type SubscriptionRow } from '../src/domain/entitlements';
 
 /** Read helpers for the signed-in user. They run with the user's session: RLS scopes every query. */
 
@@ -108,4 +109,14 @@ export async function loadCommitmentData(supabase: SupabaseClient) {
       installmentsTotal: r.installments_total as number | null, installmentsPaid: r.installments_paid as number, dueDay: r.due_day as number | null, active: r.active as boolean,
     })),
   };
+}
+
+/** Server-side entitlements for the signed-in user (spec §84): never decided in the browser. */
+export async function loadEntitlements(supabase: SupabaseClient, now = new Date()) {
+  const [sub, cfg] = await Promise.all([
+    supabase.from('subscriptions').select('plan,status,trial_started_at,trial_ends_at,current_period_end').maybeSingle(),
+    supabase.from('plan_config').select('key,value'),
+  ]);
+  const config = planConfigFrom(cfg.data ?? []);
+  return { entitlements: entitlementsFor((sub.data as SubscriptionRow | null) ?? null, config, now), config };
 }

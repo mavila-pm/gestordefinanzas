@@ -26,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/app/tarjetas">Tarjetas y cuentas</Link>
           <Link href="/app/reglas">Reglas</Link>
           <Link href="/app/conexiones">Conexiones</Link>
+          <Link href="/app/cuenta">Cuenta</Link>
           <Link href="/app/ajustes">Ajustes</Link>
         </nav>
         <span className="muted">{user.email}</span>
