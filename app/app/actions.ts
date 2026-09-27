@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
 import {
-  errorText, isUuid, parseCardForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
+  errorText, isUuid, parseAccountForm, parseCardForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
 } from '../../src/web/transaction-input';
 
 export interface ActionState {
@@ -60,11 +60,12 @@ export async function correctAction(_prev: ActionState, form: FormData): Promise
   };
   const parsed = parseCorrectionForm((k) => form.get(k), current);
   if (!parsed.ok) return { error: errorText(parsed.error) };
-  const { changes, confirm } = parsed.value;
-  if (Object.keys(changes).length === 0 && !confirm) return { message: 'No había cambios que guardar.' };
-  const { error } = await supabase.rpc('correct_transaction', { p_id: id, p_changes: changes, p_confirm: confirm });
+  const { changes, confirm, rememberRule } = parsed.value;
+  if (Object.keys(changes).length === 0 && !confirm && !rememberRule) return { message: 'No había cambios que guardar.' };
+  const { error } = await supabase.rpc('correct_transaction', { p_id: id, p_changes: changes, p_confirm: confirm, p_remember_rule: rememberRule });
   if (error) return dbError(error);
-  return done(confirm ? 'Cambios guardados y movimiento confirmado.' : 'Cambios guardados.');
+  const saved = confirm ? 'Cambios guardados y movimiento confirmado.' : 'Cambios guardados.';
+  return done(rememberRule ? `${saved} Los próximos movimientos de este comercio usarán esta categoría.` : saved);
 }
 
 export async function createManualAction(_prev: ActionState, form: FormData): Promise<ActionState> {
@@ -93,11 +94,58 @@ export async function createCardAction(_prev: ActionState, form: FormData): Prom
   const { error } = await supabase.from('cards').insert({
     user_id: user.id, alias: c.alias, institution_code: c.institution, kind: c.kind, currency: c.currency, last4: c.last4,
   });
-  if (error) return { error: errorText(null) };
+  if (error) return { error: errorText(error.code === '23505' ? 'duplicate_card' : null) };
   const back = form.get('back');
   if (typeof back === 'string' && isUuid(back)) {
     revalidatePath('/app', 'layout');
     redirect(`/app/movimientos/${back}`);
   }
   return done('Tarjeta registrada.');
+}
+
+export async function createAccountAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const parsed = parseAccountForm((k) => form.get(k));
+  if (!parsed.ok) return { error: errorText(parsed.error) };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const a = parsed.value;
+  // Accounts are user-owned rows protected by RLS (user_id must equal the session user).
+  const { error } = await supabase.from('accounts').insert({
+    user_id: user.id, alias: a.alias, institution_code: a.institution, currency: a.currency, last4: a.last4,
+  });
+  if (error) return { error: errorText(error.code === '23505' ? 'duplicate_account' : null) };
+  return done('Cuenta registrada.');
+}
+
+/** Cards and accounts are deactivated, never deleted: past movements keep pointing to them. */
+export async function deactivateAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const kind = form.get('kind');
+  if (!isUuid(id) || (kind !== 'card' && kind !== 'account')) return { error: errorText('invalid_request') };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { data, error } = await supabase.from(kind === 'card' ? 'cards' : 'accounts').update({ active: false }).eq('id', id).select('id');
+  if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
+  return done(kind === 'card' ? 'Tarjeta desactivada.' : 'Cuenta desactivada.');
+}
+
+export async function deleteRuleAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  if (!isUuid(id)) return { error: errorText('invalid_request') };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { data, error } = await supabase.from('merchant_rules').delete().eq('id', id).select('id');
+  if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
+  return done('Regla eliminada. Los movimientos ya registrados no cambian.');
+}
+
+export async function deleteTransactionAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  if (!isUuid(id) || form.get('confirmDelete') !== '1') return { error: 'Marca la casilla para confirmar la eliminación.' };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { error } = await supabase.rpc('delete_manual_transaction', { p_id: id });
+  if (error) return dbError(error);
+  revalidatePath('/app', 'layout');
+  redirect('/app?deleted=1');
 }

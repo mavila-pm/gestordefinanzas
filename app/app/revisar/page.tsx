@@ -21,7 +21,7 @@ export default async function ReviewQueue() {
 
   const txs = (data as never[]).map(toLinked);
   const [codes, catalog] = await Promise.all([ingestionCodesFor(supabase, txs.map((t) => t.id)), loadCatalog(supabase)]);
-  const cardLast4 = catalog.cards.map((c) => c.last4);
+  const cardLast4 = catalog.cards.filter((c) => c.active).map((c) => c.last4);
 
   return (
     <main className="stack">

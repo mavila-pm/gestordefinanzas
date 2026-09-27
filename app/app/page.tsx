@@ -9,8 +9,8 @@ import { TYPE_LABEL } from '../../src/web/transaction-input';
 const CURRENCIES: Currency[] = ['PEN', 'USD'];
 const SOURCE_LABEL: Record<string, string> = { email: 'Automático · Email', sms: 'Automático · SMS', manual: 'Manual' };
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
-  const requested = (await searchParams).month;
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ month?: string; deleted?: string }> }) {
+  const { month: requested, deleted } = await searchParams;
   const month = requested && limaMonthRange(requested) ? requested : limaMonth();
   const range = limaMonthRange(month)!;
 
@@ -32,6 +32,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   return (
     <main className="stack">
+      {deleted === '1' && <p role="status" className="ok">Movimiento eliminado.</p>}
       <h1>Resumen de {month}</h1>
       {summaries.map((s) => {
         const m = (v: number) => formatMoney({ amountMinor: Math.abs(v), currency: s.currency });

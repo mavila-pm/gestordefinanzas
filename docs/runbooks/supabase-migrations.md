@@ -19,6 +19,7 @@
 | 20260927000002_harden_rls_auto_enable.sql | 20260927203531_harden_rls_auto_enable | 2026-09-27 |
 | 20260927000003_rls_performance.sql | applied as rls_performance | 2026-09-27 |
 | 20260927000004_secure_transaction_writes.sql | 20260927215130_secure_transaction_writes (approved by Mauro) | 2026-09-27 |
+| 20260928000005_accounts_rules_learning.sql | accounts_rules_learning (autonomous phase; checked complete: owners app_writer, old correct_transaction dropped, CREATE revoked, app_writer DELETE only on transactions) | 2026-09-27 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

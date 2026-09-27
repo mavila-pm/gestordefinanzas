@@ -8,11 +8,11 @@ import { formatMoney } from '../../../../src/domain/money';
 import type { TransactionType } from '../../../../src/domain/types';
 import { reviewReasons } from '../../../../src/engine/review-reasons';
 import { CORRECTABLE_TYPES, formatLimaDateTime, isoToLimaInputs, isUuid, minorToInput, TYPE_LABEL } from '../../../../src/web/transaction-input';
-import { correctAction, createCardAction, reviewAction } from '../../actions';
+import { correctAction, createCardAction, deleteTransactionAction, reviewAction } from '../../actions';
 
 const CHANNEL_LABEL: Record<string, string> = { email: 'Notificación por email', sms: 'Notificación por SMS', manual: 'Registrado por ti' };
 const STATUS_LABEL: Record<string, string> = { confirmed: 'Confirmado', review_required: 'Por revisar', possible_duplicate: 'Posible duplicado', ignored: 'Ignorado' };
-const ACTION_LABEL: Record<string, string> = { manual_create: 'Registrado manualmente', confirm: 'Confirmado', ignore: 'Ignorado', correct: 'Corregido' };
+const ACTION_LABEL: Record<string, string> = { manual_create: 'Registrado manualmente', confirm: 'Confirmado', ignore: 'Ignorado', correct: 'Corregido', rule_create: 'Regla de comercio creada' };
 const FIELD_LABEL: Record<string, string> = {
   type: 'Tipo', amount_minor: 'Monto', currency: 'Moneda', occurred_at: 'Fecha', merchant_raw: 'Descripción',
   category_id: 'Categoría', card_id: 'Tarjeta', account_id: 'Cuenta', status: 'Estado',
@@ -48,10 +48,27 @@ export default async function TransactionDetail({ params }: { params: Promise<{ 
   };
 
   const pending = t.status === 'review_required' || t.status === 'possible_duplicate';
-  const reasons = pending ? reviewReasons(t, { ingestionCodes: codes.get(t.id) ?? [], registeredCardLast4: catalog.cards.map((c) => c.last4), cardId: t.cardId }) : [];
-  const cardUnregistered = !!t.cardLast4 && !catalog.cards.some((c) => c.last4 === t.cardLast4);
+  const activeCards = catalog.cards.filter((c) => c.active);
+  const reasons = pending ? reviewReasons(t, { ingestionCodes: codes.get(t.id) ?? [], registeredCardLast4: activeCards.map((c) => c.last4), cardId: t.cardId }) : [];
+  const cardUnregistered = !!t.cardLast4 && !activeCards.some((c) => c.last4 === t.cardLast4);
   // A card can only be linked if its digits match the ones the bank reported.
-  const cards = t.cardLast4 ? catalog.cards.filter((c) => c.last4 === t.cardLast4) : catalog.cards;
+  const linkable = catalog.cards.filter((c) => c.active || c.id === t.cardId);
+  const cards = t.cardLast4 ? linkable.filter((c) => c.last4 === t.cardLast4) : linkable;
+  const accounts = catalog.accounts.filter((a) => a.active || a.id === t.accountId);
+  const manualOnly = t.sources.length > 0 && t.sources.every((s) => s.channel === 'manual');
+  const canRemember = ['expense', 'credit_card_purchase', 'refund', 'reversal'].includes(t.type) && !!t.merchantNormalized && t.merchantNormalized.length >= 3;
+  // Currency in force before/after each audited change (amounts are shown in the currency they had then).
+  const currencyTimeline = (() => {
+    const rows = audit.data ?? [];
+    const firstChange = rows.find((a) => (a.changes as Record<string, { from: string }>).currency)?.changes as Record<string, { from: 'PEN' | 'USD' }> | undefined;
+    let current: 'PEN' | 'USD' = firstChange?.currency?.from ?? t.currency;
+    return new Map(rows.map((a) => {
+      const c = (a.changes as Record<string, { from: 'PEN' | 'USD'; to: 'PEN' | 'USD' }>).currency;
+      const before = current;
+      if (c) current = c.to;
+      return [a.id, { before, after: current }] as const;
+    }));
+  })();
   const { date, time } = isoToLimaInputs(t.occurredAt);
   const sign = t.direction === 'inflow' ? '+' : t.direction === 'outflow' ? '−' : '';
 
@@ -107,12 +124,18 @@ export default async function TransactionDetail({ params }: { params: Promise<{ 
           <input type="hidden" name="id" value={t.id} />
           <TransactionFields
             types={CORRECTABLE_TYPES}
-            catalog={{ ...catalog, cards }}
+            catalog={{ ...catalog, cards, accounts }}
             values={{
               type: t.type === 'unknown' ? '' : t.type, amount: minorToInput(t.amountMinor), currency: t.currency, date, time,
               description: t.merchantRaw ?? '', categoryId: t.categoryId ?? '', cardId: t.cardId ?? '', accountId: t.accountId ?? '',
             }}
           />
+          {canRemember && (
+            <label className="check">
+              <input type="checkbox" name="rememberRule" value="1" />
+              <span>Recordar la categoría para <strong>{t.merchantNormalized}</strong> en próximos movimientos</span>
+            </label>
+          )}
           <div className="actions">
             <button type="submit" name="confirm" value="1">Guardar y confirmar</button>
             <button type="submit" name="confirm" value="0" className="secondary">Solo guardar</button>
@@ -144,7 +167,7 @@ export default async function TransactionDetail({ params }: { params: Promise<{ 
                 <span>
                   <strong>{ACTION_LABEL[a.action] ?? a.action}</strong><br />
                   {a.action === 'correct' && Object.entries(a.changes as Record<string, { from: unknown; to: unknown }>).map(([f, c]) => (
-                    <small key={f} className="muted" style={{ display: 'block' }}>{FIELD_LABEL[f] ?? f}: {show(f, c.from, t.currency)} → {show(f, c.to, t.currency)}</small>
+                    <small key={f} className="muted" style={{ display: 'block' }}>{FIELD_LABEL[f] ?? f}: {show(f, c.from, currencyTimeline.get(a.id)?.before ?? t.currency)} → {show(f, c.to, currencyTimeline.get(a.id)?.after ?? t.currency)}</small>
                   ))}
                 </span>
                 <small className="muted">{formatLimaDateTime(a.created_at)}</small>
@@ -153,6 +176,17 @@ export default async function TransactionDetail({ params }: { params: Promise<{ 
           </ul>
         )}
       </section>
+      {manualOnly && (
+        <section className="card stack-sm">
+          <h2>Eliminar</h2>
+          <p className="muted">Solo los movimientos que registraste tú se pueden eliminar. Queda constancia en tu historial.</p>
+          <ActionForm action={deleteTransactionAction} label="Eliminar movimiento">
+            <input type="hidden" name="id" value={t.id} />
+            <label className="check"><input type="checkbox" name="confirmDelete" value="1" /> <span>Confirmo que quiero eliminarlo</span></label>
+            <button type="submit" className="danger">Eliminar movimiento</button>
+          </ActionForm>
+        </section>
+      )}
     </main>
   );
 }

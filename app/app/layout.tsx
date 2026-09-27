@@ -18,7 +18,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/app">Resumen</Link>
           <Link href="/app/revisar">Por revisar{count ? <span className="badge" data-testid="review-count">{count}</span> : null}</Link>
           <Link href="/app/movimientos/nuevo">Nuevo movimiento</Link>
-          <Link href="/app/tarjetas">Tarjetas</Link>
+          <Link href="/app/tarjetas">Tarjetas y cuentas</Link>
+          <Link href="/app/reglas">Reglas</Link>
         </nav>
         <span className="muted">{user.email}</span>
         <form action={logout}><button type="submit" className="link">Cerrar sesión</button></form>

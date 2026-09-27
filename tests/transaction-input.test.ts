@@ -63,8 +63,8 @@ describe('correction diff', () => {
   const correct = (o: Record<string, string> = {}) => parseCorrectionForm(form({ ...base, ...o }), current);
 
   it('sends only the fields that changed', () => {
-    expect(correct()).toEqual({ ok: true, value: { id: REF, changes: {}, confirm: false } });
-    expect(correct({ amount: '95.5', confirm: '1' })).toEqual({ ok: true, value: { id: REF, changes: { amount_minor: 9550 }, confirm: true } });
+    expect(correct()).toEqual({ ok: true, value: { id: REF, changes: {}, confirm: false, rememberRule: false } });
+    expect(correct({ amount: '95.5', confirm: '1' })).toEqual({ ok: true, value: { id: REF, changes: { amount_minor: 9550 }, confirm: true, rememberRule: false } });
     expect(correct({ cardId: CARD })).toMatchObject({ ok: true, value: { changes: { card_id: CARD } } });
   });
 
@@ -74,14 +74,14 @@ describe('correction diff', () => {
 
   it('type change to a non-categorizable type does not send a category', () => {
     const r = correct({ type: 'withdrawal' });
-    expect(r).toEqual({ ok: true, value: { id: REF, changes: { type: 'withdrawal' }, confirm: false } });
+    expect(r).toEqual({ ok: true, value: { id: REF, changes: { type: 'withdrawal' }, confirm: false, rememberRule: false } });
   });
 
   it('never accepts direction/status or an undetermined type from the browser', () => {
     expect(correct({ type: 'unknown' })).toEqual({ ok: false, error: 'invalid_type' });
     expect(parseCorrectionForm(form({ ...base, type: '' }), { ...current, type: 'unknown' })).toEqual({ ok: false, error: 'type_required' });
     const r = correct({ direction: 'inflow', status: 'confirmed', user_id: REF });
-    expect(r).toEqual({ ok: true, value: { id: REF, changes: {}, confirm: false } });
+    expect(r).toEqual({ ok: true, value: { id: REF, changes: {}, confirm: false, rememberRule: false } });
   });
 
   it('a date typed in Lima is compared as an instant (no spurious change)', () => {

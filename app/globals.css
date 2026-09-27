@@ -27,3 +27,5 @@ button.secondary, a.button.secondary { background: transparent; color: var(--acc
 a.button { display: inline-block; padding: 10px 16px; border-radius: 8px; text-decoration: none; }
 .nav { display: flex; gap: 16px; flex-wrap: wrap; } .badge { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 10px; background: var(--warn); color: var(--card); font-size: .75rem; text-align: center; }
 .narrow-md { max-width: 640px; }
+.check { display: flex; gap: 8px; align-items: flex-start; } .check input { width: auto; margin-top: 4px; }
+button.danger { background: var(--err); }

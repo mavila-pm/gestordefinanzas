@@ -284,7 +284,9 @@ describe.skipIf(!DATABASE_URL)('TASK-004: secure transaction writes (review queu
           values ($1, $2, 'email', 'forged', 'BCP_EMAIL_V1', now())`, [USER_A, ids.purchaseA])).toBe(PERMISSION_DENIED);
         expect(await errorCode(c, `insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, status, confidence, fingerprint)
           values ($1, now(), 'expense', 'outflow', 100, 'PEN', 'confirmed', 'high', 'x')`, [USER_B])).toBe(PERMISSION_DENIED);
-        expect(await errorCode(c, 'delete from public.transactions where id = $1', [ids.purchaseA])).toBe(PERMISSION_DENIED);
+        // DELETE exists only for delete_manual_transaction (TASK-005); RLS still hides B's rows from it.
+        expect((await c.query('delete from public.transactions where id = $1', [ids.purchaseB])).rowCount).toBe(0);
+        expect(await errorCode(c, 'delete from public.transaction_sources where transaction_id = $1', [ids.purchaseA])).toBe(PERMISSION_DENIED);
       });
     });
   });

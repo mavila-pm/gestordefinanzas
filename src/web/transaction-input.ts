@@ -141,7 +141,7 @@ export type CorrectionChanges = Partial<{
 }>;
 
 /** Builds the minimal change set (only fields that actually differ) for correct_transaction. */
-export function parseCorrectionForm(get: Get, current: CorrectableState): Parsed<{ id: string; changes: CorrectionChanges; confirm: boolean }> {
+export function parseCorrectionForm(get: Get, current: CorrectableState): Parsed<{ id: string; changes: CorrectionChanges; confirm: boolean; rememberRule: boolean }> {
   const id = str(get('id'));
   if (!isUuid(id)) return fail('invalid_request');
   const changes: CorrectionChanges = {};
@@ -185,7 +185,9 @@ export function parseCorrectionForm(get: Get, current: CorrectableState): Parsed
   if (accountId === undefined) return fail('invalid_account');
   if (accountId !== current.accountId) changes.account_id = accountId;
 
-  return { ok: true, value: { id, changes, confirm: get('confirm') === '1' } };
+  // "Remember for this merchant" only makes sense for spending-like types (checked again server-side).
+  const rememberRule = get('rememberRule') === '1' && CATEGORIZABLE_TYPES.has(newType);
+  return { ok: true, value: { id, changes, confirm: get('confirm') === '1', rememberRule } };
 }
 
 export function parseReviewForm(get: Get): Parsed<{ id: string; action: 'confirm' | 'ignore' }> {
@@ -220,6 +222,27 @@ export function parseCardForm(get: Get): Parsed<CardPayload> {
   return { ok: true, value: { alias, institution: (institution || null) as InstitutionCode | null, kind, currency, last4 } };
 }
 
+export interface AccountPayload {
+  alias: string;
+  institution: InstitutionCode | null;
+  currency: Currency;
+  last4: string | null;
+}
+
+/** Own accounts: alias, bank, currency and optionally the last 4 digits (needed to detect own transfers). */
+export function parseAccountForm(get: Get): Parsed<AccountPayload> {
+  const alias = str(get('alias'));
+  if (!alias || alias.length > 60 || /[\u0000-\u001f\u007f]/.test(alias)) return fail('invalid_alias');
+  if (/\d{5,}/.test(alias.replace(/[\s-]/g, ''))) return fail('pan_in_alias');
+  const institution = str(get('institution'));
+  if (institution && !INSTITUTIONS.includes(institution as InstitutionCode)) return fail('invalid_institution');
+  const currency = parseCurrency(get('currency'));
+  if (!currency) return fail('invalid_currency');
+  const last4 = str(get('last4'));
+  if (last4 && !/^\d{4}$/.test(last4)) return fail('invalid_last4');
+  return { ok: true, value: { alias, institution: (institution || null) as InstitutionCode | null, currency, last4: last4 || null } };
+}
+
 /** User-facing text for validation / database error codes. Unknown codes get a generic message. */
 const ERROR_TEXT: Record<string, string> = {
   invalid_request: 'Solicitud inválida. Recarga la página e intenta de nuevo.',
@@ -244,6 +267,9 @@ const ERROR_TEXT: Record<string, string> = {
   invalid_kind: 'Indica si es de crédito o débito.',
   invalid_last4: 'Ingresa solo los últimos 4 dígitos.',
   duplicate_card: 'Ya registraste una tarjeta con esos datos.',
+  duplicate_account: 'Ya registraste una cuenta con ese banco y esos 4 dígitos.',
+  rule_not_applicable: 'No se puede recordar: el movimiento necesita un comercio reconocible y una categoría estándar.',
+  not_deletable: 'Este movimiento no se puede eliminar (llegó de tu banco o está vinculado a otro). Puedes ignorarlo.',
 };
 
 export function errorText(code: string | null | undefined): string {

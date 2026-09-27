@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ActionForm } from '../../../../components/action-form';
 import { TransactionFields } from '../../../../components/transaction-fields';
 import { createSupabaseServerClient } from '../../../../lib/supabase/server';
-import { loadCatalog } from '../../../../lib/queries';
+import { activeOnly, loadCatalog } from '../../../../lib/queries';
 import { isoToLimaInputs, MANUAL_TYPES } from '../../../../src/web/transaction-input';
 import { createManualAction } from '../../actions';
 
@@ -23,7 +23,7 @@ export default async function NewTransaction({ searchParams }: { searchParams: P
           <input type="hidden" name="clientRef" value={clientRef} />
           <TransactionFields
             types={MANUAL_TYPES}
-            catalog={catalog}
+            catalog={{ ...catalog, cards: activeOnly(catalog.cards), accounts: activeOnly(catalog.accounts) }}
             values={{ type: 'expense', amount: '', currency: 'PEN', date, time, description: '', categoryId: '', cardId: '', accountId: '' }}
           />
           <button type="submit">Registrar</button>
