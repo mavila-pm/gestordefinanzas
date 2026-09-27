@@ -46,10 +46,10 @@ check('unauthenticated /app redirects to /login', page.url().startsWith(`${BASE}
 
 // 2. Wrong password and unknown email: identical generic message (no enumeration)
 await login(A, 'wrong-password-123');
-const loginErr = await page.locator('[role=alert]').textContent();
+const loginErr = await page.locator('[role=alert]:not(#__next-route-announcer__)').textContent();
 check('wrong password -> generic error', !!loginErr?.includes('Correo o contraseña incorrectos'), loginErr ?? '');
 await login('nobody-e2e@invalid.test', 'whatever-123');
-check('unknown email -> same generic error', (await page.locator('[role=alert]').textContent()) === loginErr);
+check('unknown email -> same generic error', (await page.locator('[role=alert]:not(#__next-route-announcer__)').textContent()) === loginErr);
 
 // 3. Login A -> dashboard with A's data only (RLS through the app)
 await login(A, PASSWORD);
@@ -72,7 +72,7 @@ check('after logout /app redirects to /login', page.url().startsWith(`${BASE}/lo
 await page.goto(`${BASE}/forgot-password`);
 await page.fill('input[name=email]', 'nobody-e2e@invalid.test');
 await submit();
-const resetMsg = await page.locator('[role=status], [role=alert]').first().textContent();
+const resetMsg = await page.locator('[role=status], [role=alert]:not(#__next-route-announcer__)').first().textContent();
 check('forgot-password neutral message', !!resetMsg?.includes('Si existe una cuenta'), resetMsg ?? '');
 
 // 6. Signup with an already registered email: neutral message (no enumeration)
@@ -80,7 +80,7 @@ await page.goto(`${BASE}/signup`);
 await page.fill('input[name=email]', B);
 await page.fill('input[name=password]', 'another-pass-123');
 await submit();
-const signupMsg = await page.locator('[role=status], [role=alert]').first().textContent();
+const signupMsg = await page.locator('[role=status], [role=alert]:not(#__next-route-announcer__)').first().textContent();
 check('signup existing email -> neutral message', !!signupMsg?.includes('Si el correo es válido'), signupMsg ?? '');
 
 await browser.close();

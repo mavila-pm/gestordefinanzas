@@ -12,3 +12,15 @@ Requires network access from the environment to `jeloegnvaxlfqjntbbyy.supabase.c
 No email is sent to the probe domain: the tests use existing (confirmed) and unknown addresses only,
 avoiding bounces that could get the project's email sending restricted.
 Real signup confirmation and password-reset emails must be checked manually with a real inbox.
+
+## Seeding notes
+Probe users are inserted directly into `auth.users` (bcrypt via `extensions.crypt`, `email_confirmed_at = now()`,
+token columns set to `''` — GoTrue fails on NULL) plus a matching `auth.identities` row (provider `email`).
+
+## Last result — 2026-09-27 (TASK-003)
+Environment network access to `jeloegnvaxlfqjntbbyy.supabase.co` enabled. **11/11 passed** against the real project:
+redirect without session, generic login error (wrong password = unknown email), login A → dashboard,
+A expenses = S/ 100.00 (card payment and ATM withdrawal excluded), A sees own merchant and not B's (RLS),
+withdrawal shown apart, logout, neutral forgot-password and signup-existing messages.
+Fix needed on first run: the test's `[role=alert]` selector also matched Next.js's route announcer; it now
+excludes `#__next-route-announcer__` (test defect, not an app defect). Post-check: 0 probe users, identities or rows left.
