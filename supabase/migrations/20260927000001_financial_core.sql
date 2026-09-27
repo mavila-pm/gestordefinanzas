@@ -158,6 +158,7 @@ create index financial_events_user_time on public.financial_events (user_id, cre
 create function public.touch_updated_at() returns trigger language plpgsql
 set search_path = '' as $$
 begin new.updated_at := now(); return new; end $$;
+revoke execute on function public.touch_updated_at() from public, anon, authenticated;
 create trigger profiles_touch before update on public.profiles for each row execute function public.touch_updated_at();
 create trigger transactions_touch before update on public.transactions for each row execute function public.touch_updated_at();
 
@@ -172,8 +173,10 @@ alter table public.transactions enable row level security;
 alter table public.transaction_sources enable row level security;
 alter table public.financial_events enable row level security;
 
--- anon gets nothing.
-revoke all on all tables in schema public from anon;
+-- Start from zero: Supabase default privileges grant anon/authenticated TRUNCATE, REFERENCES,
+-- TRIGGER and MAINTAIN on new tables, and TRUNCATE bypasses RLS. anon gets nothing at all;
+-- authenticated gets only the explicit grants below.
+revoke all on all tables in schema public from anon, authenticated;
 
 grant select on public.institutions to authenticated;
 create policy institutions_read on public.institutions for select to authenticated using (true);

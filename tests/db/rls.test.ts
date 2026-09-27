@@ -37,6 +37,16 @@ describe.skipIf(!DATABASE_URL)('RLS: user isolation (User A vs User B)', () => {
     expect(rows).toEqual([]);
   });
 
+  it('no client role holds privileges that bypass RLS (TRUNCATE) or any privilege for anon', async () => {
+    const { rows } = await pool.query(`select c.relname, r.role, p.priv from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      cross join (values ('anon'), ('authenticated')) r(role)
+      cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES'), ('TRIGGER')) p(priv)
+      where n.nspname = 'public' and c.relkind = 'r' and has_table_privilege(r.role, c.oid, p.priv)
+        and (r.role = 'anon' or p.priv in ('TRUNCATE', 'REFERENCES', 'TRIGGER'))`);
+    expect(rows).toEqual([]);
+  });
+
   it('SELECT: A sees only A\'s transactions; B\'s row by id is invisible', async () => {
     await asRole(pool, 'authenticated', USER_A, async (c) => {
       const all = await c.query('select user_id from public.transactions');

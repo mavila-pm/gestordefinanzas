@@ -23,6 +23,7 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - Parsers are versioned (`BCP_EMAIL_V1`, ...); real samples that break a template -> new version, keep old.
 - Greenfield project (no prior prototype).
 - Every new table: RLS + composite `(id, user_id)` FKs; `tests/db/rls.test.ts` guard must stay green. Schema changes only via `supabase/migrations/`.
+- Supabase: operate ONLY on project ref `jeloegnvaxlfqjntbbyy` (gestordefinanzas). Never touch other projects in the account.
 - Report states honestly: IMPLEMENTED / VERIFIED (reproducible evidence) / APPROVED.
 
 ## Docs index
@@ -32,4 +33,5 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - `tests/fixtures/bcp/samples/README.md` — adding real anonymized samples
 - `docs/security/rls.md` — RLS model and accepted debt
 - `docs/runbooks/database-tests.md`
+- `docs/runbooks/supabase-migrations.md` — Supabase project ref, applied migrations, RLS probe
 - `docs/decisions/` — ADRs
