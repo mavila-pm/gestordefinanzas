@@ -12,4 +12,6 @@ export class AdapterRegistry {
   }
 }
 
-export const defaultAdapterRegistry = new AdapterRegistry([bcpEmailV1, bcpSmsV1]);
+export const bcpAdapters: readonly BankAdapter[] = [bcpEmailV1, bcpSmsV1];
+
+export const defaultAdapterRegistry = new AdapterRegistry([...bcpAdapters]);

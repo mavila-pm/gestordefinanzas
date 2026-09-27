@@ -3,8 +3,9 @@
 **Status:** ACCEPTED (technical, reversible) · 2026-09-27
 
 ## Context
-- The repository contained only `README.md` (commit `28345a3`). The "existing prototype" referenced in
-  MOTHER_DOCUMENT §55 is **not in this repository**, so it could not be audited.
+- The repository contained only `README.md` (commit `28345a3`).
+- Confirmed by Mauro (2026-09-27): **NEW PROJECT / GREENFIELD**. No prior prototype exists; MOTHER_DOCUMENT
+  §55 (prototype audit) does not apply. The Prompt Madre v1.1 remains the binding spec.
 - The preferred stack (Next.js + Supabase + Vercel) is PROPOSED (§77), not yet confirmed.
 - The first demonstrable objective (§72) is the BCP vertical slice; its correctness rules (money,
   dedupe, card payment, refunds) do not depend on a web framework.

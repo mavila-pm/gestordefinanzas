@@ -1,6 +1,7 @@
 # Ingestion pipeline (implemented)
 
 ```
+Provider payload -> FinancialEventSource.toRawEvent()   src/ingestion/sources/  (email_bridge, android_sms)
 RawFinancialEvent (untrusted)
   -> size limit / HTML->text            src/ingestion/sanitize.ts
   -> L1 dedupe: (user, channel, externalEventId)   (SMS without id: sha256 of content)
@@ -11,7 +12,9 @@ RawFinancialEvent (untrusted)
   -> L2/L3 dedupe: same kind + amount + currency + institution in ±30 min window
        strong (same card last4, ±10 min, compatible merchant, other channel) -> merge source
        anything weaker                                                      -> possible_duplicate
-  -> resolve transfers (own account last4 -> internal_transfer, else review)
+  -> non_transactional (statement, security alert) -> traced, no transaction
+  -> resolve with user context: transfers (own account -> internal_transfer, else review);
+     card kind unknown -> registered credit card => credit_card_purchase, unregistered => review
   -> link refund/reversal to original purchase
   -> categorize (normalize merchant -> user rule -> global rule)   src/engine/categorizer.ts
   -> status: high -> confirmed, medium -> review_required; parse failure -> unresolved (no transaction)
@@ -21,17 +24,19 @@ RawFinancialEvent (untrusted)
 ## Rules enforced by tests (`tests/`)
 - Same event ×5 → 1 transaction. Email + SMS of the same purchase → 1 transaction, 2 sources.
 - Card payment never counts as expense. Internal transfer never changes income/expenses.
+- ATM withdrawal is `transfer_to_cash`, not expense (ADR-0002). Metrics use `financialEffect()`.
 - Refund/reversal reduce expenses, never income. PEN and USD never mixed.
 - Unverified sender, unknown deposit origin, unknown transfer destination → review, never auto-confirmed.
 - Duplicated field labels or text appended to an SMS → rejected, not guessed.
 - One bad event never aborts a batch.
 
 ## Parser coverage status
+All BCP parsers are `SYNTHETIC_UNVERIFIED`. Evidence: `docs/architecture/bcp-evidence.md`.
+
 | Parser | Templates | Status |
 |---|---|---|
-| BCP_EMAIL_V1 | purchase (credit/debit), card payment, refund, reversal, transfer out, withdrawal, deposit | IMPLEMENTED on **synthetic** templates — NOT VERIFIED against real BCP emails |
-| BCP_SMS_V1 | purchase (credit/debit), card payment | IMPLEMENTED on **synthetic** templates — NOT VERIFIED against real BCP SMS |
+| BCP_EMAIL_V1 | statement (non-tx, observed); purchase credit/debit; "operación con tu tarjeta" (PO structure); card payment; refund; reversal; transfer; withdrawal; deposit | IMPLEMENTED · UNVERIFIED |
+| BCP_SMS_V1 | security alert (non-tx, observed); purchase credit/debit; card payment | IMPLEMENTED · UNVERIFIED |
 | BBVA / Interbank | — | MISSING |
 
-Calibrating a parser: add real **anonymized** samples as fixtures (replace names, card/account digits,
-operation numbers, amounts if sensitive), adjust the template or create a new `_V2` adapter, keep the old one.
+Replacing synthetic templates with real ones: `tests/fixtures/bcp/samples/README.md`.

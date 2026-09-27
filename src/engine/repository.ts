@@ -6,6 +6,7 @@ export type EventOutcome =
   | 'merged_cross_source'
   | 'possible_duplicate'
   | 'unresolved'
+  | 'non_transactional'
   | 'not_financial'
   | 'rejected';
 

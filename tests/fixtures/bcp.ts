@@ -1,8 +1,9 @@
 /**
- * SYNTHETIC, ANONYMIZED BCP fixtures. No real person, card, account or operation.
- * Layout mirrors the templates assumed in src/ingestion/adapters/bcp (pending validation
- * against real anonymized samples).
+ * FIXTURE STATUS: SYNTHETIC_FIXTURE (not VERIFIED_BCP_TEMPLATE).
+ * No real person, card, account or operation. Transactional wording is assumed, pending
+ * real anonymized BCP samples. Only the sender domain and SMS sender id are observed facts.
  */
+export const FIXTURE_STATUS = 'SYNTHETIC_FIXTURE' as const;
 import type { RawFinancialEvent } from '../../src/domain/types';
 
 export const BCP_SENDER = 'BCP Notificaciones <notificaciones@notificacionesbcp.com.pe>';
@@ -26,7 +27,7 @@ export function bcpEmail(o: EmailOpts): RawFinancialEvent {
   };
 }
 
-export function bcpSms(body: string, sender = 'BCP', receivedAt = '2026-09-16T01:31:00Z'): RawFinancialEvent {
+export function bcpSms(body: string, sender = '19896', receivedAt = '2026-09-16T01:31:00Z'): RawFinancialEvent {
   return { channel: 'sms', sender, body, receivedAt };
 }
 

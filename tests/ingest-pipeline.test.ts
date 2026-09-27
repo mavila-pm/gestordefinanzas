@@ -4,8 +4,8 @@ import { InMemoryTransactionRepository } from '../src/engine/repository';
 import { monthlySummary } from '../src/engine/monthly-summary';
 import * as fx from './fixtures/bcp';
 
-const USER_A: UserContext = { userId: 'user-a', ownAccountLast4: ['9001'], merchantRules: [] };
-const USER_B: UserContext = { userId: 'user-b', ownAccountLast4: [], merchantRules: [] };
+const USER_A: UserContext = { userId: 'user-a', ownAccountLast4: ['9001'], cards: [{ last4: '4821', kind: 'credit' }], merchantRules: [] };
+const USER_B: UserContext = { userId: 'user-b', ownAccountLast4: [], cards: [], merchantRules: [] };
 const SEP = '2026-09';
 
 let repo: InMemoryTransactionRepository;

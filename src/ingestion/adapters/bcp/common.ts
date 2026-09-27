@@ -1,12 +1,18 @@
 import { parseAmountToMinor, parseCurrencyMarker, type Currency } from '../../../domain/money';
 
 /**
- * SYNTHETIC TEMPLATES. The BCP patterns in this folder were written from general knowledge of
- * BCP notifications, not from validated real samples. They must be calibrated against real,
- * anonymized notifications before any claim of production coverage (see docs/architecture/ingestion.md).
+ * Evidence register (see docs/architecture/bcp-evidence.md).
+ *
+ * OBSERVED (real anonymized samples provided by the Product Owner, 2026-09-27):
+ * - Email domain `notificacionesbcp.com.pe` (sender estadodecuenta@..., DKIM signed by that domain).
+ * - SMS sender `19896`, prefix "BCP Alertas:", security alert "Detectamos una operación inusual...".
+ *
+ * SYNTHETIC_UNVERIFIED: every transactional template (purchase, payment, refund, transfer...).
+ * They exist to develop the architecture and must be replaced by templates calibrated on real
+ * samples, as a new parser version, before any production claim.
  */
-export const BCP_EMAIL_SENDER_DOMAINS = ['notificacionesbcp.com.pe', 'bcp.com.pe'];
-export const BCP_SMS_SENDERS = ['BCP'];
+export const BCP_EMAIL_SENDER_DOMAINS = ['notificacionesbcp.com.pe'];
+export const BCP_SMS_SENDERS = ['19896'];
 
 export function parseMoneyExpr(s: string): { amountMinor: number; currency: Currency } | null {
   const m = /^(S\/\.?|US\$|\$)\s*([\d,]+(?:\.\d{1,2})?)$/i.exec(s.trim());
