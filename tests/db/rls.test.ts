@@ -37,14 +37,17 @@ describe.skipIf(!DATABASE_URL)('RLS: user isolation (User A vs User B)', () => {
     expect(rows).toEqual([]);
   });
 
-  it('no client role holds privileges that bypass RLS (TRUNCATE) or any privilege for anon', async () => {
+  it('no client role (nor app_writer) holds privileges that bypass RLS (TRUNCATE) or any privilege for anon', async () => {
     const { rows } = await pool.query(`select c.relname, r.role, p.priv from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
-      cross join (values ('anon'), ('authenticated')) r(role)
+      cross join (values ('anon'), ('authenticated'), ('app_writer')) r(role)
       cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES'), ('TRIGGER')) p(priv)
       where n.nspname = 'public' and c.relkind = 'r' and has_table_privilege(r.role, c.oid, p.priv)
-        and (r.role = 'anon' or p.priv in ('TRUNCATE', 'REFERENCES', 'TRIGGER'))`);
+        and (r.role = 'anon' or p.priv in ('TRUNCATE', 'REFERENCES', 'TRIGGER')
+          or (r.role = 'app_writer' and p.priv = 'DELETE'))`);
     expect(rows).toEqual([]);
+    const writer = await pool.query(`select rolbypassrls, rolcanlogin, rolsuper from pg_roles where rolname = 'app_writer'`);
+    expect(writer.rows).toEqual([{ rolbypassrls: false, rolcanlogin: false, rolsuper: false }]);
   });
 
   it('SELECT: A sees only A\'s transactions; B\'s row by id is invisible', async () => {
@@ -66,28 +69,39 @@ describe.skipIf(!DATABASE_URL)('RLS: user isolation (User A vs User B)', () => {
     });
   });
 
-  it('INSERT: A cannot link own transaction to B\'s card (composite FK)', async () => {
-    await asRole(pool, 'authenticated', USER_A, async (c) => {
+  it('composite FK: a transaction cannot reference another user\'s card, even from a privileged connection', async () => {
+    const c = await pool.connect();
+    try {
+      await c.query('begin');
       expect(await errorCode(c, `insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, card_id, status, confidence, fingerprint)
         values ($1, now(), 'expense', 'outflow', 100, 'PEN', $2, 'confirmed', 'high', 'x')`, [USER_A, ids.cardB])).toBe(FK_VIOLATION);
-    });
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
   });
 
-  it('UPDATE: A cannot modify B\'s rows nor hand own rows to B', async () => {
+  it('UPDATE: transactions are not directly writable (TASK-004); A cannot modify B\'s cards', async () => {
     await asRole(pool, 'authenticated', USER_A, async (c) => {
-      expect((await c.query(`update public.transactions set amount_minor = 1 where id = $1`, [ids.txB])).rowCount).toBe(0);
+      expect(await errorCode(c, `update public.transactions set amount_minor = 1 where id = $1`, [ids.txB])).toBe(PERMISSION_DENIED);
+      expect(await errorCode(c, `update public.transactions set status = 'confirmed' where id = $1`, [ids.txA])).toBe(PERMISSION_DENIED);
       expect(await errorCode(c, `update public.transactions set user_id = $1 where id = $2`, [USER_B, ids.txA])).toBe(PERMISSION_DENIED);
+      expect((await c.query(`update public.cards set alias = 'hack' where id = $1`, [ids.cardB])).rowCount).toBe(0);
+      expect(await errorCode(c, `update public.cards set user_id = $1 where id = $2`, [USER_B, ids.cardA])).toBe(PERMISSION_DENIED);
     });
     const { rows } = await pool.query('select amount_minor from public.transactions where id = $1', [ids.txB]);
     expect(rows[0].amount_minor).toBe('10000');
+    expect((await pool.query('select alias from public.cards where id = $1', [ids.cardB])).rows[0].alias).toBe('Visa');
   });
 
-  it('DELETE: A cannot delete B\'s rows', async () => {
+  it('DELETE: transactions cannot be deleted by clients; A cannot delete B\'s cards', async () => {
     await asRole(pool, 'authenticated', USER_A, async (c) => {
-      expect((await c.query('delete from public.transactions where id = $1', [ids.txB])).rowCount).toBe(0);
+      expect(await errorCode(c, 'delete from public.transactions where id = $1', [ids.txB])).toBe(PERMISSION_DENIED);
+      expect(await errorCode(c, 'delete from public.transactions where id = $1', [ids.txA])).toBe(PERMISSION_DENIED);
       expect((await c.query('delete from public.cards where id = $1', [ids.cardB])).rowCount).toBe(0);
     });
     expect((await pool.query('select 1 from public.transactions where id = $1', [ids.txB])).rowCount).toBe(1);
+    expect((await pool.query('select 1 from public.cards where id = $1', [ids.cardB])).rowCount).toBe(1);
   });
 
   it('provenance tables are read-only for users (written only server-side)', async () => {

@@ -43,3 +43,16 @@ export async function errorCode(c: pg.PoolClient, sql: string, params: unknown[]
     return (e as { code?: string }).code ?? 'unknown';
   }
 }
+
+/** Error message of a failing statement (functions raise stable codes such as 'not_found'); null on success. */
+export async function errorMessage(c: pg.PoolClient, sql: string, params: unknown[] = []): Promise<string | null> {
+  await c.query('savepoint s');
+  try {
+    await c.query(sql, params);
+    await c.query('release savepoint s');
+    return null;
+  } catch (e) {
+    await c.query('rollback to savepoint s');
+    return (e as Error).message;
+  }
+}
