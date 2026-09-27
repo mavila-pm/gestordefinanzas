@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../src/domain/money';
 import { monthlySummary } from '../../src/engine/monthly-summary';
+import { previousMonth } from '../../src/engine/analysis';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../src/web/auth-input';
 import { TYPE_LABEL } from '../../src/web/transaction-input';
@@ -33,7 +34,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   return (
     <main className="stack">
       {deleted === '1' && <p role="status" className="ok">Movimiento eliminado.</p>}
-      <h1>Resumen de {month}</h1>
+      <div className="row">
+        <h1>Resumen de {month}</h1>
+        <span className="actions">
+          <Link href={`/app?month=${previousMonth(month)}`}>← Anterior</Link>
+          {month < limaMonth() && <Link href={`/app?month=${previousMonth(month, -1)}`}>Siguiente →</Link>}
+        </span>
+      </div>
+      <p className="actions small"><Link href={`/app/analisis?month=${month}`}>Ver análisis</Link><Link href={`/app/movimientos?month=${month}`}>Ver todos los movimientos</Link><a href={`/app/exportar?month=${month}`}>Exportar CSV</a></p>
       {summaries.map((s) => {
         const m = (v: number) => formatMoney({ amountMinor: Math.abs(v), currency: s.currency });
         return (

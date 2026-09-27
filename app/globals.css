@@ -30,3 +30,9 @@ a.button { display: inline-block; padding: 10px 16px; border-radius: 8px; text-d
 .check { display: flex; gap: 8px; align-items: flex-start; } .check input { width: auto; margin-top: 4px; }
 button.danger { background: var(--err); }
 textarea { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; resize: vertical; }
+.filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; } .filters > label { min-width: 140px; flex: 1; } .filters .grow { flex: 3; min-width: 200px; }
+.table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; } .table th, .table td { text-align: left; padding: 6px 4px; border-top: 1px solid var(--line); } .table th { color: var(--muted); font-weight: 500; }
+.bars { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.bars li { display: grid; grid-template-columns: 70px 1fr; gap: 4px 8px; align-items: center; }
+.bar-track { display: grid; gap: 2px; } .bar { display: block; height: 8px; border-radius: 4px; min-width: 2px; }
+.bar.income { background: var(--ok); } .bar.expense { background: var(--warn); } .bar-values { grid-column: 2; }
