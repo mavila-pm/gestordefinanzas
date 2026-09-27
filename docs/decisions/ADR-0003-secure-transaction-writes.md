@@ -1,6 +1,6 @@
 # ADR-0003 — Sensitive transaction writes go through audited database functions
 
-**Status:** PROPOSED (TASK-004) · 2026-09-27 · pending Product Owner approval and application to the real project
+**Status:** APPROVED by Mauro (Product Owner) · applied to `jeloegnvaxlfqjntbbyy` on 2026-09-27 (migration 000004)
 
 ## Context
 Until TASK-003, authenticated users could INSERT/UPDATE/DELETE their own `transactions` directly with the Supabase

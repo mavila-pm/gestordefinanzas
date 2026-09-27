@@ -27,4 +27,4 @@ Direct INSERT/UPDATE/DELETE on `transactions` is revoked from `authenticated`. W
 NOLOGIN, no BYPASSRLS). `app_writer` has its own RLS policies bound to the caller's JWT, so RLS still applies inside
 the functions; it has no DELETE/TRUNCATE and can only add `manual` provenance. Other users' rows answer `not_found`.
 Evidence: `tests/db/secure-writes.test.ts` (A/B isolation, validation, audit, second barrier, financial rules).
-Status on the real project: pending application of migration 000004 (`docs/runbooks/supabase-migrations.md`).
+Status on the real project: applied 2026-09-27 and verified by E2E 46/46 (`docs/runbooks/e2e.md`).

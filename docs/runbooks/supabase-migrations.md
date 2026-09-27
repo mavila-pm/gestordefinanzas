@@ -18,7 +18,7 @@
 | 20260927000001_financial_core.sql | 20260927203511_financial_core | 2026-09-27 |
 | 20260927000002_harden_rls_auto_enable.sql | 20260927203531_harden_rls_auto_enable | 2026-09-27 |
 | 20260927000003_rls_performance.sql | applied as rls_performance | 2026-09-27 |
-| 20260927000004_secure_transaction_writes.sql | **NOT applied** — awaiting PO approval (TASK-004) | — |
+| 20260927000004_secure_transaction_writes.sql | 20260927215130_secure_transaction_writes (approved by Mauro) | 2026-09-27 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
@@ -32,3 +32,12 @@ anon denied; `ensure_rls` event trigger still enables RLS on new tables. Post-ch
   from public/anon/authenticated (migration 000002).
 - Default privileges on new tables grant anon/authenticated TRUNCATE/REFERENCES/TRIGGER/MAINTAIN;
   migration 000001 revokes all and grants explicitly. Local shim mirrors this.
+
+## Post-check of 000004 (2026-09-27)
+- Complete, not partial: 9 functions present; the 3 write functions are SECURITY DEFINER owned by `app_writer`
+  (NOLOGIN, no BYPASSRLS, no CREATEROLE); temporary CREATE on `public` revoked; `authenticated` has only SELECT on
+  `transactions` and `audit_events`; no TRUNCATE/REFERENCES/TRIGGER for anon/authenticated/app_writer; anon has no
+  table privilege; every public table has RLS.
+- Security advisors: only `0029 authenticated_security_definer_function_executable` ×3 (WARN) for the three
+  write functions — intended (ADR-0003). Performance advisors: INFO only (pre-existing institution FKs, unused
+  indexes on an empty database).
