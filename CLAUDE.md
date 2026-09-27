@@ -7,7 +7,8 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - `npm install`
 - `npm test` — Vitest
 - `npm run typecheck`
-- `npm run check` — typecheck + tests (run before every push)
+- `npm run check` — typecheck + unit tests (run before every push)
+- `npm run test:db` — throwaway PostgreSQL: migrations + RLS + Postgres repository tests (run when touching SQL or persistence)
 
 ## Permanent rules
 - SOURCE -> NORMALIZED EVENT -> FINANCIAL ENGINE. No bank/provider-specific code outside `src/ingestion/adapters/`.
@@ -21,6 +22,7 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - Fixtures: `SYNTHETIC_FIXTURE` or `REAL_ANONYMIZED` only. Templates without real samples are `SYNTHETIC_UNVERIFIED`, never VERIFIED.
 - Parsers are versioned (`BCP_EMAIL_V1`, ...); real samples that break a template -> new version, keep old.
 - Greenfield project (no prior prototype).
+- Every new table: RLS + composite `(id, user_id)` FKs; `tests/db/rls.test.ts` guard must stay green. Schema changes only via `supabase/migrations/`.
 - Report states honestly: IMPLEMENTED / VERIFIED (reproducible evidence) / APPROVED.
 
 ## Docs index
@@ -28,4 +30,6 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - `docs/architecture/ingestion.md` — pipeline and parser coverage
 - `docs/architecture/bcp-evidence.md` — observed vs assumed BCP facts
 - `tests/fixtures/bcp/samples/README.md` — adding real anonymized samples
+- `docs/security/rls.md` — RLS model and accepted debt
+- `docs/runbooks/database-tests.md`
 - `docs/decisions/` — ADRs

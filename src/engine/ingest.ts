@@ -4,7 +4,7 @@ import { defaultAdapterRegistry } from '../ingestion/adapter-registry';
 import { deriveExternalEventId, isWithinSizeLimit, toPlainText } from '../ingestion/sanitize';
 import { categorize, normalizeMerchant, type MerchantRule } from './categorizer';
 import { financialFingerprint } from './fingerprint';
-import type { EventOutcome, TransactionRepository } from './repository';
+import { DuplicateSourceError, type EventOutcome, type TransactionRepository } from './repository';
 
 /** Cross-source window: email and SMS of the same operation arrive with slightly different times. */
 export const STRONG_MATCH_WINDOW_MIN = 10;
@@ -102,6 +102,26 @@ export async function ingestRawEvent(
     return done(outcome, null, `${parsed.reason}: ${parsed.detail}`, parsed.parserVersion);
   }
   const e = parsed.event;
+  try {
+    return await persist(raw, e, externalEventId, ctx, repo, done);
+  } catch (err) {
+    // A concurrent delivery of the same event won the race: still exactly one transaction.
+    if (!(err instanceof DuplicateSourceError)) throw err;
+    const winner = await repo.findBySource(ctx.userId, raw.channel, externalEventId);
+    return done('duplicate_same_event', winner?.id ?? null, 'concurrent duplicate', e.parserVersion);
+  }
+}
+
+type Done = (outcome: EventOutcome, transactionId: string | null, detail: string | null, parserVersion: string | null) => Promise<IngestResult>;
+
+async function persist(
+  raw: RawFinancialEvent,
+  e: NormalizedFinancialEvent,
+  externalEventId: string,
+  ctx: UserContext,
+  repo: TransactionRepository,
+  done: Done,
+): Promise<IngestResult> {
 
   const source = {
     channel: e.channel, externalEventId, parserVersion: e.parserVersion,

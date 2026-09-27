@@ -30,6 +30,11 @@ export interface CandidateQuery {
   to: string;
 }
 
+/** Thrown when a (user, channel, externalEventId) source already exists: Level-1 idempotency under concurrency. */
+export class DuplicateSourceError extends Error {
+  constructor() { super('duplicate source event'); this.name = 'DuplicateSourceError'; }
+}
+
 /** Persistence port. The in-memory version backs unit tests; PostgreSQL implements it next. */
 export interface TransactionRepository {
   findBySource(userId: string, channel: SourceChannel, externalEventId: string): Promise<Transaction | null>;
@@ -75,7 +80,16 @@ export class InMemoryTransactionRepository implements TransactionRepository {
     return matches.sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))[0] ?? null;
   }
 
+  private assertNewSource(userId: string, sources: readonly TransactionSource[]) {
+    for (const src of sources) {
+      const clash = [...this.txs.values()].some((t) => t.userId === userId
+        && t.sources.some((s) => s.channel === src.channel && s.externalEventId === src.externalEventId));
+      if (clash) throw new DuplicateSourceError();
+    }
+  }
+
   async insert(t: Omit<Transaction, 'id'>, bankOperationId: string | null) {
+    this.assertNewSource(t.userId, t.sources);
     const tx = { ...t, id: `tx_${++this.seq}`, bankOperationId };
     this.txs.set(tx.id, tx);
     return tx;
@@ -84,6 +98,7 @@ export class InMemoryTransactionRepository implements TransactionRepository {
   async addSource(id: string, source: TransactionSource, patch: Partial<Transaction>) {
     const t = this.txs.get(id);
     if (!t) throw new Error(`transaction ${id} not found`);
+    this.assertNewSource(t.userId, [source]);
     const next = { ...t, ...patch, sources: [...t.sources, source] };
     this.txs.set(id, next);
     return next;

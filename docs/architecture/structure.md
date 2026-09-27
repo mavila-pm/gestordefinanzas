@@ -9,9 +9,11 @@ src/
     adapter-registry.ts   The only place that lists banks
   engine/            Dedupe, categorization, confidence, manual entry, calculations
                      Persistence via TransactionRepository port
+  infrastructure/postgres/  PgTransactionRepository (server-side, explicit user_id filters)
 tests/
   fixtures/bcp/      SYNTHETIC_FIXTURE builders + samples/ (golden, REAL_ANONYMIZED or SYNTHETIC)
-supabase/migrations/ [next] Versioned SQL schema + RLS
+supabase/migrations/ Versioned SQL schema + RLS (supabase/tests/: local-only shim)
+scripts/test-db.sh   Throwaway PostgreSQL for DB tests
 app/                 [next] Next.js App Router (public + /app/*), server-side entitlement checks
 docs/                product/ (binding spec), architecture/, decisions/ (ADRs), security/, runbooks/
 ```

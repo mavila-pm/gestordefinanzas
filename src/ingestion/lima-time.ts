@@ -34,3 +34,10 @@ export function parseNumericDate(s: string): string | null {
   if (!m) return null;
   return limaIso(Number(m[3]), Number(m[2]), Number(m[1]), Number(m[4]), Number(m[5]));
 }
+
+/** Formats an instant as America/Lima local ISO with offset (-05:00). */
+export function toLimaIso(d: Date): string {
+  const l = new Date(d.getTime() - 5 * 3600_000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${l.getUTCFullYear()}-${p(l.getUTCMonth() + 1)}-${p(l.getUTCDate())}T${p(l.getUTCHours())}:${p(l.getUTCMinutes())}:${p(l.getUTCSeconds())}-05:00`;
+}
