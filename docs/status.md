@@ -27,5 +27,8 @@ States: IMPLEMENTED (code exists) / VERIFIED (reproducible evidence) / APPROVED 
 | Movement deletion vs "Ignorar" | TASK-004, spec §10 | Deletion not offered; "Ignorar" excludes without destroying |
 
 ## External blockers
-- 2026-09-27: Vercel preview not created — the PO's Vercel access is temporarily locked by too many 2FA attempts.
-  Not to be worked around. Does not block development.
+- 2026-09-27: Vercel access was temporarily locked by 2FA — **resolved**. The PO created the Vercel project
+  `gestordefinanzas` (Git: `mavila-pm/gestordefinanzas`) with the two public `NEXT_PUBLIC_SUPABASE_*` variables scoped
+  to Preview. The first `main` deployment failed because `main` does not contain the Next.js app yet (expected; no
+  merge to `main` until approved). Next: Preview deployment of `claude/beautiful-keller-ikxlrj` for the TASK-003
+  manual email test.
