@@ -188,3 +188,12 @@ export async function saveProfileAction(_prev: ActionState, form: FormData): Pro
   if (error) return { error: errorText(null) };
   return done('Guardado.');
 }
+
+export async function rotateAddressAction(_prev: ActionState, _form: FormData): Promise<ActionState> {
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  // The random part is generated in the database (rotate_email_connection); the old address stops working.
+  const { error } = await supabase.rpc('rotate_email_connection');
+  if (error) return dbError(error);
+  return done('Nueva dirección generada. La anterior dejó de recibir correos.');
+}
