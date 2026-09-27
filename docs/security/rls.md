@@ -5,7 +5,9 @@ real Supabase project (`docs/runbooks/supabase-migrations.md`). Supabase securit
 
 | Table | anon | authenticated | service_role (server) |
 |---|---|---|---|
-| profiles, accounts, cards, merchant_rules, transactions | none | CRUD own rows (`user_id = auth.uid()`) | all |
+| profiles, accounts, cards, merchant_rules | none | CRUD own rows (`user_id = auth.uid()`) | all |
+| transactions | none | **read own only**; writes only via the functions below (TASK-004) | all |
+| audit_events | none | read own only (append-only, written by the functions) | all |
 | categories | none | read global + own; write own only | all |
 | institutions | none | read | all |
 | transaction_sources, financial_events | none | **read own only** (provenance is server-written) | all |
@@ -19,6 +21,10 @@ Defense in depth:
 - Guard test: every table in `public` must have RLS enabled; a new table without RLS fails CI.
 - Ingestion runs server-side and filters every query by `user_id` explicitly (`PgTransactionRepository`).
 
-Accepted debt (DEUDA ACEPTADA, fix before public beta): authenticated users can insert/update their own
-transactions directly (Supabase client), including fields like `status`/`confidence`. Impact limited to the
-user's own data. Resolution: route writes through server actions and narrow column grants (TASK with manual UI).
+## Write path (TASK-004, ADR-0003) — closes the former accepted debt
+Direct INSERT/UPDATE/DELETE on `transactions` is revoked from `authenticated`. Writes go through
+`create_manual_transaction`, `review_transaction` and `correct_transaction` (SECURITY DEFINER, owned by `app_writer`:
+NOLOGIN, no BYPASSRLS). `app_writer` has its own RLS policies bound to the caller's JWT, so RLS still applies inside
+the functions; it has no DELETE/TRUNCATE and can only add `manual` provenance. Other users' rows answer `not_found`.
+Evidence: `tests/db/secure-writes.test.ts` (A/B isolation, validation, audit, second barrier, financial rules).
+Status on the real project: pending application of migration 000004 (`docs/runbooks/supabase-migrations.md`).

@@ -15,3 +15,15 @@ button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--ac
 button:disabled { opacity: .6; } button.link { background: none; color: var(--accent); padding: 0; }
 a { color: var(--accent); }
 .topbar { display: flex; gap: 16px; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--card); flex-wrap: wrap; }
+select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; }
+fieldset.bare { border: 0; padding: 0; margin: 0; min-width: 0; } fieldset.bare > * + * { margin-top: 16px; }
+form.inline fieldset.bare > * + * { margin-top: 0; }
+.plain { list-style: none; padding: 0; margin: 0; }
+.row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; } .row h1 { margin: 0; font-size: 1.25rem; }
+.amount { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reasons { margin: 4px 0; padding-left: 20px; color: var(--warn); } .small { font-size: .875rem; margin: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button.secondary, a.button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+a.button { display: inline-block; padding: 10px 16px; border-radius: 8px; text-decoration: none; }
+.nav { display: flex; gap: 16px; flex-wrap: wrap; } .badge { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 10px; background: var(--warn); color: var(--card); font-size: .75rem; text-align: center; }
+.narrow-md { max-width: 640px; }

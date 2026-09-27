@@ -24,3 +24,14 @@ A expenses = S/ 100.00 (card payment and ATM withdrawal excluded), A sees own me
 withdrawal shown apart, logout, neutral forgot-password and signup-existing messages.
 Fix needed on first run: the test's `[role=alert]` selector also matched Next.js's route announcer; it now
 excludes `#__next-route-announcer__` (test defect, not an app defect). Post-check: 0 probe users, identities or rows left.
+
+## TASK-004 — review queue, manual entry, secure writes (`tests/e2e/review-manual.e2e.ts`)
+Requires migration 000004 applied to the project. Seed (SQL tool), then run with the same env plus
+`E2E_B_TX_ID=<B's transaction id>` and the two `NEXT_PUBLIC_SUPABASE_*` values:
+- A: `expense` S/100 PEN, BCP, `card_last4 '4821'`, merchant "E2E REVIEW A", category Otros, `status review_required`,
+  `confidence medium`, 2026-09; plus an `sms` source (`BCP_SMS_V1`) and a `financial_events` row (`created`,
+  detail `card_not_registered`). No cards registered for A.
+- B: `expense` S/50 "E2E SECRET B", `review_required`.
+Checks: reasons in plain language, card registration + correction + confirm, audit shows the original amount,
+manual withdrawal not counted as expense, B's movement is a 404, and direct API writes with A's JWT are denied.
+Clean up as in step 4 (cascade removes rows, sources, events and audit events).

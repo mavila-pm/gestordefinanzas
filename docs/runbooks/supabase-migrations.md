@@ -18,6 +18,7 @@
 | 20260927000001_financial_core.sql | 20260927203511_financial_core | 2026-09-27 |
 | 20260927000002_harden_rls_auto_enable.sql | 20260927203531_harden_rls_auto_enable | 2026-09-27 |
 | 20260927000003_rls_performance.sql | applied as rls_performance | 2026-09-27 |
+| 20260927000004_secure_transaction_writes.sql | **NOT applied** — awaiting PO approval (TASK-004) | — |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
