@@ -14,7 +14,10 @@ tests/
   fixtures/bcp/      SYNTHETIC_FIXTURE builders + samples/ (golden, REAL_ANONYMIZED or SYNTHETIC)
 supabase/migrations/ Versioned SQL schema + RLS (supabase/tests/: local-only shim)
 scripts/test-db.sh   Throwaway PostgreSQL for DB tests
-app/                 [next] Next.js App Router (public + /app/*), server-side entitlement checks
+app/                 Next.js 16 App Router: public + (auth) pages, /auth/confirm, /app dashboard
+lib/supabase/        SSR clients (server.ts, proxy.ts); proxy.ts at root guards /app/*
+components/          Client components (forms)
+src/web/             Pure helpers for the web layer (validation, Lima month range)
 docs/                product/ (binding spec), architecture/, decisions/ (ADRs), security/, runbooks/
 ```
 

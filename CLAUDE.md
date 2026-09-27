@@ -8,6 +8,7 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - `npm test` — Vitest
 - `npm run typecheck`
 - `npm run check` — typecheck + unit tests (run before every push)
+- `npm run dev` / `npm run build` — Next.js app (needs `.env.local`, see `.env.example`; public values only)
 - `npm run test:db` — throwaway PostgreSQL: migrations + RLS + Postgres repository tests (run when touching SQL or persistence)
 
 ## Permanent rules
@@ -32,6 +33,8 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - `docs/architecture/bcp-evidence.md` — observed vs assumed BCP facts
 - `tests/fixtures/bcp/samples/README.md` — adding real anonymized samples
 - `docs/security/rls.md` — RLS model and accepted debt
+- `docs/architecture/auth.md` — auth flow + manual Supabase Auth settings
+- `docs/runbooks/e2e.md` — E2E against real Supabase
 - `docs/runbooks/database-tests.md`
 - `docs/runbooks/supabase-migrations.md` — Supabase project ref, applied migrations, RLS probe
 - `docs/decisions/` — ADRs
