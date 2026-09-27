@@ -52,3 +52,9 @@ confidence) with `persistAs: 'import'`:
   `import_insert_transaction` / `import_add_source` / `import_record_event` (migration 000007);
 - the pasted text is not stored (spec §33).
 Ingestion context (own cards, own accounts, learned merchant rules) comes from `loadUserContext` (TASK-005).
+
+## Dedupe after user corrections (TASK-013)
+`transactions.reported_amount_minor` / `reported_occurred_at` keep what the source reported; a trigger fills them on
+insert and makes them immutable on update (even for the audited write functions). `findCandidates` matches the
+current OR the reported values, so a late second source of a corrected movement merges (or is flagged as
+possible duplicate) instead of creating a second confirmed movement. The user's corrected values always win.

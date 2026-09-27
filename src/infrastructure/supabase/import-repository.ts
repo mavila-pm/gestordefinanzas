@@ -39,9 +39,13 @@ export class SupabaseImportRepository implements TransactionRepository {
   }
 
   findCandidates(q: CandidateQuery) {
+    // Current OR bank-reported values (migration 000012): corrections never hide a movement from dedupe.
+    const amount = String(q.amountMinor);
     return this.many(this.sb.from('transactions').select(TRANSACTION_SELECT)
-      .eq('institution_code', q.institution).eq('amount_minor', q.amountMinor).eq('currency', q.currency)
-      .gte('occurred_at', q.from).lte('occurred_at', q.to).order('created_at').limit(50));
+      .eq('institution_code', q.institution).eq('currency', q.currency)
+      .or(`and(amount_minor.eq.${amount},occurred_at.gte.${q.from},occurred_at.lte.${q.to}),`
+        + `and(reported_amount_minor.eq.${amount},reported_occurred_at.gte.${q.from},reported_occurred_at.lte.${q.to})`)
+      .order('created_at').limit(50));
   }
 
   async findRefundOriginal(_userId: string, r: Parameters<TransactionRepository['findRefundOriginal']>[1]) {

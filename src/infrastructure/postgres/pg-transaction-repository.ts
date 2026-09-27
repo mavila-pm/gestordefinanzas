@@ -90,8 +90,10 @@ export class PgTransactionRepository implements TransactionRepository {
   }
 
   async findCandidates(q: CandidateQuery) {
-    const { rows } = await this.pool.query<TxRow>(`${SELECT_TX} where t.user_id = $1 and t.institution_code = $2
-      and t.amount_minor = $3 and t.currency = $4 and t.occurred_at between $5 and $6 order by t.created_at`,
+    // Current OR bank-reported values: a user correction must not hide the movement from a late second source.
+    const { rows } = await this.pool.query<TxRow>(`${SELECT_TX} where t.user_id = $1 and t.institution_code = $2 and t.currency = $4
+      and ((t.amount_minor = $3 and t.occurred_at between $5 and $6)
+        or (t.reported_amount_minor = $3 and t.reported_occurred_at between $5 and $6)) order by t.created_at`,
     [q.userId, q.institution, q.amountMinor, q.currency, q.from, q.to]);
     return rows.map(toTransaction);
   }

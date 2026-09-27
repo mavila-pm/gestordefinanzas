@@ -152,4 +152,25 @@ describe.skipIf(!DATABASE_URL)('TASK-005: accounts, learning from corrections, m
       await c.query('rollback');
     });
   });
+
+  it('TASK-013: after the user corrects the amount, the late SMS of the same purchase merges (no double count)', async () => {
+    const ctx = await contextFor(pool, USER_A);
+    await ingestRawEvent(fx.purchasePenEmail(), ctx, repo);
+    const [t] = await repo.listTransactions(USER_A);
+    await asUser(pool, USER_A, (c) => c.query('select public.correct_transaction($1, $2::jsonb, true)', [t!.id, JSON.stringify({ amount_minor: 9550 })]));
+    const r = await ingestRawEvent(fx.purchasePenSms(), ctx, repo);
+    expect(r.outcome).toBe('merged_cross_source');
+    const txs = await repo.listTransactions(USER_A);
+    expect(txs).toHaveLength(1);
+    expect(txs[0]).toMatchObject({ amountMinor: 9550 }); // the user's correction wins
+    expect(txs[0]!.sources.map((s) => s.channel).sort()).toEqual(['email', 'sms']);
+    expect(monthlySummary(txs, '2026-09', 'PEN').expensesMinor).toBe(9550);
+  });
+
+  it('TASK-013: bank-reported values are immutable for everyone', async () => {
+    await ingestRawEvent(fx.purchasePenEmail(), await contextFor(pool, USER_A), repo);
+    await pool.query(`update public.transactions set reported_amount_minor = 1, reported_occurred_at = now(), amount_minor = 5000 where user_id = $1`, [USER_A]);
+    expect((await pool.query('select reported_amount_minor, amount_minor from public.transactions where user_id = $1', [USER_A])).rows[0])
+      .toEqual({ reported_amount_minor: '10000', amount_minor: '5000' });
+  });
 });
