@@ -51,3 +51,10 @@ Plus: "Confirmar" button (review_transaction) verified on the real project; serv
 audit events, cards, accounts, user categories and profiles.
 First run failures were test defects (fixed): an unscoped `button[type=submit]` hit the header logout button,
 and JSON comparisons depended on jsonb key order.
+
+### Regression — 2026-09-27 (after migration 000004 and the auth redirect fix)
+`tests/e2e/auth-dashboard.e2e.ts` **13/13** against the real project (11 original checks + 2 new: signup and
+recovery store the post-link destination in the `gf_auth_next` cookie). Supabase edge logs confirm
+`redirect_to=http://localhost:3000/auth/confirm` (no query string) for `/signup` and `/recover`.
+Test fix: logout now waits for the `/login` URL (server-action redirect is a client-side navigation, so
+`networkidle` could time out). Probe users deleted; 0 left.

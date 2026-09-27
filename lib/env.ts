@@ -12,10 +12,24 @@ export function supabasePublicEnv(): { url: string; key: string } {
 
 /**
  * Base URL for auth email links. Explicit NEXT_PUBLIC_SITE_URL wins; on a Vercel preview it falls back to the
- * stable branch URL (a Vercel system variable, not request input), so links never point at localhost.
+ * stable branch URL (then the deployment URL) — Vercel system variables, never request input — so preview links
+ * never point at localhost.
  */
 export function siteUrl(env: Record<string, string | undefined> = process.env): string {
-  if (env.NEXT_PUBLIC_SITE_URL) return env.NEXT_PUBLIC_SITE_URL;
-  if (env.VERCEL_ENV === 'preview' && env.VERCEL_BRANCH_URL) return `https://${env.VERCEL_BRANCH_URL}`;
+  if (env.NEXT_PUBLIC_SITE_URL) return env.NEXT_PUBLIC_SITE_URL.replace(/\/+$/, '');
+  if (env.VERCEL_ENV === 'preview') {
+    const host = env.VERCEL_BRANCH_URL || env.VERCEL_URL;
+    if (host) return `https://${host}`;
+  }
   return 'http://localhost:3000';
+}
+
+/**
+ * The exact callback sent as emailRedirectTo / redirectTo. It carries NO query string: Supabase matches the
+ * redirect against the "Redirect URLs" allow list as a whole string, so `/auth/confirm?next=…` does not match an
+ * entry `/auth/confirm` and Supabase silently falls back to the Site URL (localhost). The post-confirmation
+ * destination travels in the AUTH_NEXT_COOKIE instead (src/web/auth-input.ts).
+ */
+export function authCallbackUrl(env: Record<string, string | undefined> = process.env): string {
+  return `${siteUrl(env)}/auth/confirm`;
 }

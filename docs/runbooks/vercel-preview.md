@@ -18,6 +18,8 @@ Scope: only the `gestordefinanzas` Vercel project, Preview environment. No produ
    not the per-commit URL: it is stable across pushes and is the one Supabase must allow.
 
 ## Supabase (Authentication → URL Configuration)
-- Redirect URLs: add `https://<branch-url>/auth/confirm`. Keep `http://localhost:3000/auth/confirm`.
+- Redirect URLs: add exactly `https://<branch-url>/auth/confirm` (the app sends this exact URL, no query string;
+  any difference makes Supabase fall back to the Site URL). Keep `http://localhost:3000/auth/confirm`.
+  Current branch URL: `gestordefinanzas-git-claude-beautifu-cb0485-mavila-pms-projects.vercel.app`.
 - Site URL: leave `http://localhost:3000` (the app sends an explicit `redirectTo` that the allow list accepts).
 - Remove the preview Redirect URL when validation ends.

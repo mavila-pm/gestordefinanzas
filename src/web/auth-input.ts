@@ -41,3 +41,19 @@ export function limaMonthRange(month: string): { from: string; to: string } | nu
   const to = new Date(Date.UTC(y, mo, 1, 5));
   return { from: from.toISOString(), to: to.toISOString() };
 }
+
+/**
+ * Where to go after an email link lands on /auth/confirm. Set by the signup / password-reset actions because the
+ * callback URL itself must stay query-free (see lib/env.ts authCallbackUrl). httpOnly, short-lived, scoped to /auth.
+ */
+export const AUTH_NEXT_COOKIE = 'gf_auth_next';
+
+export function authNextCookieOptions(secure: boolean) {
+  return { httpOnly: true, secure, sameSite: 'lax' as const, path: '/auth', maxAge: 60 * 60 };
+}
+
+/** A `next` query param (token_hash email templates) wins; else the cookie; always same-origin, default /app. */
+export function resolveAuthNext(queryNext: unknown, cookieNext: unknown): string {
+  if (typeof queryNext === 'string' && queryNext) return safeNextPath(queryNext);
+  return safeNextPath(cookieNext);
+}

@@ -1,9 +1,15 @@
 'use server';
 
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { siteUrl } from '../../lib/env';
+import { authCallbackUrl } from '../../lib/env';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
-import { parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
+import { AUTH_NEXT_COOKIE, authNextCookieOptions, parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
+
+/** Remembers where the email link should land (the callback URL itself stays query-free). */
+async function rememberAuthNext(path: '/app' | '/reset-password') {
+  (await cookies()).set(AUTH_NEXT_COOKIE, path, authNextCookieOptions(process.env.NODE_ENV === 'production'));
+}
 
 export interface FormState {
   error?: string;
@@ -31,10 +37,11 @@ export async function signup(_prev: FormState, form: FormData): Promise<FormStat
   const problem = passwordProblem(form.get('password'));
   if (problem) return { error: problem };
   const supabase = await createSupabaseServerClient();
+  await rememberAuthNext('/app');
   const { error } = await supabase.auth.signUp({
     email,
     password: form.get('password') as string,
-    options: { emailRedirectTo: `${siteUrl()}/auth/confirm?next=/app` },
+    options: { emailRedirectTo: authCallbackUrl() },
   });
   if (error?.status === 429) return { error: 'Demasiados intentos. Espera unos minutos.' };
   if (error && error.code === 'weak_password') return { error: 'La contraseña es demasiado débil.' };
@@ -46,9 +53,8 @@ export async function requestPasswordReset(_prev: FormState, form: FormData): Pr
   const email = parseEmail(form.get('email'));
   if (!email) return { error: 'Ingresa un correo válido.' };
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${siteUrl()}/auth/confirm?next=/reset-password`,
-  });
+  await rememberAuthNext('/reset-password');
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: authCallbackUrl() });
   if (error?.status === 429) return { error: 'Demasiados intentos. Espera unos minutos.' };
   return { message: RESET_SENT };
 }

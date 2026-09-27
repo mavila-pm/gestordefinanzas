@@ -10,6 +10,11 @@
   Messages never reveal whether an email is registered. Password 8–72 chars (bcrypt limit).
 - Email links land on `/auth/confirm`, which accepts `token_hash`+`type` (works across devices) or `code` (PKCE,
   same browser only). `next` is restricted to same-origin paths (open-redirect guard, unit-tested).
+- `emailRedirectTo` / `redirectTo` are EXACTLY `<site>/auth/confirm` (`authCallbackUrl()`), with no query string:
+  Supabase matches the redirect against the Redirect URLs allow list as a whole string, and an unmatched redirect
+  silently falls back to the Site URL (root cause of the 2026-09-27 Preview failure: `…/auth/confirm?next=/app`
+  vs entry `…/auth/confirm` → `http://localhost:3000/?code=…`). The destination after the link (`/app` or
+  `/reset-password`) is kept in the httpOnly cookie `gf_auth_next` (path `/auth`, 1 h, consumed on success).
 - Security headers: X-Frame-Options DENY, nosniff, strict referrer, restrictive Permissions-Policy.
 
 ## Supabase dashboard settings (manual, Product Owner) — Authentication section

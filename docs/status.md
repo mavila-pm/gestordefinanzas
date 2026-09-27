@@ -4,7 +4,7 @@ States: IMPLEMENTED (code exists) / VERIFIED (reproducible evidence) / APPROVED 
 
 | Task | State | Evidence | Pending |
 |---|---|---|---|
-| TASK-003 — Auth + RLS dashboard on real Supabase | **VERIFIED** · **NOT APPROVED** | E2E 11/11 against project `jeloegnvaxlfqjntbbyy` (2026-09-27, `docs/runbooks/e2e.md`) | PO manual test via Vercel Preview (after 2FA access is recovered): signup + email confirmation, password recovery + password change, login. Full regression re-run after migration 000004 (see below). |
+| TASK-003 — Auth + RLS dashboard on real Supabase | **VERIFIED** · **NOT APPROVED** | E2E 11/11 against project `jeloegnvaxlfqjntbbyy` (2026-09-27, `docs/runbooks/e2e.md`) | PO manual test via Vercel Preview: signup + email confirmation, password recovery + password change, login. First attempt (2026-09-27) FAILED: confirmation link went to `http://localhost:3000/?code=…`; fixed (query-free callback, see `docs/architecture/auth.md`); retest pending. |
 | TASK-004 — Review queue, manual entry, secure writes | **APPROVED** (PO, 2026-09-27) | Migration `20260927215130_secure_transaction_writes` applied and checked complete; E2E 46/46 on the real project; `npm run test:db` 39/39; unit tests | PO manual browser walkthrough (below). |
 | TASK-005 | Not started — design options under PO review | — | PO decision between route A and route B |
 
@@ -13,9 +13,7 @@ States: IMPLEMENTED (code exists) / VERIFIED (reproducible evidence) / APPROVED 
   the Vercel Preview (`docs/runbooks/vercel-preview.md`). Blocks TASK-003 APPROVED.
 - **TASK-004 manual validation** — PO reviews in a browser the "Por revisar" queue, a correction and a manual entry
   once a Preview exists. Does not reopen the approval unless a defect is found.
-- **Regression pending** — `tests/e2e/auth-dashboard.e2e.ts` (TASK-003) has NOT been re-run in full after migration
-  000004. The TASK-004 E2E covers login, dashboard figures and isolation, but not logout, the anti-enumeration
-  messages or recovery; it does not replace the TASK-003 run.
+- **Regression after migration 000004** — DONE 2026-09-27: `tests/e2e/auth-dashboard.e2e.ts` 13/13 on the real project.
 
 ## Backlog (known debt, not scheduled)
 | Item | Origin | Note |

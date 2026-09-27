@@ -1,7 +1,8 @@
+import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
-import { safeNextPath } from '../../../src/web/auth-input';
+import { AUTH_NEXT_COOKIE, resolveAuthNext } from '../../../src/web/auth-input';
 
 const TYPES: readonly EmailOtpType[] = ['signup', 'recovery', 'email', 'invite', 'email_change', 'magiclink'];
 
@@ -12,7 +13,8 @@ const TYPES: readonly EmailOtpType[] = ['signup', 'recovery', 'email', 'invite',
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
-  const next = safeNextPath(params.get('next'));
+  const cookieStore = await cookies();
+  const next = resolveAuthNext(params.get('next'), cookieStore.get(AUTH_NEXT_COOKIE)?.value);
   const supabase = await createSupabaseServerClient();
 
   const tokenHash = params.get('token_hash');
@@ -26,6 +28,8 @@ export async function GET(request: NextRequest) {
     ok = !(await supabase.auth.exchangeCodeForSession(code)).error;
   }
 
+  // One-shot: the remembered destination is consumed by the first successful link.
+  if (ok) cookieStore.delete({ name: AUTH_NEXT_COOKIE, path: '/auth' });
   const target = request.nextUrl.clone();
   target.search = '';
   target.pathname = ok ? next.split('?')[0]! : '/login';

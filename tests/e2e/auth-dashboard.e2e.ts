@@ -63,8 +63,8 @@ check('A does NOT see B merchant', !list.includes('E2E SECRET B'), list);
 check('withdrawal shown apart, not as expense', (await page.content()).includes('Retiros de efectivo'));
 
 // 4. Logout
-await page.click('text=Cerrar sesión');
-await page.waitForLoadState('networkidle');
+// Server-action redirect = client-side navigation (no new load event): wait for the URL instead of networkidle.
+await Promise.all([page.waitForURL(/\/login/), page.click('text=Cerrar sesión')]);
 await page.goto(`${BASE}/app`);
 check('after logout /app redirects to /login', page.url().startsWith(`${BASE}/login`), page.url());
 
@@ -74,6 +74,10 @@ await page.fill('input[name=email]', 'nobody-e2e@invalid.test');
 await submit();
 const resetMsg = await page.locator('[role=status], [role=alert]:not(#__next-route-announcer__)').first().textContent();
 check('forgot-password neutral message', !!resetMsg?.includes('Si existe una cuenta'), resetMsg ?? '');
+const nextCookie = (await page.context().cookies()).find((c) => c.name === 'gf_auth_next');
+check('recovery remembers /reset-password in an httpOnly /auth cookie (callback URL stays query-free)',
+  nextCookie?.value === '%2Freset-password' || nextCookie?.value === '/reset-password'
+    ? nextCookie.httpOnly && nextCookie.path === '/auth' : false, JSON.stringify(nextCookie));
 
 // 6. Signup with an already registered email: neutral message (no enumeration)
 await page.goto(`${BASE}/signup`);
@@ -82,6 +86,8 @@ await page.fill('input[name=password]', 'another-pass-123');
 await submit();
 const signupMsg = await page.locator('[role=status], [role=alert]:not(#__next-route-announcer__)').first().textContent();
 check('signup existing email -> neutral message', !!signupMsg?.includes('Si el correo es válido'), signupMsg ?? '');
+const signupCookie = (await page.context().cookies()).find((c) => c.name === 'gf_auth_next');
+check('signup remembers /app for the confirmation link', decodeURIComponent(signupCookie?.value ?? '') === '/app', JSON.stringify(signupCookie));
 
 await browser.close();
 for (const [n, ok, d] of results) console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${ok || !d ? '' : `  [${d.slice(0, 160)}]`}`);
