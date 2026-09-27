@@ -1,6 +1,7 @@
 import { formatMoney, type Currency } from '../domain/money';
 import { financialEffect } from '../domain/financial-effect';
 import type { Transaction } from '../domain/types';
+import type { BudgetStatus } from './budgets';
 
 /** Alert engine (spec §46): CRITICAL / IMPORTANT / INFORMATIONAL, few and relevant (no bombarding). */
 export type AlertLevel = 'CRITICAL' | 'IMPORTANT' | 'INFORMATIONAL';
@@ -24,12 +25,23 @@ export function buildAlerts(input: {
   unresolvedEvents30d: number;
   now: Date;
   currency: Currency;
+  budgets?: readonly BudgetStatus[];
 }): Alert[] {
   const out: Alert[] = [];
   if (input.pendingCount > 0) {
     const stale = input.oldestPendingDays !== null && input.oldestPendingDays > 7;
     out.push({ level: stale ? 'IMPORTANT' : 'INFORMATIONAL', code: 'pending', href: '/app/revisar',
       text: `${input.pendingCount} movimiento(s) esperan tu revisión${stale ? `; el más antiguo, hace ${input.oldestPendingDays} días` : ''}. No cuentan en tus cifras hasta confirmarlos.` });
+  }
+  for (const b of input.budgets ?? []) {
+    const m = (v: number) => formatMoney({ amountMinor: v, currency: b.currency });
+    if (b.state === 'exceeded') {
+      out.push({ level: 'IMPORTANT', code: `budget_exceeded:${b.category}`, href: '/app/presupuestos',
+        text: `Presupuesto excedido: ${b.category} lleva ${m(b.spentMinor)} de ${m(b.amountMinor)} (${m(-b.remainingMinor)} por encima).` });
+    } else if (b.state === 'warning') {
+      out.push({ level: 'INFORMATIONAL', code: `budget_warning:${b.category}`, href: '/app/presupuestos',
+        text: `${b.category}: ya usaste el ${Math.floor(b.ratio * 100)}% de tu presupuesto (${m(b.spentMinor)} de ${m(b.amountMinor)}).` });
+    }
   }
   if (input.unresolvedEvents30d > 0) {
     out.push({ level: 'INFORMATIONAL', code: 'unresolved', href: '/app/movimientos/nuevo',

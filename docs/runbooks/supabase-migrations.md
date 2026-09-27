@@ -23,6 +23,7 @@
 | 20260928000006_import_channel.sql | import_channel | 2026-09-27 |
 | 20260928000007_import_write_path.sql | import_write_path (import functions owned by app_writer; writer inserts only manual/import sources and import events) | 2026-09-27 |
 | 20260928000008_email_bridge.sql | email_bridge (checked: RLS everywhere, deliveries ledger server-only, rotate owned by app_writer) | 2026-09-27 |
+| 20260928000009_budgets.sql | budgets | 2026-09-27 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
@@ -45,3 +46,8 @@ anon denied; `ensure_rls` event trigger still enables RLS on new tables. Post-ch
 - Security advisors: only `0029 authenticated_security_definer_function_executable` ×3 (WARN) for the three
   write functions — intended (ADR-0003). Performance advisors: INFO only (pre-existing institution FKs, unused
   indexes on an empty database).
+
+## Advisors after 000009 (2026-09-27)
+- WARN 0029 ×8: the audited SECURITY DEFINER write functions (ADR-0003) — intended.
+- INFO 0008: `inbound_deliveries` has RLS and no policy — intended (server-only ledger, no client grants).
+- WARN leaked password protection disabled — Auth setting for the PO (may require a paid plan).

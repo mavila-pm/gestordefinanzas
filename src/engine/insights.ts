@@ -27,7 +27,7 @@ export function mainInsight(txs: readonly Transaction[], month: string, currency
   return null;
 }
 
-export type MilestoneKind = 'consistency' | 'improvement' | 'monthly_saving';
+export type MilestoneKind = 'consistency' | 'improvement' | 'category_budget' | 'monthly_saving';
 export interface Milestone { kind: MilestoneKind; month: string; text: string }
 
 const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -42,7 +42,7 @@ export function closedMonthMilestone(
   txs: readonly Transaction[],
   closedMonth: string,
   currency: Currency,
-  opts: { firstName?: string | null; dataHealthOk: boolean },
+  opts: { firstName?: string | null; dataHealthOk: boolean; budgets?: readonly import('./budgets').Budget[] },
 ): Milestone | null {
   if (!opts.dataHealthOk) return null;
   const cur = monthlySummary(txs, closedMonth, currency);
@@ -58,6 +58,14 @@ export function closedMonthMilestone(
   }
   if (trusted(prev) && cur.netCashFlowMinor > prev.netCashFlowMinor && prev.netCashFlowMinor > 0) {
     return { kind: 'improvement', month: closedMonth, text: `Felicidades${hello}. Cerraste ${monthName(closedMonth)} con ${m(cur.netCashFlowMinor)} de ahorro, ${m(cur.netCashFlowMinor - prev.netCashFlowMinor)} más que en ${monthName(previousMonth(closedMonth))}.` };
+  }
+  // Category kept under its limit (largest margin), only for categories with real spending.
+  const kept = (opts.budgets ?? []).filter((b) => b.currency === currency)
+    .map((b) => ({ b, spent: cur.expensesByCategory[b.category] ?? 0 }))
+    .filter((x) => x.spent > 0 && x.spent <= x.b.amountMinor)
+    .sort((a, b) => (b.b.amountMinor - b.spent) - (a.b.amountMinor - a.spent))[0];
+  if (kept) {
+    return { kind: 'category_budget', month: closedMonth, text: `Buen cierre${hello}. Mantuviste ${kept.b.category} ${m(kept.b.amountMinor - kept.spent)} por debajo de tu límite en ${monthName(closedMonth)}, y ahorraste ${m(cur.netCashFlowMinor)}.` };
   }
   return { kind: 'monthly_saving', month: closedMonth, text: `Felicidades${hello}. Cerraste ${monthName(closedMonth)} con ${m(cur.netCashFlowMinor)} de ahorro.` };
 }

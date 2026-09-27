@@ -42,3 +42,5 @@ textarea { width: 100%; padding: 10px; border: 1px solid var(--line); border-rad
 .alert { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
 .alert.critical { border-color: var(--err); } .alert.important { border-color: var(--warn); }
 .insight { margin: 0; }
+.progress { display: block; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.progress .fill { display: block; height: 100%; background: var(--ok); } .progress .fill.warning { background: var(--warn); } .progress .fill.exceeded { background: var(--err); }

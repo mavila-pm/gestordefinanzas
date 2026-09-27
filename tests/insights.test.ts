@@ -77,3 +77,37 @@ describe('data health (§58) and alerts (§46)', () => {
     expect(noExpense).toEqual([]);
   });
 });
+
+import { budgetStatus } from '../src/engine/budgets';
+
+describe('budgets (§42, §46)', () => {
+  const txs = [
+    tx({ amountMinor: 30000, category: 'Alimentación' }), tx({ amountMinor: 15000, category: 'Alimentación' }),
+    tx({ type: 'refund', direction: 'inflow', amountMinor: 5000, category: 'Alimentación' }),
+    tx({ amountMinor: 8500, category: 'Transporte' }),
+    tx({ amountMinor: 99999, category: 'Transporte', status: 'review_required' }),
+    tx({ type: 'withdrawal', amountMinor: 50000, category: null }),
+  ];
+  const budgets = [
+    { category: 'Alimentación', currency: 'PEN' as const, amountMinor: 35000 },
+    { category: 'Transporte', currency: 'PEN' as const, amountMinor: 10000 },
+    { category: 'Ocio', currency: 'PEN' as const, amountMinor: 20000 },
+  ];
+  it('spent = confirmed expenses minus refunds; pending and withdrawals excluded', () => {
+    expect(budgetStatus(txs, '2026-09', budgets).map((b) => [b.category, b.spentMinor, b.state])).toEqual([
+      ['Alimentación', 40000, 'exceeded'], ['Transporte', 8500, 'warning'], ['Ocio', 0, 'ok']]);
+  });
+  it('alerts for exceeded (IMPORTANT) and 80% (INFORMATIONAL)', () => {
+    const a = buildAlerts({ txs: [], pendingCount: 0, oldestPendingDays: null, unresolvedEvents30d: 0, now: new Date('2026-09-27T12:00:00Z'), currency: 'PEN', budgets: budgetStatus(txs, '2026-09', budgets) });
+    expect(a.map((x) => [x.level, x.code])).toEqual([['IMPORTANT', 'budget_exceeded:Alimentación'], ['INFORMATIONAL', 'budget_warning:Transporte']]);
+    expect(a[0]!.text).toBe('Presupuesto excedido: Alimentación lleva S/ 400.00 de S/ 350.00 (S/ 50.00 por encima).');
+  });
+  it('category milestone when a budgeted category stayed under its limit (after consistency/improvement)', () => {
+    const m = [
+      tx({ occurredAt: '2026-09-01T09:00:00-05:00', type: 'income', direction: 'inflow', amountMinor: 300000, category: null }),
+      tx({ occurredAt: '2026-09-10T12:00:00-05:00', amountMinor: 28000, category: 'Alimentación' }),
+    ];
+    expect(closedMonthMilestone(m, '2026-09', 'PEN', { firstName: 'Mauro', dataHealthOk: true, budgets: [{ category: 'Alimentación', currency: 'PEN', amountMinor: 50000 }] })?.text)
+      .toBe('Buen cierre, Mauro. Mantuviste Alimentación S/ 220.00 por debajo de tu límite en septiembre, y ahorraste S/ 2,720.00.');
+  });
+});

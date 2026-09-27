@@ -19,6 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/app/movimientos?month=all">Movimientos</Link>
           <Link href="/app/revisar">Por revisar{count ? <span className="badge" data-testid="review-count">{count}</span> : null}</Link>
           <Link href="/app/analisis">Análisis</Link>
+          <Link href="/app/presupuestos">Presupuestos</Link>
           <Link href="/app/movimientos/nuevo">Nuevo movimiento</Link>
           <Link href="/app/importar">Importar</Link>
           <Link href="/app/tarjetas">Tarjetas y cuentas</Link>

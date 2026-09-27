@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
+import { parseAmountToMinor } from '../../src/domain/money';
 import { ingestRawEvent } from '../../src/engine/ingest';
 import { loadUserContext } from '../../lib/queries';
 import { SupabaseImportRepository } from '../../src/infrastructure/supabase/import-repository';
@@ -196,4 +197,30 @@ export async function rotateAddressAction(_prev: ActionState, _form: FormData): 
   const { error } = await supabase.rpc('rotate_email_connection');
   if (error) return dbError(error);
   return done('Nueva dirección generada. La anterior dejó de recibir correos.');
+}
+
+export async function saveBudgetAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const categoryId = form.get('categoryId');
+  const currency = form.get('currency');
+  const amount = parseAmountToMinor(typeof form.get('amount') === 'string' ? (form.get('amount') as string) : '');
+  if (!isUuid(categoryId)) return { error: errorText('invalid_category') };
+  if (currency !== 'PEN' && currency !== 'USD') return { error: errorText('invalid_currency') };
+  if (amount === null || amount > 100_000_000_000) return { error: errorText('invalid_amount') };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  // RLS: own rows only and the category must be global or the user's own.
+  const { error } = await supabase.from('budgets').upsert(
+    { user_id: user.id, category_id: categoryId, currency, amount_minor: amount }, { onConflict: 'user_id,category_id,currency' });
+  if (error) return { error: errorText(null) };
+  return done('Presupuesto guardado.');
+}
+
+export async function deleteBudgetAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  if (!isUuid(id)) return { error: errorText('invalid_request') };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { data, error } = await supabase.from('budgets').delete().eq('id', id).select('id');
+  if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
+  return done('Presupuesto eliminado.');
 }

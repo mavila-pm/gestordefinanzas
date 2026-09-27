@@ -86,3 +86,11 @@ export async function loadUserContext(supabase: SupabaseClient, userId: string):
     rules: (rules.data ?? []).map((r) => ({ contains: r.contains, category_name: (r.category as unknown as { name: string } | null)?.name ?? null })),
   });
 }
+
+export interface BudgetRow { id: string; categoryId: string; category: string; currency: 'PEN' | 'USD'; amountMinor: number }
+
+export async function loadBudgets(supabase: SupabaseClient): Promise<BudgetRow[]> {
+  const { data } = await supabase.from('budgets').select('id,category_id,currency,amount_minor,category:categories(name)').order('created_at');
+  return (data ?? []).map((b) => ({ id: b.id, categoryId: b.category_id, currency: b.currency, amountMinor: Number(b.amount_minor),
+    category: (b.category as unknown as { name: string } | null)?.name ?? '—' }));
+}
