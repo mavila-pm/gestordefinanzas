@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { authCallbackUrl } from '../../lib/env';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { AUTH_NEXT_COOKIE, authNextCookieOptions, parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
-import { passwordResetOutcome } from '../../src/web/password-reset';
+import { passwordResetOutcome, signupOutcome } from '../../src/web/password-reset';
 
 /** Remembers where the email link should land (the callback URL itself stays query-free). */
 async function rememberAuthNext(path: '/app' | '/reset-password') {
@@ -19,7 +19,6 @@ export interface FormState {
 
 // Messages never reveal whether an account exists (anti-enumeration, §86).
 const GENERIC_LOGIN_ERROR = 'Correo o contraseña incorrectos, o cuenta sin confirmar.';
-const SIGNUP_SENT = 'Si el correo es válido, te enviamos un enlace para confirmar tu cuenta.';
 
 export async function login(_prev: FormState, form: FormData): Promise<FormState> {
   const email = parseEmail(form.get('email'));
@@ -43,10 +42,11 @@ export async function signup(_prev: FormState, form: FormData): Promise<FormStat
     password: form.get('password') as string,
     options: { emailRedirectTo: authCallbackUrl() },
   });
-  if (error?.status === 429) return { error: 'Demasiados intentos. Espera unos minutos.' };
-  if (error && error.code === 'weak_password') return { error: 'La contraseña es demasiado débil.' };
-  // Any other outcome (including an already registered email) gets the same answer.
-  return { message: SIGNUP_SENT };
+  // Any outcome (new or registered email, including Supabase's 429) gets the same answer; failures are logged
+  // server-side without the email address.
+  const outcome = signupOutcome(error);
+  if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
+  return outcome.state;
 }
 
 export async function requestPasswordReset(_prev: FormState, form: FormData): Promise<FormState> {

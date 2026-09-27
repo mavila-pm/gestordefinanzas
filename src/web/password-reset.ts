@@ -27,3 +27,20 @@ export function passwordResetOutcome(error: { status?: number; code?: string } |
       : null,
   };
 }
+
+export const SIGNUP_SENT = 'Si el correo es válido, te enviamos un enlace para confirmar tu cuenta.';
+
+/**
+ * Signup has the mirror-image side channel: when the email cap is exhausted, a NEW address gets 429 (Supabase
+ * would send a confirmation) while an already registered one gets 200 (nothing is sent). Same neutral answer for
+ * both; only a weak password (a property of the input, not of the account) is reported.
+ */
+export function signupOutcome(error: { status?: number; code?: string } | null | undefined): { state: { message?: string; error?: string }; diagnostic: (Omit<ResetDiagnostic, 'event'> & { event: 'signup_request_failed' }) | null } {
+  if (error?.code === 'weak_password') return { state: { error: 'La contraseña es demasiado débil.' }, diagnostic: null };
+  return {
+    state: { message: SIGNUP_SENT },
+    diagnostic: error
+      ? { event: 'signup_request_failed', status: typeof error.status === 'number' ? error.status : null, code: typeof error.code === 'string' ? error.code : null }
+      : null,
+  };
+}

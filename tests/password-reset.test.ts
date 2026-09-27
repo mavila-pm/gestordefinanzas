@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { passwordResetOutcome, RESET_SENT } from '../src/web/password-reset';
+import { passwordResetOutcome, RESET_SENT, SIGNUP_SENT, signupOutcome } from '../src/web/password-reset';
 
 /**
  * Anti-enumeration for password recovery (spec §86). Supabase returns 429 `over_email_send_rate_limit` only for
@@ -33,11 +33,12 @@ describe('passwordResetOutcome (pure policy)', () => {
 
 // ── The real server action, with Next.js and Supabase stubbed ────────────────────────────────────────────────
 const resetPasswordForEmail = vi.fn();
+const signUp = vi.fn();
 vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({ cookies: async () => ({ set: vi.fn(), get: vi.fn(), getAll: () => [] }) }));
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
 vi.mock('../lib/supabase/server', () => ({
-  createSupabaseServerClient: async () => ({ auth: { resetPasswordForEmail } }),
+  createSupabaseServerClient: async () => ({ auth: { resetPasswordForEmail, signUp } }),
 }));
 
 const form = (email: string) => { const f = new FormData(); f.set('email', email); return f; };
@@ -83,5 +84,29 @@ describe('requestPasswordReset action: no enumeration by message difference', ()
     const { requestPasswordReset } = await import('../app/auth/actions');
     expect(await requestPasswordReset({}, form('not-an-email'))).toEqual({ error: 'Ingresa un correo válido.' });
     expect(resetPasswordForEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('signup: no enumeration by message difference', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { signUp.mockReset(); warn = vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+  afterEach(() => warn.mockRestore());
+  const signupForm = (email: string) => { const f = form(email); f.set('password', 'una-clave-segura'); return f; };
+
+  it('new email hitting the email cap (429) === already registered email (200), byte for byte', async () => {
+    const { signup } = await import('../app/auth/actions');
+    signUp.mockResolvedValueOnce({ data: null, error: RATE_LIMITED }); // new address, cap exhausted
+    const fresh = await signup({}, signupForm('new@example.test'));
+    signUp.mockResolvedValueOnce({ data: { user: {} }, error: null }); // registered address (obfuscated user)
+    const registered = await signup({}, signupForm('registered@example.test'));
+    expect(JSON.stringify(fresh)).toBe(JSON.stringify(registered));
+    expect(fresh).toEqual({ message: SIGNUP_SENT });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).not.toContain('new@example.test');
+  });
+
+  it('only a weak password (input property, not account property) is reported', () => {
+    expect(signupOutcome({ status: 422, code: 'weak_password' }).state).toEqual({ error: 'La contraseña es demasiado débil.' });
+    expect(signupOutcome({ status: 500, code: 'unexpected_failure' }).state).toEqual({ message: SIGNUP_SENT });
   });
 });
