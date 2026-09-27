@@ -1,5 +1,6 @@
 import type { Currency } from '../domain/money';
 import type { Transaction } from '../domain/types';
+import { financialEffect, type FinancialEffectOptions } from '../domain/financial-effect';
 
 export interface MonthlySummary {
   month: string;
@@ -18,37 +19,37 @@ export interface MonthlySummary {
 }
 
 /**
- * Card purchase = expense. Card payment, internal transfer and withdrawals are NOT expenses.
- * Refunds/reversals reduce expenses; they are never ordinary income.
- * Currencies are never mixed: FX conversion is out of scope for this function.
+ * Metrics are driven by financialEffect(): card purchase = expense; card payment, internal
+ * transfer and ATM withdrawal (transfer_to_cash, ADR-0002) are NOT expenses; refunds/reversals
+ * reduce expenses and are never income. Currencies are never mixed (no FX here).
  */
-export function monthlySummary(txs: readonly Transaction[], month: string, currency: Currency): MonthlySummary {
+export function monthlySummary(
+  txs: readonly Transaction[],
+  month: string,
+  currency: Currency,
+  opts: FinancialEffectOptions = {},
+): MonthlySummary {
   const s: MonthlySummary = {
     month, currency, incomeMinor: 0, expensesMinor: 0, netCashFlowMinor: 0, cashWithdrawalsMinor: 0,
     pendingCount: 0, savingsLabel: 'confirmed', expensesByCategory: {},
   };
+  const addCategory = (cat: string, delta: number) => { s.expensesByCategory[cat] = (s.expensesByCategory[cat] ?? 0) + delta; };
   for (const t of txs) {
     if (t.currency !== currency || t.occurredAt.slice(0, 7) !== month) continue;
     if (t.status === 'ignored') continue;
     if (t.status !== 'confirmed') { s.pendingCount++; continue; }
-    const cat = t.category ?? 'Otros';
-    switch (t.type) {
+    const cat = t.category ?? (t.type === 'withdrawal' ? 'Efectivo' : 'Otros');
+    switch (financialEffect(t.type, opts)) {
       case 'income':
-      case 'deposit':
         s.incomeMinor += t.amountMinor; break;
       case 'expense':
-      case 'credit_card_purchase':
-        s.expensesMinor += t.amountMinor;
-        s.expensesByCategory[cat] = (s.expensesByCategory[cat] ?? 0) + t.amountMinor; break;
-      case 'refund':
-      case 'reversal':
-        s.expensesMinor -= t.amountMinor;
-        s.expensesByCategory[cat] = (s.expensesByCategory[cat] ?? 0) - t.amountMinor; break;
-      case 'withdrawal':
+        s.expensesMinor += t.amountMinor; addCategory(cat, t.amountMinor); break;
+      case 'expense_reduction':
+        s.expensesMinor -= t.amountMinor; addCategory(cat, -t.amountMinor); break;
+      case 'transfer_to_cash':
         s.cashWithdrawalsMinor += t.amountMinor; break;
-      case 'credit_card_payment':
-      case 'internal_transfer':
-      case 'unknown':
+      case 'internal_movement':
+      case 'undetermined':
         break;
     }
   }

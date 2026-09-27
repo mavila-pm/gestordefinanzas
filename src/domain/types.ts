@@ -26,6 +26,15 @@ export type TransactionStatus =
 
 export type InstitutionCode = 'BCP' | 'BBVA' | 'INTERBANK';
 
+export type CardKind = 'credit' | 'debit';
+
+/**
+ * Evidence level of the template a parser was written from.
+ * - SYNTHETIC_UNVERIFIED: built from assumed structure; never claim production coverage.
+ * - VERIFIED: calibrated against real anonymized samples committed as fixtures.
+ */
+export type TemplateVerification = 'SYNTHETIC_UNVERIFIED' | 'VERIFIED';
+
 /**
  * A raw event as delivered by a FinancialEventSource (Email Bridge, Gmail, Android SMS...).
  * Everything in here is UNTRUSTED INPUT: it is parsed with fixed patterns and never
@@ -49,6 +58,7 @@ export interface NormalizedFinancialEvent {
   institution: InstitutionCode;
   channel: Exclude<SourceChannel, 'manual'>;
   parserVersion: string;
+  templateVerification: TemplateVerification;
   externalEventId: string;
   type: TransactionType;
   direction: Direction;
@@ -58,6 +68,8 @@ export interface NormalizedFinancialEvent {
   occurredAt: string;
   merchantRaw: string | null;
   cardLast4: string | null;
+  /** Null when the notification does not say whether the card is credit or debit. */
+  cardKind: CardKind | null;
   /** Last digits of the destination account, for transfers. */
   counterpartyAccountLast4: string | null;
   /**
@@ -74,7 +86,9 @@ export interface NormalizedFinancialEvent {
 export interface TransactionSource {
   channel: SourceChannel;
   externalEventId: string;
+  /** 'MANUAL' for user-entered transactions. */
   parserVersion: string;
+  templateVerification: TemplateVerification | null;
   receivedAt: string;
 }
 
