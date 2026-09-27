@@ -176,3 +176,15 @@ export async function importAction(_prev: ImportState, form: FormData): Promise<
     return { error: errorText(null) };
   }
 }
+
+export async function saveProfileAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const raw = form.get('displayName');
+  const name = typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : '';
+  if (name.length > 80 || /[\u0000-\u001f\u007f<>]/.test(name)) return { error: 'Nombre inválido (máximo 80 caracteres).' };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  // profiles is user-owned under RLS (user_id must equal the session user).
+  const { error } = await supabase.from('profiles').upsert({ user_id: user.id, display_name: name || null, updated_at: new Date().toISOString() });
+  if (error) return { error: errorText(null) };
+  return done('Guardado.');
+}

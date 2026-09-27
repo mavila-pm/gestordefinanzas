@@ -36,3 +36,9 @@ textarea { width: 100%; padding: 10px; border: 1px solid var(--line); border-rad
 .bars li { display: grid; grid-template-columns: 70px 1fr; gap: 4px 8px; align-items: center; }
 .bar-track { display: grid; gap: 2px; } .bar { display: block; height: 8px; border-radius: 4px; min-width: 2px; }
 .bar.income { background: var(--ok); } .bar.expense { background: var(--warn); } .bar-values { grid-column: 2; }
+.milestone { border-color: var(--ok); } .milestone p { margin: 0; font-weight: 600; }
+.health { padding: 10px 16px; } .health ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+.health.healthy strong { color: var(--ok); } .health.partial strong { color: var(--warn); } .health.action_required strong { color: var(--err); }
+.alert { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
+.alert.critical { border-color: var(--err); } .alert.important { border-color: var(--warn); }
+.insight { margin: 0; }
