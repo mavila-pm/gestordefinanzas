@@ -20,6 +20,8 @@
 | 20260927000003_rls_performance.sql | applied as rls_performance | 2026-09-27 |
 | 20260927000004_secure_transaction_writes.sql | 20260927215130_secure_transaction_writes (approved by Mauro) | 2026-09-27 |
 | 20260928000005_accounts_rules_learning.sql | accounts_rules_learning (autonomous phase; checked complete: owners app_writer, old correct_transaction dropped, CREATE revoked, app_writer DELETE only on transactions) | 2026-09-27 |
+| 20260928000006_import_channel.sql | import_channel | 2026-09-27 |
+| 20260928000007_import_write_path.sql | import_write_path (import functions owned by app_writer; writer inserts only manual/import sources and import events) | 2026-09-27 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

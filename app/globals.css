@@ -29,3 +29,4 @@ a.button { display: inline-block; padding: 10px 16px; border-radius: 8px; text-d
 .narrow-md { max-width: 640px; }
 .check { display: flex; gap: 8px; align-items: flex-start; } .check input { width: auto; margin-top: 4px; }
 button.danger { background: var(--err); }
+textarea { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; resize: vertical; }

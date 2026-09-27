@@ -28,6 +28,7 @@ const FROM_INGESTION: Record<string, string> = {
   card_missing: 'La notificación no indica con qué tarjeta se hizo.',
   counterparty_missing: 'La notificación no indica la cuenta de destino.',
   sender_not_verified: 'No pudimos verificar que el mensaje venga de tu banco. Revisa que el movimiento sea real.',
+  user_import: 'Importado por ti desde un mensaje pegado: confirma que monto, fecha y tipo sean correctos.',
 };
 
 export function reviewReasons(t: Transaction, ctx: ReviewContext): ReviewReason[] {
@@ -41,6 +42,8 @@ export function reviewReasons(t: Transaction, ctx: ReviewContext): ReviewReason[
     add('unknown_type', 'No pudimos determinar qué tipo de movimiento es.');
   }
   for (const code of ctx.ingestionCodes) {
+    // For pasted text the unverifiable sender is expected; the import reason already says it.
+    if (code === 'sender_not_verified' && ctx.ingestionCodes.includes('user_import')) continue;
     const text = FROM_INGESTION[code];
     if (text) add(code, text);
   }

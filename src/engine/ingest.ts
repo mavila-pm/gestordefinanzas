@@ -1,4 +1,4 @@
-import type { CardKind, Direction, NormalizedFinancialEvent, RawFinancialEvent, Transaction, TransactionStatus, TransactionType } from '../domain/types';
+import type { CardKind, Direction, NormalizedFinancialEvent, RawFinancialEvent, SourceChannel, Transaction, TransactionSource, TransactionStatus, TransactionType } from '../domain/types';
 import type { AdapterRegistry } from '../ingestion/adapter-registry';
 import { defaultAdapterRegistry } from '../ingestion/adapter-registry';
 import { deriveExternalEventId, isWithinSizeLimit, toPlainText } from '../ingestion/sanitize';
@@ -63,12 +63,25 @@ function resolveWithUserContext(e: NormalizedFinancialEvent, ctx: UserContext): 
   return r;
 }
 
-function isStrongMatch(e: NormalizedFinancialEvent, type: TransactionType, merchant: string | null, t: Transaction): boolean {
+/**
+ * What makes two sources "the same kind" for cross-source matching. A pasted SMS and a pasted email are different
+ * kinds (distinct parser families) even though both are persisted as channel 'import'.
+ */
+export function sourceKind(s: Pick<TransactionSource, 'channel' | 'parserVersion'>): string {
+  return s.channel === 'import' ? `import:${s.parserVersion}` : s.channel;
+}
+
+function isStrongMatch(kind: string, e: NormalizedFinancialEvent, type: TransactionType, merchant: string | null, t: Transaction): boolean {
   return t.type === type
     && !!e.cardLast4 && t.cardLast4 === e.cardLast4
     && Math.abs(Date.parse(t.occurredAt) - Date.parse(e.occurredAt)) <= minutes(STRONG_MATCH_WINDOW_MIN)
     && merchantsCompatible(t.merchantNormalized, merchant)
-    && !t.sources.some((s) => s.channel === e.channel);
+    && !t.sources.some((s) => sourceKind(s) === kind);
+}
+
+export interface IngestOptions {
+  /** Persist the source as a user import (pasted text) instead of a delivered bank notification. */
+  persistAs?: 'import';
 }
 
 /**
@@ -80,17 +93,19 @@ export async function ingestRawEvent(
   ctx: UserContext,
   repo: TransactionRepository,
   registry: AdapterRegistry = defaultAdapterRegistry,
+  opts: IngestOptions = {},
 ): Promise<IngestResult> {
   const externalEventId = deriveExternalEventId(raw);
+  const channel: Exclude<SourceChannel, 'manual'> = opts.persistAs ?? raw.channel;
   const done = async (outcome: EventOutcome, transactionId: string | null, detail: string | null, parserVersion: string | null) => {
-    await repo.recordEvent({ userId: ctx.userId, channel: raw.channel, externalEventId, parserVersion, outcome, detail, transactionId });
+    await repo.recordEvent({ userId: ctx.userId, channel, externalEventId, parserVersion, outcome, detail, transactionId });
     return { outcome, transactionId, detail };
   };
 
   if (!isWithinSizeLimit(raw)) return done('rejected', null, 'payload exceeds size limit', null);
 
   // Level 1: exact same source event already processed (idempotency).
-  const sameEvent = await repo.findBySource(ctx.userId, raw.channel, externalEventId);
+  const sameEvent = await repo.findBySource(ctx.userId, channel, externalEventId);
   if (sameEvent) return done('duplicate_same_event', sameEvent.id, null, null);
 
   const adapter = registry.resolve(raw);
@@ -103,11 +118,11 @@ export async function ingestRawEvent(
   }
   const e = parsed.event;
   try {
-    return await persist(raw, e, externalEventId, ctx, repo, done);
+    return await persist(raw, e, externalEventId, channel, ctx, repo, done);
   } catch (err) {
     // A concurrent delivery of the same event won the race: still exactly one transaction.
     if (!(err instanceof DuplicateSourceError)) throw err;
-    const winner = await repo.findBySource(ctx.userId, raw.channel, externalEventId);
+    const winner = await repo.findBySource(ctx.userId, channel, externalEventId);
     return done('duplicate_same_event', winner?.id ?? null, 'concurrent duplicate', e.parserVersion);
   }
 }
@@ -118,24 +133,28 @@ async function persist(
   raw: RawFinancialEvent,
   e: NormalizedFinancialEvent,
   externalEventId: string,
+  channel: Exclude<SourceChannel, 'manual'>,
   ctx: UserContext,
   repo: TransactionRepository,
   done: Done,
 ): Promise<IngestResult> {
 
-  const source = {
-    channel: e.channel, externalEventId, parserVersion: e.parserVersion,
+  const source: TransactionSource = {
+    channel, externalEventId, parserVersion: e.parserVersion,
     templateVerification: e.templateVerification, receivedAt: raw.receivedAt,
   };
+  const kind = sourceKind(source);
   const merchantNormalized = normalizeMerchant(e.merchantRaw);
   const { type, direction, reasons } = resolveWithUserContext(e, ctx);
+  // Pasted text cannot prove it came from the bank: an import is always reviewed by the user, never auto-confirmed.
+  if (channel === 'import' && !reasons.includes('user_import')) reasons.push('user_import');
   const category = categorize(type, merchantNormalized, ctx.merchantRules);
 
   // Level 1b: the bank's own operation number identifies the same operation across forwards.
   if (e.bankOperationId) {
     const sameOp = await repo.findByBankOperation(ctx.userId, e.institution, e.bankOperationId);
     if (sameOp && sameOp.amountMinor === e.amountMinor && sameOp.currency === e.currency) {
-      if (sameOp.sources.some((s) => s.channel === e.channel)) return done('duplicate_same_event', sameOp.id, 'same bank operation id', e.parserVersion);
+      if (sameOp.sources.some((s) => sourceKind(s) === kind)) return done('duplicate_same_event', sameOp.id, 'same bank operation id', e.parserVersion);
       await repo.addSource(sameOp.id, source, {});
       return done('merged_cross_source', sameOp.id, 'same bank operation id', e.parserVersion);
     }
@@ -147,7 +166,7 @@ async function persist(
     from: shift(e.occurredAt, -minutes(WEAK_MATCH_WINDOW_MIN)), to: shift(e.occurredAt, minutes(WEAK_MATCH_WINDOW_MIN)),
   });
   const sameKind = candidates.filter((t) => t.type === type);
-  const strong = sameKind.filter((t) => isStrongMatch(e, type, merchantNormalized, t));
+  const strong = sameKind.filter((t) => isStrongMatch(kind, e, type, merchantNormalized, t));
   if (strong.length === 1) {
     const target = strong[0]!;
     const patch = target.merchantRaw ? {} : { merchantRaw: e.merchantRaw, merchantNormalized, category };

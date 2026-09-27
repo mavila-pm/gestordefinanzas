@@ -14,7 +14,15 @@ export type TransactionType =
 
 export type Direction = 'inflow' | 'outflow' | 'neutral';
 
-export type SourceChannel = 'email' | 'sms' | 'manual';
+/**
+ * - email / sms: delivered by a bank notification source (Email Bridge, Android SMS...).
+ * - import: bank notification text pasted by the user (parsed by the same adapters; sender unverifiable).
+ * - manual: typed by the user.
+ */
+export type SourceChannel = 'email' | 'sms' | 'import' | 'manual';
+
+/** Channels a bank adapter parses (the message format). */
+export type MessageChannel = 'email' | 'sms';
 
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
 
@@ -41,7 +49,7 @@ export type TemplateVerification = 'SYNTHETIC_UNVERIFIED' | 'VERIFIED';
  * interpreted as instructions.
  */
 export interface RawFinancialEvent {
-  channel: Exclude<SourceChannel, 'manual'>;
+  channel: MessageChannel;
   /** Stable id from the source (email Message-ID, SMS provider id). Optional for SMS. */
   externalEventId?: string;
   /** Sender as reported by the source: email address or SMS sender id. */
@@ -56,7 +64,7 @@ export interface RawFinancialEvent {
 /** Output of a BankAdapter: the channel/bank-independent representation of a financial fact. */
 export interface NormalizedFinancialEvent {
   institution: InstitutionCode;
-  channel: Exclude<SourceChannel, 'manual'>;
+  channel: MessageChannel;
   parserVersion: string;
   templateVerification: TemplateVerification;
   externalEventId: string;

@@ -40,3 +40,15 @@ All BCP parsers are `SYNTHETIC_UNVERIFIED`. Evidence: `docs/architecture/bcp-evi
 | BBVA / Interbank | — | MISSING |
 
 Replacing synthetic templates with real ones: `tests/fixtures/bcp/samples/README.md`.
+
+## User import (TASK-006)
+`/app/importar`: the user pastes a bank SMS/email text. It runs through the SAME pipeline (adapter, dedupe, category,
+confidence) with `persistAs: 'import'`:
+- sender is `user-import:<channel>` → never passes the bank's sender verification;
+- source channel `import` (provenance label "importado por ti"); cross-source matching uses the source KIND
+  (`import:<parser>`), so a pasted SMS + pasted email of the same purchase merge, and a later real SMS merges too;
+- always `review_required` (engine adds `user_import`; the DB function refuses a confirmed import);
+- persistence through `SupabaseImportRepository` with the user's session: reads under RLS, writes only via
+  `import_insert_transaction` / `import_add_source` / `import_record_event` (migration 000007);
+- the pasted text is not stored (spec §33).
+Ingestion context (own cards, own accounts, learned merchant rules) comes from `loadUserContext` (TASK-005).

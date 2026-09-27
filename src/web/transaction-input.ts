@@ -267,6 +267,8 @@ const ERROR_TEXT: Record<string, string> = {
   invalid_kind: 'Indica si es de crédito o débito.',
   invalid_last4: 'Ingresa solo los últimos 4 dígitos.',
   duplicate_card: 'Ya registraste una tarjeta con esos datos.',
+  import_empty: 'Pega el texto completo del mensaje de tu banco.',
+  import_too_large: 'El texto es demasiado largo (máximo 64 KB).',
   duplicate_account: 'Ya registraste una cuenta con ese banco y esos 4 dígitos.',
   rule_not_applicable: 'No se puede recordar: el movimiento necesita un comercio reconocible y una categoría estándar.',
   not_deletable: 'Este movimiento no se puede eliminar (llegó de tu banco o está vinculado a otro). Puedes ignorarlo.',

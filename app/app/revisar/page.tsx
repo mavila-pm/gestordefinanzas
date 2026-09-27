@@ -7,7 +7,7 @@ import { reviewReasons } from '../../../src/engine/review-reasons';
 import { formatLimaDateTime, TYPE_LABEL } from '../../../src/web/transaction-input';
 import { reviewAction } from '../actions';
 
-const SOURCE_LABEL: Record<string, string> = { email: 'Automático · Email', sms: 'Automático · SMS', manual: 'Manual' };
+const SOURCE_LABEL: Record<string, string> = { email: 'Automático · Email', sms: 'Automático · SMS', import: 'Importado por ti', manual: 'Manual' };
 
 export default async function ReviewQueue() {
   const supabase = await createSupabaseServerClient();

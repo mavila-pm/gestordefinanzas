@@ -10,7 +10,7 @@ import { reviewReasons } from '../../../../src/engine/review-reasons';
 import { CORRECTABLE_TYPES, formatLimaDateTime, isoToLimaInputs, isUuid, minorToInput, TYPE_LABEL } from '../../../../src/web/transaction-input';
 import { correctAction, createCardAction, deleteTransactionAction, reviewAction } from '../../actions';
 
-const CHANNEL_LABEL: Record<string, string> = { email: 'Notificación por email', sms: 'Notificación por SMS', manual: 'Registrado por ti' };
+const CHANNEL_LABEL: Record<string, string> = { email: 'Notificación por email', sms: 'Notificación por SMS', import: 'Mensaje del banco importado por ti', manual: 'Registrado por ti' };
 const STATUS_LABEL: Record<string, string> = { confirmed: 'Confirmado', review_required: 'Por revisar', possible_duplicate: 'Posible duplicado', ignored: 'Ignorado' };
 const ACTION_LABEL: Record<string, string> = { manual_create: 'Registrado manualmente', confirm: 'Confirmado', ignore: 'Ignorado', correct: 'Corregido', rule_create: 'Regla de comercio creada' };
 const FIELD_LABEL: Record<string, string> = {
@@ -148,7 +148,7 @@ export default async function TransactionDetail({ params }: { params: Promise<{ 
         <ul className="list">
           {t.sources.map((s, i) => (
             <li key={i}>
-              <span>{CHANNEL_LABEL[s.channel]}{s.channel !== 'manual' && s.templateVerification !== 'VERIFIED' ? ' · formato del banco aún en validación' : ''}</span>
+              <span>{CHANNEL_LABEL[s.channel]}{(s.channel === 'import' ? ` (${s.parserVersion.includes('SMS') ? 'SMS' : 'email'})` : '')}{s.channel !== 'manual' && s.templateVerification !== 'VERIFIED' ? ' · formato del banco aún en validación' : ''}</span>
               <span className="muted">recibido {formatLimaDateTime(s.receivedAt)}</span>
             </li>
           ))}

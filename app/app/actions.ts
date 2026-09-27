@@ -4,6 +4,10 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
+import { ingestRawEvent } from '../../src/engine/ingest';
+import { loadUserContext } from '../../lib/queries';
+import { SupabaseImportRepository } from '../../src/infrastructure/supabase/import-repository';
+import { parseImportForm, importOutcomeText } from '../../src/web/import-input';
 import {
   errorText, isUuid, parseAccountForm, parseCardForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
 } from '../../src/web/transaction-input';
@@ -148,4 +152,27 @@ export async function deleteTransactionAction(_prev: ActionState, form: FormData
   if (error) return dbError(error);
   revalidatePath('/app', 'layout');
   redirect('/app?deleted=1');
+}
+
+export interface ImportState extends ActionState { transactionId?: string | null; outcome?: string }
+
+/**
+ * Pasted bank notification -> the SAME pipeline as automatic sources (adapter, dedupe, category, confidence),
+ * persisted as channel 'import' and always sent to review. The pasted text is not stored (spec §33).
+ */
+export async function importAction(_prev: ImportState, form: FormData): Promise<ImportState> {
+  const parsed = parseImportForm((k) => form.get(k));
+  if (!parsed.ok) return { error: errorText(parsed.error) };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  try {
+    const ctx = await loadUserContext(supabase, user.id);
+    const result = await ingestRawEvent(parsed.value, ctx, new SupabaseImportRepository(supabase), undefined, { persistAs: 'import' });
+    revalidatePath('/app', 'layout');
+    const text = importOutcomeText(result.outcome);
+    return { ...(text.ok ? { message: text.text } : { error: text.text }), transactionId: result.transactionId, outcome: result.outcome };
+  } catch (e) {
+    console.warn(JSON.stringify({ event: 'import_failed', message: e instanceof Error ? e.message.slice(0, 200) : 'unknown' }));
+    return { error: errorText(null) };
+  }
 }

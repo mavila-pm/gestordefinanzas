@@ -7,7 +7,7 @@ import { limaMonth, limaMonthRange } from '../../src/web/auth-input';
 import { TYPE_LABEL } from '../../src/web/transaction-input';
 
 const CURRENCIES: Currency[] = ['PEN', 'USD'];
-const SOURCE_LABEL: Record<string, string> = { email: 'Automático · Email', sms: 'Automático · SMS', manual: 'Manual' };
+const SOURCE_LABEL: Record<string, string> = { email: 'Automático · Email', sms: 'Automático · SMS', import: 'Importado por ti', manual: 'Manual' };
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ month?: string; deleted?: string }> }) {
   const { month: requested, deleted } = await searchParams;
