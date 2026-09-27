@@ -2,6 +2,7 @@ import { formatMoney, type Currency } from '../domain/money';
 import { financialEffect } from '../domain/financial-effect';
 import type { Transaction } from '../domain/types';
 import type { BudgetStatus } from './budgets';
+import type { Commitment } from './commitments';
 
 /** Alert engine (spec §46): CRITICAL / IMPORTANT / INFORMATIONAL, few and relevant (no bombarding). */
 export type AlertLevel = 'CRITICAL' | 'IMPORTANT' | 'INFORMATIONAL';
@@ -26,12 +27,18 @@ export function buildAlerts(input: {
   now: Date;
   currency: Currency;
   budgets?: readonly BudgetStatus[];
+  commitments?: readonly Commitment[];
 }): Alert[] {
   const out: Alert[] = [];
   if (input.pendingCount > 0) {
     const stale = input.oldestPendingDays !== null && input.oldestPendingDays > 7;
     out.push({ level: stale ? 'IMPORTANT' : 'INFORMATIONAL', code: 'pending', href: '/app/revisar',
       text: `${input.pendingCount} movimiento(s) esperan tu revisión${stale ? `; el más antiguo, hace ${input.oldestPendingDays} días` : ''}. No cuentan en tus cifras hasta confirmarlos.` });
+  }
+  // Debt due soon (spec §46 "deuda próxima"): installments due today or in the next 3 days.
+  for (const c of (input.commitments ?? []).filter((c) => c.kind === 'debt' && c.daysUntil >= 0 && c.daysUntil <= 3)) {
+    out.push({ level: 'IMPORTANT', code: `debt_due:${c.id}`, href: '/app/compromisos',
+      text: `${c.name}: cuota de ${formatMoney(c)} ${c.daysUntil === 0 ? 'vence hoy' : `vence en ${c.daysUntil} día(s)`} (${c.dueDate.slice(8, 10)}/${c.dueDate.slice(5, 7)}).` });
   }
   for (const b of input.budgets ?? []) {
     const m = (v: number) => formatMoney({ amountMinor: v, currency: b.currency });

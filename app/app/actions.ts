@@ -10,7 +10,7 @@ import { loadUserContext } from '../../lib/queries';
 import { SupabaseImportRepository } from '../../src/infrastructure/supabase/import-repository';
 import { parseImportForm, importOutcomeText } from '../../src/web/import-input';
 import {
-  errorText, isUuid, parseAccountForm, parseCardForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
+  errorText, isUuid, parseAccountForm, parseCardForm, parseDebtForm, parseFixedExpenseForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
 } from '../../src/web/transaction-input';
 
 export interface ActionState {
@@ -223,4 +223,64 @@ export async function deleteBudgetAction(_prev: ActionState, form: FormData): Pr
   const { data, error } = await supabase.from('budgets').delete().eq('id', id).select('id');
   if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
   return done('Presupuesto eliminado.');
+}
+
+export async function saveFixedExpenseAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const parsed = parseFixedExpenseForm((k) => form.get(k));
+  if (!parsed.ok) return { error: errorText(parsed.error) };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const v = parsed.value;
+  const { error } = await supabase.from('fixed_expenses').insert({
+    user_id: user.id, name: v.name, currency: v.currency, amount_minor: v.amountMinor, due_day: v.dueDay, category_id: v.categoryId,
+  });
+  if (error) return { error: errorText(null) };
+  return done('Gasto fijo registrado.');
+}
+
+export async function saveDebtAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const parsed = parseDebtForm((k) => form.get(k));
+  if (!parsed.ok) return { error: errorText(parsed.error) };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const v = parsed.value;
+  const { error } = await supabase.from('debts').insert({
+    user_id: user.id, name: v.name, lender: v.lender, currency: v.currency, principal_minor: v.principalMinor, balance_minor: v.balanceMinor,
+    annual_rate_bp: v.annualRateBp, installment_minor: v.installmentMinor, installments_total: v.installmentsTotal,
+    installments_paid: v.installmentsPaid, due_day: v.dueDay,
+  });
+  if (error) return { error: errorText(null) };
+  return done('Deuda registrada.');
+}
+
+/** Updates the debt balance only: the payment itself arrives (or is registered) as a movement, never twice. */
+export async function debtPaymentAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const amount = parseAmountToMinor(typeof form.get('amount') === 'string' ? (form.get('amount') as string) : '');
+  if (!isUuid(id)) return { error: errorText('invalid_request') };
+  if (amount === null) return { error: errorText('invalid_amount') };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { data: d } = await supabase.from('debts').select('balance_minor,installments_paid,installments_total').eq('id', id).maybeSingle();
+  if (!d) return { error: errorText('not_found') };
+  const balance = Number(d.balance_minor);
+  const paid = (d.installments_paid as number) + 1;
+  const total = d.installments_total as number | null;
+  // Optimistic concurrency: only applies if the balance did not change meanwhile.
+  const { data, error } = await supabase.from('debts')
+    .update({ balance_minor: Math.max(0, balance - amount), installments_paid: total === null ? paid : Math.min(paid, total) })
+    .eq('id', id).eq('balance_minor', balance).select('id');
+  if (error || !data?.length) return { error: 'No se pudo registrar: el saldo cambió. Recarga e intenta de nuevo.' };
+  return done('Pago registrado en la deuda. Recuerda que el movimiento del banco se registra aparte (no se duplica).');
+}
+
+export async function deactivateCommitmentAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const kind = form.get('kind');
+  if (!isUuid(id) || (kind !== 'fixed' && kind !== 'debt')) return { error: errorText('invalid_request') };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { data, error } = await supabase.from(kind === 'fixed' ? 'fixed_expenses' : 'debts').update({ active: false }).eq('id', id).select('id');
+  if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
+  return done('Listo.');
 }

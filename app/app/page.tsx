@@ -7,7 +7,8 @@ import { buildAlerts } from '../../src/engine/alerts';
 import { dataHealth } from '../../src/engine/data-health';
 import { closedMonthMilestone, mainInsight } from '../../src/engine/insights';
 import { budgetStatus } from '../../src/engine/budgets';
-import { loadBudgets } from '../../lib/queries';
+import { loadBudgets, loadCommitmentData } from '../../lib/queries';
+import { monthCommitments, totalsByCurrency } from '../../src/engine/commitments';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../src/web/auth-input';
 import { TYPE_LABEL } from '../../src/web/transaction-input';
@@ -27,7 +28,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const windowFrom = limaMonthRange(previousMonth(month, 3))!.from;
   const since30 = new Date(now.getTime() - 30 * 86_400_000).toISOString();
   // RLS scopes every query to the signed-in user; no user_id filter can widen it.
-  const [txRes, pendingRes, oldestRes, unresolvedRes, autoRes, profileRes, budgets] = await Promise.all([
+  const [txRes, pendingRes, oldestRes, unresolvedRes, autoRes, profileRes, budgets, commitmentData] = await Promise.all([
     supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', windowFrom).lt('occurred_at', range.to)
       .order('occurred_at', { ascending: false }).limit(3000),
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
@@ -36,6 +37,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     supabase.from('transaction_sources').select('id', { count: 'exact', head: true }).in('channel', ['email', 'sms']).gte('received_at', since30),
     supabase.from('profiles').select('display_name').maybeSingle(),
     loadBudgets(supabase),
+    loadCommitmentData(supabase),
   ]);
 
   if (txRes.error) {
@@ -51,7 +53,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const unresolvedEvents30d = unresolvedRes.count ?? 0;
   const health = dataHealth({ pendingCount, oldestPendingDays, unresolvedEvents30d, automaticSources: (autoRes.count ?? 0) > 0 ? 1 : 0 });
   const budgetsNow = budgetStatus(all, month, budgets);
-  const alerts = buildAlerts({ txs: all, pendingCount, oldestPendingDays, unresolvedEvents30d, now, currency: 'PEN', budgets: month === currentMonth ? budgetsNow : [] });
+  const todayLima = new Date(now.getTime() - 5 * 3600_000).toISOString().slice(0, 10);
+  const commitments = monthCommitments(month, todayLima, commitmentData.fixed, commitmentData.debts);
+  const commitmentTotals = totalsByCurrency(commitments);
+  const alerts = buildAlerts({ txs: all, pendingCount, oldestPendingDays, unresolvedEvents30d, now, currency: 'PEN', budgets: month === currentMonth ? budgetsNow : [], commitments: month === currentMonth ? commitments : [] });
   const insight = mainInsight(all, month, 'PEN');
   // Milestones are event-driven: only the month that just closed, shown while viewing the current month.
   const firstName = (profileRes.data?.display_name as string | null | undefined)?.split(' ')[0] ?? null;
@@ -83,6 +88,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             </li>
           ))}
         </ul>
+      )}
+      {commitments.length > 0 && (
+        <section className="card stack-sm" data-testid="commitments" aria-label="Compromisos del mes">
+          <div className="row"><strong>Compromisos del mes</strong><Link href="/app/compromisos">Ver</Link></div>
+          <p className="small">{Object.entries(commitmentTotals).map(([c, v]) => formatMoney({ amountMinor: v!, currency: c as Currency })).join(' + ')} en {commitments.length} pago(s)
+            {(() => { const next = commitments.find((c) => c.daysUntil >= 0); return next ? ` · próximo: ${next.name} el ${next.dueDate.slice(8, 10)}/${next.dueDate.slice(5, 7)}` : ''; })()}</p>
+        </section>
       )}
       {insight && <p className="card insight" data-testid="insight">{insight.estimated ? 'Estimado: ' : ''}{insight.text}</p>}
       <p className="actions small"><Link href={`/app/analisis?month=${month}`}>Ver análisis</Link><Link href={`/app/movimientos?month=${month}`}>Ver todos los movimientos</Link><a href={`/app/exportar?month=${month}`}>Exportar CSV</a></p>

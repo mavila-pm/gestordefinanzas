@@ -269,6 +269,10 @@ const ERROR_TEXT: Record<string, string> = {
   duplicate_card: 'Ya registraste una tarjeta con esos datos.',
   import_empty: 'Pega el texto completo del mensaje de tu banco.',
   import_too_large: 'El texto es demasiado largo (máximo 64 KB).',
+  invalid_name: 'Ingresa un nombre (máximo 60 caracteres).',
+  invalid_day: 'El día de pago debe estar entre 1 y 31.',
+  invalid_rate: 'Tasa inválida (ej. 12.5).',
+  invalid_installments: 'Número de cuotas inválido.',
   duplicate_account: 'Ya registraste una cuenta con ese banco y esos 4 dígitos.',
   rule_not_applicable: 'No se puede recordar: el movimiento necesita un comercio reconocible y una categoría estándar.',
   not_deletable: 'Este movimiento no se puede eliminar (llegó de tu banco o está vinculado a otro). Puedes ignorarlo.',
@@ -294,4 +298,57 @@ export function formatLimaDateTime(iso: string): string {
   const { date, time } = isoToLimaInputs(iso);
   const [y, m, d] = date.split('-');
   return `${d}/${m}/${y} ${time}`;
+}
+
+const dayOf = (v: unknown) => { const n = Number(str(v)); return Number.isInteger(n) && n >= 1 && n <= 31 ? n : null; };
+const optAmount = (v: unknown) => (str(v) ? parseAmount(v) : undefined);
+const cleanName = (v: unknown) => { const s = str(v); return s && s.length <= 60 && !/[\u0000-\u001f\u007f<>]/.test(s) ? s : null; };
+
+export interface FixedExpensePayload { name: string; currency: Currency; amountMinor: number; dueDay: number; categoryId: string | null }
+export function parseFixedExpenseForm(get: Get): Parsed<FixedExpensePayload> {
+  const name = cleanName(get('name'));
+  if (!name) return fail('invalid_name');
+  const amountMinor = parseAmount(get('amount'));
+  if (amountMinor === null) return fail('invalid_amount');
+  const currency = parseCurrency(get('currency'));
+  if (!currency) return fail('invalid_currency');
+  const dueDay = dayOf(get('dueDay'));
+  if (!dueDay) return fail('invalid_day');
+  const categoryId = optionalUuid(get('categoryId'));
+  if (categoryId === undefined) return fail('invalid_category');
+  return { ok: true, value: { name, currency, amountMinor, dueDay, categoryId } };
+}
+
+export interface DebtPayload {
+  name: string; lender: string | null; currency: Currency; principalMinor: number; balanceMinor: number; annualRateBp: number | null;
+  installmentMinor: number | null; installmentsTotal: number | null; installmentsPaid: number; dueDay: number | null;
+}
+export function parseDebtForm(get: Get): Parsed<DebtPayload> {
+  const name = cleanName(get('name'));
+  if (!name) return fail('invalid_name');
+  const lenderRaw = str(get('lender'));
+  const lender = lenderRaw ? cleanName(lenderRaw) : null;
+  if (lenderRaw && !lender) return fail('invalid_name');
+  const currency = parseCurrency(get('currency'));
+  if (!currency) return fail('invalid_currency');
+  const principalMinor = parseAmount(get('principal'));
+  if (principalMinor === null) return fail('invalid_amount');
+  const balance = optAmount(get('balance'));
+  if (balance === null) return fail('invalid_amount');
+  const rateRaw = str(get('rate'));
+  const rate = rateRaw ? /^\d{1,3}(\.\d{1,2})?$/.test(rateRaw) ? Math.round(Number(rateRaw) * 100) : NaN : null;
+  if (Number.isNaN(rate) || (rate !== null && rate > 100000)) return fail('invalid_rate');
+  const installment = optAmount(get('installment'));
+  if (installment === null) return fail('invalid_amount');
+  const totalRaw = str(get('installmentsTotal'));
+  const total = totalRaw ? Number(totalRaw) : null;
+  if (total !== null && !(Number.isInteger(total) && total >= 1 && total <= 600)) return fail('invalid_installments');
+  const paidRaw = str(get('installmentsPaid'));
+  const paid = paidRaw ? Number(paidRaw) : 0;
+  if (!Number.isInteger(paid) || paid < 0 || (total !== null && paid > total)) return fail('invalid_installments');
+  const dueRaw = str(get('dueDay'));
+  const dueDay = dueRaw ? dayOf(dueRaw) : null;
+  if (dueRaw && !dueDay) return fail('invalid_day');
+  return { ok: true, value: { name, lender, currency, principalMinor, balanceMinor: balance ?? principalMinor, annualRateBp: rate,
+    installmentMinor: installment ?? null, installmentsTotal: total, installmentsPaid: paid, dueDay } };
 }

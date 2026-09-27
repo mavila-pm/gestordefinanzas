@@ -52,3 +52,20 @@ describe('account form and "remember" flag', () => {
     expect(parseCorrectionForm(f({ ...base, type: 'withdrawal' }), current)).toMatchObject({ ok: true, value: { rememberRule: false } });
   });
 });
+
+import { parseDebtForm, parseFixedExpenseForm } from '../src/web/transaction-input';
+
+describe('commitment forms', () => {
+  const f = (o: Record<string, string>) => (k: string) => o[k] ?? null;
+  it('fixed expense: day 1..31, positive amount, safe name', () => {
+    expect(parseFixedExpenseForm(f({ name: 'Alquiler', amount: '1,500.00', currency: 'PEN', dueDay: '5' }))).toEqual({ ok: true, value: { name: 'Alquiler', currency: 'PEN', amountMinor: 150000, dueDay: 5, categoryId: null } });
+    expect(parseFixedExpenseForm(f({ name: 'X', amount: '10', currency: 'PEN', dueDay: '32' }))).toEqual({ ok: false, error: 'invalid_day' });
+    expect(parseFixedExpenseForm(f({ name: '<script>', amount: '10', currency: 'PEN', dueDay: '1' }))).toEqual({ ok: false, error: 'invalid_name' });
+  });
+  it('debt: balance defaults to principal; rate in basis points; paid <= total', () => {
+    expect(parseDebtForm(f({ name: 'Auto', currency: 'PEN', principal: '30000', rate: '12.5', installment: '1000', installmentsTotal: '36', installmentsPaid: '12', dueDay: '29' })))
+      .toEqual({ ok: true, value: { name: 'Auto', lender: null, currency: 'PEN', principalMinor: 3000000, balanceMinor: 3000000, annualRateBp: 1250, installmentMinor: 100000, installmentsTotal: 36, installmentsPaid: 12, dueDay: 29 } });
+    expect(parseDebtForm(f({ name: 'X', currency: 'PEN', principal: '100', installmentsTotal: '3', installmentsPaid: '4' }))).toEqual({ ok: false, error: 'invalid_installments' });
+    expect(parseDebtForm(f({ name: 'X', currency: 'PEN', principal: '100', rate: 'abc' }))).toEqual({ ok: false, error: 'invalid_rate' });
+  });
+});

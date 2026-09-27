@@ -94,3 +94,18 @@ export async function loadBudgets(supabase: SupabaseClient): Promise<BudgetRow[]
   return (data ?? []).map((b) => ({ id: b.id, categoryId: b.category_id, currency: b.currency, amountMinor: Number(b.amount_minor),
     category: (b.category as unknown as { name: string } | null)?.name ?? '—' }));
 }
+
+export async function loadCommitmentData(supabase: SupabaseClient) {
+  const [f, d] = await Promise.all([
+    supabase.from('fixed_expenses').select('id,name,currency,amount_minor,due_day,active').order('due_day'),
+    supabase.from('debts').select('id,name,lender,currency,principal_minor,balance_minor,annual_rate_bp,installment_minor,installments_total,installments_paid,due_day,active').order('created_at'),
+  ]);
+  return {
+    fixed: (f.data ?? []).map((r) => ({ id: r.id, name: r.name, currency: r.currency, amountMinor: Number(r.amount_minor), dueDay: r.due_day, active: r.active })),
+    debts: (d.data ?? []).map((r) => ({
+      id: r.id, name: r.name, lender: r.lender as string | null, currency: r.currency, principalMinor: Number(r.principal_minor), balanceMinor: Number(r.balance_minor),
+      annualRateBp: r.annual_rate_bp as number | null, installmentMinor: r.installment_minor === null ? null : Number(r.installment_minor),
+      installmentsTotal: r.installments_total as number | null, installmentsPaid: r.installments_paid as number, dueDay: r.due_day as number | null, active: r.active as boolean,
+    })),
+  };
+}

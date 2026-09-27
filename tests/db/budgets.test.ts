@@ -31,3 +31,27 @@ describe.skipIf(!DATABASE_URL)('TASK-010: budgets isolation', () => {
     expect((await pool.query('select amount_minor from public.budgets where user_id = $1', [USER_B])).rows[0].amount_minor).toBe('50000');
   });
 });
+
+describe.skipIf(!DATABASE_URL)('TASK-011: fixed expenses and debts isolation', () => {
+  let pool: pg.Pool;
+  beforeAll(() => { pool = makePool(); });
+  beforeEach(async () => {
+    await pool.query('delete from auth.users');
+    await pool.query(`insert into auth.users (id, email) values ($1, 'a@test.local'), ($2, 'b@test.local')`, [USER_A, USER_B]);
+    await pool.query(`insert into public.debts (user_id, name, principal_minor, balance_minor) values ($1, 'B debt', 100000, 50000)`, [USER_B]);
+    await pool.query(`insert into public.fixed_expenses (user_id, name, amount_minor, due_day) values ($1, 'B rent', 100000, 5)`, [USER_B]);
+  });
+  afterAll(async () => { await pool?.end(); });
+
+  it('A cannot see, change or create B\'s commitments; invariants enforced', async () => {
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      expect((await c.query('select * from public.debts')).rowCount).toBe(0);
+      expect((await c.query('select * from public.fixed_expenses')).rowCount).toBe(0);
+      expect((await c.query(`update public.debts set balance_minor = 0 where user_id = $1`, [USER_B])).rowCount).toBe(0);
+      expect(await errorCode(c, `insert into public.debts (user_id, name, principal_minor, balance_minor) values ($1, 'x', 1, 1)`, [USER_B])).toBe('42501');
+      expect(await errorCode(c, `insert into public.debts (user_id, name, principal_minor, balance_minor, installments_total, installments_paid) values ($1, 'x', 1, 1, 2, 3)`, [USER_A])).toBe('23514');
+      expect(await errorCode(c, `insert into public.fixed_expenses (user_id, name, amount_minor, due_day) values ($1, 'x', 1, 0)`, [USER_A])).toBe('23514');
+    });
+    expect((await pool.query('select balance_minor from public.debts where user_id = $1', [USER_B])).rows[0].balance_minor).toBe('50000');
+  });
+});

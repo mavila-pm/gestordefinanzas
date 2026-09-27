@@ -111,3 +111,38 @@ describe('budgets (§42, §46)', () => {
       .toBe('Buen cierre, Mauro. Mantuviste Alimentación S/ 220.00 por debajo de tu límite en septiembre, y ahorraste S/ 2,720.00.');
   });
 });
+
+import { debtProgress, dueDateIn, monthCommitments, totalsByCurrency } from '../src/engine/commitments';
+
+describe('commitments (§38, §47, §48)', () => {
+  const fixed = [
+    { id: 'f1', name: 'Alquiler', currency: 'PEN' as const, amountMinor: 150000, dueDay: 5, active: true },
+    { id: 'f2', name: 'Netflix', currency: 'USD' as const, amountMinor: 1599, dueDay: 31, active: true },
+    { id: 'f3', name: 'Gimnasio (cancelado)', currency: 'PEN' as const, amountMinor: 9000, dueDay: 10, active: false },
+  ];
+  const debts = [
+    { id: 'd1', name: 'Préstamo auto', currency: 'PEN' as const, principalMinor: 3000000, balanceMinor: 1800000, installmentMinor: 100000, installmentsTotal: 36, installmentsPaid: 12, dueDay: 29, active: true },
+    { id: 'd2', name: 'Préstamo pagado', currency: 'PEN' as const, principalMinor: 100000, balanceMinor: 0, installmentMinor: 10000, installmentsTotal: 10, installmentsPaid: 10, dueDay: 1, active: true },
+    { id: 'd3', name: 'Última cuota', currency: 'PEN' as const, principalMinor: 100000, balanceMinor: 4000, installmentMinor: 10000, installmentsTotal: 10, installmentsPaid: 9, dueDay: 28, active: true },
+  ];
+  it('due dates clamp to month length', () => {
+    expect(dueDateIn('2027-02', 31)).toBe('2027-02-28');
+    expect(dueDateIn('2028-02', 31)).toBe('2028-02-29');
+  });
+  it('lists active commitments of the month with days until due; paid-off debts excluded; last installment capped at balance', () => {
+    const c = monthCommitments('2026-09', '2026-09-27', fixed, debts);
+    expect(c.map((x) => [x.name, x.dueDate, x.amountMinor, x.daysUntil])).toEqual([
+      ['Alquiler', '2026-09-05', 150000, -22], ['Última cuota', '2026-09-28', 4000, 1], ['Préstamo auto', '2026-09-29', 100000, 2], ['Netflix', '2026-09-30', 1599, 3]]);
+    expect(totalsByCurrency(c)).toEqual({ PEN: 254000, USD: 1599 });
+  });
+  it('debt due soon alert (IMPORTANT), never for past or fixed expenses', () => {
+    const a = buildAlerts({ txs: [], pendingCount: 0, oldestPendingDays: null, unresolvedEvents30d: 0, now: new Date(), currency: 'PEN',
+      commitments: monthCommitments('2026-09', '2026-09-27', fixed, debts) });
+    expect(a.map((x) => x.code)).toEqual(['debt_due:d3', 'debt_due:d1']);
+    expect(a[0]!.text).toBe('Última cuota: cuota de S/ 40.00 vence en 1 día(s) (28/09).');
+  });
+  it('debt progress', () => {
+    expect(debtProgress({ principalMinor: 3000000, balanceMinor: 1800000 })).toEqual({ paidMinor: 1200000, ratio: 0.4 });
+    expect(debtProgress({ principalMinor: 100, balanceMinor: 150 })).toEqual({ paidMinor: 0, ratio: 0 });
+  });
+});
