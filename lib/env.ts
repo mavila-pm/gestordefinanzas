@@ -10,6 +10,12 @@ export function supabasePublicEnv(): { url: string; key: string } {
   return { url, key };
 }
 
-export function siteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+/**
+ * Base URL for auth email links. Explicit NEXT_PUBLIC_SITE_URL wins; on a Vercel preview it falls back to the
+ * stable branch URL (a Vercel system variable, not request input), so links never point at localhost.
+ */
+export function siteUrl(env: Record<string, string | undefined> = process.env): string {
+  if (env.NEXT_PUBLIC_SITE_URL) return env.NEXT_PUBLIC_SITE_URL;
+  if (env.VERCEL_ENV === 'preview' && env.VERCEL_BRANCH_URL) return `https://${env.VERCEL_BRANCH_URL}`;
+  return 'http://localhost:3000';
 }
