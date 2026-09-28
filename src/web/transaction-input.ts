@@ -352,3 +352,21 @@ export function parseDebtForm(get: Get): Parsed<DebtPayload> {
   return { ok: true, value: { name, lender, currency, principalMinor, balanceMinor: balance ?? principalMinor, annualRateBp: rate,
     installmentMinor: installment ?? null, installmentsTotal: total, installmentsPaid: paid, dueDay } };
 }
+
+/** Split form payload (untrusted): strict shape; the database re-validates everything (set_transaction_split). */
+export function parseSplitForm(raw: unknown): { ok: true; value: Array<{ category_id: string; amount_minor: number; note?: string }> } | { ok: false; error: string } {
+  if (typeof raw !== 'string' || raw.length > 4000) return { ok: false, error: 'invalid_request' };
+  let data: unknown;
+  try { data = JSON.parse(raw); } catch { return { ok: false, error: 'invalid_request' }; }
+  if (!Array.isArray(data) || data.length > 12) return { ok: false, error: 'invalid_request' };
+  const out: Array<{ category_id: string; amount_minor: number; note?: string }> = [];
+  for (const p of data) {
+    if (typeof p !== 'object' || p === null) return { ok: false, error: 'invalid_request' };
+    const { categoryId, amountMinor, note } = p as Record<string, unknown>;
+    if (typeof categoryId !== 'string' || !isUuid(categoryId)) return { ok: false, error: 'missing_category' };
+    if (typeof amountMinor !== 'number' || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) return { ok: false, error: 'invalid_amount' };
+    if (note !== null && note !== undefined && (typeof note !== 'string' || note.trim().length > 40)) return { ok: false, error: 'note_too_long' };
+    out.push({ category_id: categoryId, amount_minor: amountMinor, ...(typeof note === 'string' && note.trim() ? { note: note.trim() } : {}) });
+  }
+  return { ok: true, value: out };
+}

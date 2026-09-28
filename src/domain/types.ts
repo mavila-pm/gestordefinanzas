@@ -119,4 +119,6 @@ export interface Transaction {
   sources: TransactionSource[];
   originalTransactionId: string | null;
   duplicateOfId: string | null;
+  /** Split across categories (allocations.ts). Absent/empty = the whole amount is in `category`. */
+  allocations?: ReadonlyArray<{ category: string; amountMinor: number; note: string | null }>;
 }

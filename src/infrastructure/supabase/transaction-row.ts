@@ -20,13 +20,15 @@ export interface TransactionRow {
   original_transaction_id: string | null;
   duplicate_of_id: string | null;
   category: { name: string } | null;
+  allocations?: Array<{ amount_minor: number | string; note: string | null; position: number; category: { name: string } | null }> | null;
   sources: Array<{ channel: Transaction['sources'][number]['channel']; external_event_id: string; parser_version: string; template_verification: Transaction['sources'][number]['templateVerification']; received_at: string }> | null;
 }
 
 export const TRANSACTION_SELECT =
   'id,user_id,occurred_at,type,direction,amount_minor,currency,institution_code,card_last4,merchant_raw,merchant_normalized,' +
   'status,confidence,fingerprint,original_transaction_id,duplicate_of_id,category:categories(name),' +
-  'sources:transaction_sources(channel,external_event_id,parser_version,template_verification,received_at)';
+  'sources:transaction_sources(channel,external_event_id,parser_version,template_verification,received_at),' +
+  'allocations:transaction_allocations(amount_minor,note,position,category:categories(name))';
 
 export function rowToTransaction(r: TransactionRow): Transaction {
   const amountMinor = typeof r.amount_minor === 'string' ? Number(r.amount_minor) : r.amount_minor;
@@ -41,5 +43,9 @@ export function rowToTransaction(r: TransactionRow): Transaction {
       templateVerification: s.template_verification, receivedAt: new Date(s.received_at).toISOString(),
     })),
     originalTransactionId: r.original_transaction_id, duplicateOfId: r.duplicate_of_id,
+    ...(r.allocations?.length ? {
+      allocations: [...r.allocations].sort((a, b) => a.position - b.position)
+        .map((a) => ({ category: a.category?.name ?? 'Otros', amountMinor: Number(a.amount_minor), note: a.note })),
+    } : {}),
   };
 }

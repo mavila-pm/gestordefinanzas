@@ -5,12 +5,13 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
 import { parseAmountToMinor } from '../../src/domain/money';
+import { SPLIT_ERROR_TEXT } from '../../src/domain/allocations';
 import { ingestRawEvent } from '../../src/engine/ingest';
 import { loadUserContext } from '../../lib/queries';
 import { SupabaseImportRepository } from '../../src/infrastructure/supabase/import-repository';
 import { parseImportForm, importOutcomeText } from '../../src/web/import-input';
 import {
-  errorText, isUuid, parseAccountForm, parseCardForm, parseDebtForm, parseFixedExpenseForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
+  errorText, isUuid, parseAccountForm, parseCardForm, parseSplitForm, parseDebtForm, parseFixedExpenseForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
 } from '../../src/web/transaction-input';
 
 export interface ActionState {
@@ -293,4 +294,24 @@ export async function startTrialAction(_prev: ActionState, _form: FormData): Pro
   const { error } = await supabase.rpc('start_plus_trial');
   if (error) return { error: error.message === 'trial_already_used' ? 'Ya usaste tu prueba de Plus.' : error.message === 'already_plus' ? 'Ya tienes Plus.' : errorText(null) };
   return done('Prueba de Plus activada. No se te cobrará nada: al terminar vuelves a Free automáticamente.');
+}
+
+/** Dividir gasto: replace the movement's allocations atomically (or remove them), with an optimistic version check. */
+export async function splitAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const version = form.get('version');
+  if (typeof id !== 'string' || !isUuid(id) || typeof version !== 'string' || !version) return { error: SPLIT_ERROR_TEXT.unknown };
+  const clear = form.get('clear') === '1';
+  const parsed = clear ? { ok: true as const, value: [] } : parseSplitForm(form.get('parts'));
+  if (!parsed.ok) return { error: SPLIT_ERROR_TEXT[parsed.error as keyof typeof SPLIT_ERROR_TEXT] ?? SPLIT_ERROR_TEXT.unknown };
+  if (!clear && parsed.value.length === 0) return { error: SPLIT_ERROR_TEXT.no_parts };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { error } = await supabase.rpc('set_transaction_split', { p_tx_id: id, p_parts: parsed.value, p_expected_updated_at: version });
+  if (error) {
+    const known = error.message as keyof typeof SPLIT_ERROR_TEXT;
+    return { error: SPLIT_ERROR_TEXT[known] ?? (error.message === 'not_found' ? SPLIT_ERROR_TEXT.not_splittable : SPLIT_ERROR_TEXT.unknown) };
+  }
+  revalidatePath(`/app/movimientos/${id}`);
+  return done(clear ? 'División eliminada.' : 'División guardada.');
 }

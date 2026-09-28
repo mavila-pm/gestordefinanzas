@@ -26,14 +26,26 @@ export function minorToDecimal(minor: number): string {
   return `${sign}${Math.trunc(a / 100)}.${String(a % 100).padStart(2, '0')}`;
 }
 
-export const CSV_HEADER = ['Fecha', 'Tipo', 'Efecto', 'Monto', 'Moneda', 'Comercio o descripción', 'Categoría', 'Banco', 'Tarjeta', 'Estado', 'Origen'];
+export const CSV_HEADER = ['Fecha', 'Tipo', 'Efecto', 'Monto', 'Moneda', 'Comercio o descripción', 'Categoría', 'Banco', 'Tarjeta', 'Estado', 'Origen', 'División'];
+
+/**
+ * A split movement stays ONE row with its full amount (sums of the Monto column never double count); the
+ * División column lists the parts and the unallocated remainder so the distribution stays traceable.
+ */
+export function splitCell(t: Pick<Transaction, 'amountMinor' | 'category' | 'allocations'>): string {
+  if (!t.allocations?.length) return '';
+  const parts = t.allocations.map((a) => `${a.category}${a.note ? ` (${a.note})` : ''} ${minorToDecimal(a.amountMinor)}`);
+  const rest = t.amountMinor - t.allocations.reduce((s, a) => s + a.amountMinor, 0);
+  if (rest > 0) parts.push(`${t.category ?? 'Sin categoría'} ${minorToDecimal(rest)}`);
+  return parts.join(' | ');
+}
 
 /** Semicolon-separated (Excel in es-PE opens it correctly), UTF-8 with BOM. Amounts are always positive; Efecto says what they mean. */
 export function transactionsToCsv(txs: readonly Transaction[]): string {
   const rows = txs.map((t) => [
     formatLimaDateTime(t.occurredAt), TYPE_LABEL[t.type], EFFECT_LABEL[financialEffect(t.type)], minorToDecimal(t.amountMinor), t.currency,
     t.merchantRaw, t.category, t.institution, t.cardLast4 ? `****${t.cardLast4}` : '', STATUS_LABEL[t.status],
-    [...new Set(t.sources.map((s) => SOURCE_LABEL[s.channel]))].join(' + '),
+    [...new Set(t.sources.map((s) => SOURCE_LABEL[s.channel]))].join(' + '), splitCell(t),
   ].map(csvCell).join(';'));
   return `﻿${CSV_HEADER.map(csvCell).join(';')}\r\n${rows.join('\r\n')}${rows.length ? '\r\n' : ''}`;
 }

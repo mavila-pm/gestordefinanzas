@@ -1,3 +1,4 @@
+import { categoryShares } from '../domain/allocations';
 import type { Currency } from '../domain/money';
 import type { Transaction } from '../domain/types';
 import { financialEffect, type FinancialEffectOptions } from '../domain/financial-effect';
@@ -43,7 +44,8 @@ export function monthlySummary(
       case 'income':
         s.incomeMinor += t.amountMinor; break;
       case 'expense':
-        s.expensesMinor += t.amountMinor; addCategory(cat, t.amountMinor); break;
+        // A split only redistributes the amount across categories; the total is counted once.
+        s.expensesMinor += t.amountMinor; for (const share of categoryShares(t, cat)) addCategory(share.category, share.amountMinor); break;
       case 'expense_reduction':
         s.expensesMinor -= t.amountMinor; addCategory(cat, -t.amountMinor); break;
       case 'transfer_to_cash':
