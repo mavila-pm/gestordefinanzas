@@ -5,8 +5,8 @@ Status: ACCEPTED (implementation) · commercial values PROPUESTO · Date: 2026-0
 
 Change Request note (Anexo A): the addendum extends the Mother Document (new first-access flow, AI usage
 limits per plan). The PO authored it directly; this ADR records it as the CR. The base spec it references
-("Conversational Financial Discovery & Planning Engine") was **not received in this session**; everything
-below is built from the addendum and ADR-0005, and must be reconciled when that document is shared.
+("Conversational Financial Discovery & Planning Engine") was later approved by the PO; its planning rules are
+reconciled in ADR-0007.
 
 ## Decisions
 
@@ -79,5 +79,5 @@ IMAGE → TEMPORARY PROCESSING → STRUCTURED FACTS → USER CONFIRMATION → DI
 
 - No real provider is enabled: needs PO choice + API key (see docs/ai/provider-evaluation.md). Without it,
   inference paths return "no disponible" and the deterministic features cover the common cases.
-- Camera inside "Preguntar" (§70) and "observed replaces estimated" suggestions (§68) are not implemented.
+- Camera inside "Preguntar" (§70) and "observed replaces estimated" suggestions (§68): done in ADR-0007.
 - Voice is not shown (§11). Internal cost dashboard (§82) is SQL over `ai_calls` (queries in the runbook), no UI.

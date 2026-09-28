@@ -4,6 +4,10 @@ import { financialEffect } from '../src/domain/financial-effect';
 import {
   buildPlan, detectVariations, limaToday, suggestMatches, type ExpectedIncome, type Obligation, type Plan, type PlanInput,
 } from '../src/engine/planning';
+import {
+  essentialSpendByMonth, essentialsSuggestion, observedAmountsForUnknown, suggestIncomeMatches, timeline,
+  type EssentialsSuggestion, type IncomeMatch, type ObservedAmount, type TimelineItem,
+} from '../src/engine/observed';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../src/infrastructure/supabase/transaction-row';
 
 const limaDate = (iso: string) => new Date(Date.parse(iso) - 5 * 3600_000).toISOString().slice(0, 10);
@@ -22,6 +26,10 @@ export interface PlanningData {
   recentIncome: { transactionId: string; amountMinor: number; currency: Currency; date: string; merchant: string | null } | null;
   suggestions: ReturnType<typeof suggestMatches>;
   variations: ReturnType<typeof detectVariations>;
+  /** "Parece tu sueldo de octubre": a received deposit that looks like an expected income (never auto-linked). */
+  incomeMatches: IncomeMatch[];
+  /** A payment whose amount was unknown now has a real linked amount (suggest, never replace silently). */
+  observedAmounts: ObservedAmount[];
   transactionsById: Map<string, { amountMinor: number; occurredOn: string; merchant: string | null }>;
 }
 
@@ -100,6 +108,9 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     recentIncome: top ? { transactionId: top.id, amountMinor: top.amountMinor, currency: top.currency, date: limaDate(top.occurredAt), merchant: top.merchantRaw } : null,
     suggestions: suggestMatches(obligationRows.filter((o) => o.active), outflows, settledObligations, linked),
     variations: detectVariations(obligationRows.filter((o) => o.active), paid),
+    incomeMatches: suggestIncomeMatches(incomes, transactions.filter((t) => t.type === 'income')
+      .map((t) => ({ id: t.id, occurredOn: limaDate(t.occurredAt), amountMinor: t.amountMinor, currency: t.currency, merchant: t.merchantRaw })), settledIncomes, linked),
+    observedAmounts: observedAmountsForUnknown(obligationRows.filter((o) => o.active), paid),
     transactionsById: new Map(transactions.map((t) => [t.id, { amountMinor: t.amountMinor, occurredOn: limaDate(t.occurredAt), merchant: t.merchantRaw }])),
   };
 }
@@ -119,4 +130,28 @@ export function planFor(d: PlanningData, currency: Currency, base: 'balance' | {
     currency, today: d.today, base: planBase, obligations: d.obligations, settledObligations: d.settledObligations,
     incomes: d.incomes, settledIncomes: d.settledIncomes, essentialsMonthlyMinor: s?.essentialsMonthlyMinor ?? null, cushionMinor: s?.cushionMinor ?? 0,
   });
+}
+
+/** What comes, in date order: expected incomes and unpaid planned payments (all currencies, each kept apart). */
+export function planTimeline(d: PlanningData, days = 35): TimelineItem[] {
+  return timeline({ today: d.today, obligations: d.obligations, incomes: d.incomes, settledObligations: d.settledObligations, settledIncomes: d.settledIncomes }, days);
+}
+
+/**
+ * Estimated day-to-day spending vs what the movements show (PEN). Reads the last ~3 complete months separately
+ * (only the plan page needs it). Suggestion only: the estimate changes when the person accepts.
+ */
+export async function loadEssentialsSuggestion(supabase: SupabaseClient, d: PlanningData): Promise<EssentialsSuggestion | null> {
+  const estimate = d.settings.PEN?.essentialsMonthlyMinor ?? null;
+  if (estimate === null) return null;
+  const month = d.today.slice(0, 7);
+  const [y, m] = month.split('-').map(Number) as [number, number];
+  const start = new Date(Date.UTC(y, m - 4, 1, 5)).toISOString(); // Lima midnight, three months back
+  const { data } = await supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed').eq('currency', 'PEN')
+    .gte('occurred_at', start).order('occurred_at', { ascending: false }).limit(2000);
+  const txs = ((data ?? []) as unknown as TransactionRow[]).map(rowToTransaction).map((t) => ({
+    occurredOn: limaDate(t.occurredAt), amountMinor: t.amountMinor, currency: t.currency, isExpense: financialEffect(t.type) === 'expense',
+    category: t.category, allocations: t.allocations,
+  }));
+  return essentialsSuggestion(estimate, essentialSpendByMonth(txs, 'PEN'), month);
 }

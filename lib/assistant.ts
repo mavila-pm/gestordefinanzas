@@ -1,13 +1,14 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { answer, compactView, detectIntent, type Answer, type View } from '../src/ai/assistant';
+import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
 import { findAmounts, fold } from '../src/ai/text';
 import { ASSISTANT_SYSTEM } from '../src/ai/prompts';
 import { sanitizeUserText } from '../src/ai/sanitize';
 import { isSmallTalk } from '../src/ai/interpreter';
 import { infer, STOP_TEXT } from './ai';
-import { loadMessages } from './onboarding';
+import { loadMessages, readImages } from './onboarding';
 import { loadPlanningData, planFor } from './planning';
 
 /**
@@ -30,6 +31,7 @@ async function view(supabase: SupabaseClient): Promise<View> {
     debts: d.debts,
     reviewCount: review.count ?? 0,
     suggestions: d.suggestions,
+    incomeMatches: d.incomeMatches,
   };
 }
 
@@ -105,7 +107,60 @@ export async function assistantAct(supabase: SupabaseClient, userId: string, act
     const { error } = await supabase.from('plan_settlements').insert({ user_id: userId, fixed_expense_id: fields.obligationId, period: fields.period, transaction_id: fields.transactionId });
     return error ? 'No pude marcarlo. Puede que ya esté enlazado.' : 'Listo, marcado como pagado.';
   }
+  if (act === 'link_income') {
+    if (![fields.incomeId, fields.transactionId].every((x) => /^[0-9a-f-]{36}$/.test(x ?? '')) || !/^\d{4}-(0[1-9]|1[0-2])(-\d{2})?$/.test(fields.period ?? '')) return 'No pude registrarlo.';
+    const { data: tx } = await supabase.from('transactions').select('type,status').eq('id', fields.transactionId!).maybeSingle();
+    if (!tx || tx.type !== 'income' || tx.status !== 'confirmed') return 'Ese movimiento no es un ingreso confirmado.';
+    const { error } = await supabase.from('plan_settlements').insert({ user_id: userId, expected_income_id: fields.incomeId, period: fields.period, transaction_id: fields.transactionId });
+    if (error) return error.code === '23505' ? 'Ese ingreso ya estaba registrado.' : 'No pude registrarlo.';
+    const a = answer({ k: 'free' }, await view(supabase));
+    return `Listo, ingreso registrado.${a && !a.pending ? ` ${a.text}` : ''}`;
+  }
   return 'No pude hacerlo.';
+}
+
+/**
+ * Camera in "Preguntar" (§70): same pipeline as onboarding (validate → temporary read → structured facts). The
+ * proposal is kept in the Velsuno message row (never sent to the browser) until "Confirmar"; nothing is written
+ * before that. The image itself is never stored.
+ */
+export async function assistantImages(supabase: SupabaseClient, userId: string, files: File[]): Promise<void> {
+  const read = await readImages(supabase, files, 'consulta posterior a la configuración', (b) => say(supabase, userId, 'user', b));
+  if (!read.ok) { if ('text' in read) await say(supabase, userId, 'velsuno', read.text, read.stop ? { stop: true } : null); return; }
+  const { proposal } = read;
+  const doubtful = proposal.rows.some((row) => row.doubtful);
+  await say(supabase, userId, 'velsuno', doubtful ? 'Encontré esto. Confirma los datos marcados:' : 'Encontré esto:', {
+    title: proposal.title, rows: proposal.rows, vision: proposal.patches,
+    actions: [{ kind: 'vision_confirm', label: 'Confirmar' }, { kind: 'vision_discard', label: 'Descartar' }],
+  });
+  await prune(supabase);
+}
+
+/** Only the latest Velsuno message can be confirmed: an older proposal (or a second tap) writes nothing. */
+export async function assistantVision(supabase: SupabaseClient, userId: string, confirm: boolean): Promise<void> {
+  const { data: last } = await supabase.from('conversation_messages').select('id,card').eq('thread', 'assistant').eq('role', 'velsuno')
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  const patches = validPatches((last?.card as MessageCard | null)?.vision);
+  if (!patches.length) return;
+  await say(supabase, userId, 'user', confirm ? 'Confirmar' : 'Descartar');
+  if (!confirm) { await say(supabase, userId, 'velsuno', 'Listo, no guardé nada de la foto.'); return; }
+  const [fx, debts, cards] = await Promise.all([
+    supabase.from('fixed_expenses').select('id,name,kind,currency').eq('active', true),
+    supabase.from('debts').select('id,name,currency').eq('active', true),
+    supabase.from('cards').select('last4'),
+  ]);
+  if (fx.error || debts.error || cards.error) { await say(supabase, userId, 'velsuno', 'No pude guardarlo. Intenta de nuevo.'); return; }
+  const w = visionWrites(patches, { obligations: fx.data ?? [], debts: debts.data ?? [], cardLast4: (cards.data ?? []).map((c) => c.last4 as string) }, userId);
+  let failed = 0;
+  for (const u of w.updates) { const { error } = await supabase.from(u.table).update(u.patch).eq('id', u.id); if (error) failed++; }
+  for (const i of w.inserts) { const { error } = await supabase.from(i.table).insert(i.row); if (error) failed++; }
+  const done = w.updates.length + w.inserts.length - failed;
+  const a = answer({ k: 'free' }, await view(supabase));
+  await say(supabase, userId, 'velsuno', failed
+    ? `Guardé ${done} de ${done + failed} datos. Revisa en Próximos pagos.`
+    : `Listo, ${w.updates.length ? 'actualicé' : 'guardé'} los datos.${a && !a.pending ? ` ${a.text}` : ''}`,
+  { links: [{ label: 'Ver próximos pagos', href: '/app/compromisos' }] });
+  await prune(supabase);
 }
 
 export async function clearAssistant(supabase: SupabaseClient) {

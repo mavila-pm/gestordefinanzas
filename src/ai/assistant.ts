@@ -1,5 +1,7 @@
 import type { Currency } from '../domain/money';
+import type { IncomeMatch } from '../engine/observed';
 import { compareDebtStrategies, simulatePurchase, type MatchSuggestion, type Plan } from '../engine/planning';
+import type { AssistantAct } from './conversation';
 import { money } from './draft';
 import { findAmounts, fold } from './text';
 
@@ -44,10 +46,11 @@ export interface View {
   debts: Array<{ id: string; name: string; currency: Currency; balanceMinor: number; annualRateBp: number | null }>;
   reviewCount: number;
   suggestions: MatchSuggestion[];
+  incomeMatches?: IncomeMatch[];
 }
 export type Action =
   | { type: 'link'; label: string; href: string }
-  | { type: 'act'; label: string; act: 'patch_obligation' | 'mark_paid' | 'record_balance'; fields: Record<string, string> }
+  | { type: 'act'; label: string; act: AssistantAct; fields: Record<string, string> }
   | { type: 'reply'; label: string };
 export interface Answer { text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' | 'income_amount' }
 
@@ -131,8 +134,17 @@ export function answer(intent: Intent, v: View): Answer | null {
       if (!o) return null;
       return { text: `¿Actualizo ${o.name} a ${money(intent.amountMinor, o.currency)}?`, actions: [{ type: 'act', label: `Actualizar a ${money(intent.amountMinor, o.currency)}`, act: 'patch_obligation', fields: { id: o.id, amount: (intent.amountMinor / 100).toFixed(2) } }] };
     }
-    case 'got_paid':
+    case 'got_paid': {
+      // A real deposit that looks like the expected income: the person confirms the link (never automatic).
+      const m = v.incomeMatches?.[0];
+      if (m) {
+        return {
+          text: `Vi un ingreso de ${money(m.receivedMinor, m.currency)}. ¿Es tu ${m.name.toLowerCase()} del ${dm(m.expectedDate)}?`,
+          actions: [{ type: 'act', label: 'Sí, es ese', act: 'link_income', fields: { incomeId: m.incomeId, transactionId: m.transactionId, period: m.period } }, PLAN_LINK],
+        };
+      }
       return { text: '¡Bien! ¿Cuánto tienes ahora en tu cuenta? Con eso recalculo lo que tienes libre.', pending: 'balance' };
+    }
     case 'income_changed':
       return { text: 'Lo actualizo desde Dinero libre para que no cambie un ingreso por error.', actions: [{ type: 'link', label: 'Editar ingreso', href: '/app/plan' }] };
     case 'debt_paid':

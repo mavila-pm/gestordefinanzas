@@ -133,6 +133,36 @@ export async function markObligationPaidAction(_p: ActionState, form: FormData):
   return done('Pago confirmado. El siguiente ya está en tus próximos pagos.');
 }
 
+/**
+ * "Parece tu sueldo de octubre" -> the person confirms: the real deposit settles that expected income, so the plan
+ * horizon moves to the next one. Only an income movement can settle an income (checked here; RLS checks ownership).
+ */
+export async function linkIncomeAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const incomeId = form.get('incomeId');
+  const transactionId = form.get('transactionId');
+  const period = form.get('period');
+  if (!isUuid(incomeId) || !isUuid(transactionId) || typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])(-\d{2})?$/.test(period)) return { error: SAVE_ERROR };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const { data: tx } = await supabase.from('transactions').select('type,status').eq('id', transactionId).maybeSingle();
+  if (!tx || tx.type !== 'income' || tx.status !== 'confirmed') return { error: 'Ese movimiento no es un ingreso confirmado.' };
+  const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, expected_income_id: incomeId, period, transaction_id: transactionId });
+  if (error) return { error: error.code === '23505' ? 'Ese ingreso ya estaba registrado.' : SAVE_ERROR };
+  return done('Ingreso registrado. Planificamos hasta el siguiente.');
+}
+
+/** "Tus básicos vienen siendo S/ 450": recomputed here (never trusted from the form), applied only on request. */
+export async function acceptEssentialsAction(_p: ActionState, _form: FormData): Promise<ActionState> {
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const { loadPlanningData, loadEssentialsSuggestion } = await import('../../../lib/planning');
+  const s = await loadEssentialsSuggestion(supabase, await loadPlanningData(supabase));
+  if (!s) return { error: 'Ya no hay una sugerencia vigente.' };
+  const { error } = await supabase.from('planning_settings').update({ essentials_monthly_minor: s.observedMinor, updated_at: new Date().toISOString() })
+    .eq('currency', 'PEN');
+  return error ? { error: SAVE_ERROR } : done('Básicos actualizados con lo observado.');
+}
+
 /** "Internet subió S/31": update the expected amount, or keep the previous reference. History is never rewritten. */
 export async function resolveVariationAction(_p: ActionState, form: FormData): Promise<ActionState> {
   const obligationId = form.get('obligationId');
@@ -149,4 +179,14 @@ export async function resolveVariationAction(_p: ActionState, form: FormData): P
   }
   const { error } = await supabase.from('plan_settlements').update({ variance_ack: true }).eq('fixed_expense_id', obligationId).eq('period', period);
   return error ? { error: SAVE_ERROR } : done(choice === 'update' ? 'Monto actualizado.' : 'Mantenemos el monto anterior.');
+}
+
+/** "Deshacer" a confirmed link (payment or income): the planned item is pending again; the movement is untouched. */
+export async function unlinkSettlementAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  if (!isUuid(id)) return { error: SAVE_ERROR };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const { data, error } = await supabase.from('plan_settlements').delete().eq('id', id).select('id');
+  return error || !data?.length ? { error: SAVE_ERROR } : done('Deshecho. Vuelve a figurar como pendiente.');
 }

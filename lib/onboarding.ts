@@ -9,7 +9,7 @@ import { EXTRACT_SYSTEM, VISION_SYSTEM } from '../src/ai/prompts';
 import { sanitizeUserText } from '../src/ai/sanitize';
 import { validateInterpretation, validateVision } from '../src/ai/schema';
 import { emptyDraft, type Draft } from '../src/ai/types';
-import { proposalFrom } from '../src/ai/vision';
+import { proposalFrom, type VisionProposal } from '../src/ai/vision';
 import { preferredName } from '../src/domain/profile';
 import { infer, STOP_TEXT } from './ai';
 import { loadProfile } from './queries';
@@ -30,7 +30,10 @@ export async function loadOnboarding(supabase: SupabaseClient): Promise<Onboardi
 
 export async function loadMessages(supabase: SupabaseClient, thread: 'onboarding' | 'assistant', limit = 60): Promise<ChatMessage[]> {
   const { data } = await supabase.from('conversation_messages').select('id,role,body,card').eq('thread', thread).order('created_at', { ascending: false }).limit(limit);
-  return (data ?? []).reverse().map((m) => ({ id: m.id, role: m.role, body: m.body, card: m.card as MessageCard | null }));
+  return (data ?? []).reverse().map((m) => {
+    const { vision: _proposal, ...card } = (m.card ?? {}) as MessageCard; // the pending proposal stays server-side
+    return { id: m.id, role: m.role, body: m.body, card: m.card ? card : null };
+  });
 }
 
 async function say(supabase: SupabaseClient, userId: string, thread: 'onboarding' | 'assistant', role: 'user' | 'velsuno', body: string, card: MessageCard | null = null) {
@@ -126,23 +129,34 @@ export async function onboardingSummary(supabase: SupabaseClient, userId: string
   await say(supabase, userId, 'onboarding', 'velsuno', 'Esto es lo que tengo:', { summary: summarize(state.draft), actions: [{ kind: 'correct', label: 'Corregir' }, { kind: 'start', label: 'Empezar' }] });
 }
 
-/** Camera read (§12-§18): validate → temporary processing → structured facts → confirmation. The image is never stored. */
-export async function onboardingImages(supabase: SupabaseClient, userId: string, files: File[]): Promise<void> {
-  const state = await loadOnboarding(supabase) ?? await startOnboarding(supabase, userId);
+export type ImageRead = { ok: true; proposal: VisionProposal } | { ok: false; text: string; stop?: boolean } | { ok: false; empty: true };
+
+/**
+ * Camera read (§12-§18), shared by onboarding and "Preguntar": validate → temporary processing → structured facts.
+ * The image is never stored (only in this request's memory); nothing is applied here.
+ */
+export async function readImages(supabase: SupabaseClient, files: File[], context: string, echo: (body: string) => Promise<void>): Promise<ImageRead> {
   const images = [];
   for (const f of files.slice(0, 4)) {
     const check = checkImage(new Uint8Array(await f.arrayBuffer()));
-    if (!check.ok) { await say(supabase, userId, 'onboarding', 'velsuno', IMAGE_ERROR_TEXT[check.error]); return; }
+    if (!check.ok) return { ok: false, text: IMAGE_ERROR_TEXT[check.error] };
     images.push({ mime: check.mime, base64: Buffer.from(check.bytes).toString('base64') });
   }
-  if (!images.length) return;
-  await say(supabase, userId, 'onboarding', 'user', images.length === 1 ? 'Foto enviada' : `${images.length} fotos enviadas`);
+  if (!images.length) return { ok: false, empty: true };
+  await echo(images.length === 1 ? 'Foto enviada' : `${images.length} fotos enviadas`);
   const r = await infer(supabase, { operation: 'vision_extract', system: VISION_SYSTEM, json: true, images,
-    messages: [{ role: 'user', content: `Extrae los datos. Contexto: ${state.draft.pending ?? 'configuración inicial'}` }] }, (t) => validateVision(t) !== null);
+    messages: [{ role: 'user', content: `Extrae los datos. Contexto: ${context}` }] }, (t) => validateVision(t) !== null);
   images.length = 0; // discard the image data as soon as the read is done
-  if (!r.ok) { await say(supabase, userId, 'onboarding', 'velsuno', STOP_TEXT[r.reason], { stop: r.reason !== 'failed' }); return; }
+  if (!r.ok) return { ok: false, text: STOP_TEXT[r.reason], stop: r.reason !== 'failed' };
   const proposal = proposalFrom(validateVision(r.text)!);
-  if (!proposal) { await say(supabase, userId, 'onboarding', 'velsuno', 'No encontré datos claros en esa imagen. Puedes escribirlos o probar con otra captura.'); return; }
+  return proposal ? { ok: true, proposal } : { ok: false, text: 'No encontré datos claros en esa imagen. Puedes escribirlos o probar con otra captura.' };
+}
+
+export async function onboardingImages(supabase: SupabaseClient, userId: string, files: File[]): Promise<void> {
+  const state = await loadOnboarding(supabase) ?? await startOnboarding(supabase, userId);
+  const read = await readImages(supabase, files, state.draft.pending ?? 'configuración inicial', (b) => say(supabase, userId, 'onboarding', 'user', b));
+  if (!read.ok) { if ('text' in read) await say(supabase, userId, 'onboarding', 'velsuno', read.text, read.stop ? { stop: true } : null); return; }
+  const { proposal } = read;
   state.draft.vision = proposal.patches;
   await save(supabase, userId, state.draft);
   const doubtful = proposal.rows.some((row) => row.doubtful);

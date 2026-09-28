@@ -20,6 +20,8 @@ await runSuite('cashflow', async ({ page, check }) => {
   await page.goto(`${BASE}/app/plan`);
   const hero = (await page.getByTestId('free-PEN').textContent()) ?? '';
   check('plan is labelled estimated and says what is missing', hero.includes('Dinero libre estimado') && /(Falta 1 dato|Faltan \d+ datos) por confirmar/.test(hero), hero);
+  const tl = await page.getByTestId('timeline').locator('li').allTextContents();
+  check('timeline lists what comes in date order, incomes marked as expected (not received)', tl.length > 0 && tl.some((t) => t.includes('Ingreso esperado') || t.includes('aún no registrado')), JSON.stringify(tl));
   const bd = page.getByTestId('breakdown');
   await bd.locator('summary').click();
   const lines = await bd.locator('li').allTextContents();

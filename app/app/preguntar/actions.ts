@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { assistantAct, assistantTurn, clearAssistant } from '../../../lib/assistant';
+import { assistantAct, assistantImages, assistantTurn, assistantVision, clearAssistant } from '../../../lib/assistant';
 import { loadMessages } from '../../../lib/onboarding';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import type { ChatState } from '../../../src/ai/conversation';
@@ -15,7 +15,13 @@ export async function assistantAction(_prev: ChatState, form: FormData): Promise
     const op = form.get('op');
     const reply = form.get('reply');
     const text = form.get('text');
-    if (typeof op === 'string' && op.startsWith('act:')) {
+    const images = form.getAll('images').filter((f): f is File => f instanceof File && f.size > 0);
+    if (op === 'vision_confirm' || op === 'vision_discard') {
+      await assistantVision(supabase, user.id, op === 'vision_confirm');
+      revalidatePath('/app', 'layout');
+    } else if (images.length) {
+      await assistantImages(supabase, user.id, images);
+    } else if (typeof op === 'string' && op.startsWith('act:')) {
       const [, act, json] = op.match(/^act:([a-z_]+):(.*)$/s) ?? [];
       let fields: Record<string, string> = {};
       try { fields = JSON.parse(json ?? '{}'); } catch { /* invalid → rejected below */ }

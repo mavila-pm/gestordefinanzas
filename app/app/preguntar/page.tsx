@@ -8,7 +8,7 @@ import { assistantAction, clearAssistantAction } from './actions';
 export const metadata: Metadata = { title: 'Preguntar · Velsuno' };
 
 const WELCOME: ChatMessage = {
-  id: 'welcome', role: 'velsuno', body: 'Pregúntame por tu dinero. Respondo con tus datos registrados.',
+  id: 'welcome', role: 'velsuno', body: 'Pregúntame por tu dinero, o muéstrame un recibo o estado de cuenta.',
   card: { replies: ['¿Cuánto tengo libre?', '¿Qué viene esta semana?', '¿Puedo gastar S/ 300?', '¿Qué pago primero?'] },
 };
 
@@ -22,7 +22,7 @@ export default async function Preguntar() {
         <h1>Preguntar</h1>
         {messages.length > 0 && <form action={clearAssistantAction}><button type="submit" className="link">Limpiar conversación</button></form>}
       </div>
-      <Chat initial={messages.length ? messages : [WELCOME]} send={assistantAction} camera={false} label="Preguntar a Velsuno"
+      <Chat initial={messages.length ? messages : [WELCOME]} send={assistantAction} camera label="Preguntar a Velsuno"
         placeholder="Ej.: ¿me alcanza para S/ 500?" />
     </main>
   );

@@ -7,6 +7,8 @@ import {
   onboardingConversation, onboardingFinish, onboardingImages, onboardingLeave, onboardingSkip, onboardingSummary, onboardingText, onboardingVision,
 } from '../../lib/onboarding';
 import type { ChatState } from '../../src/ai/conversation';
+import { emptyDraft } from '../../src/ai/types';
+import type { ActionState } from '../app/actions';
 
 const SKIP = new Set(['Después', 'No sé', 'No tengo más', 'Quincenal']);
 
@@ -44,4 +46,19 @@ export async function leaveOnboarding() {
   if (!user) redirect('/login');
   await onboardingLeave(supabase, user.id);
   redirect('/app');
+}
+
+/**
+ * "Borrar conversación de bienvenida" (Lo que recuerda): forgets the chat and the facts draft. What was already
+ * saved as payments, incomes or debts stays (editable where it lives); `applied` is kept so a demo reset stays exact.
+ */
+export async function forgetOnboardingAction(_p: ActionState, _form: FormData): Promise<ActionState> {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Inicia sesión de nuevo.' };
+  const { error: e1 } = await supabase.from('conversation_messages').delete().eq('thread', 'onboarding');
+  const { error: e2 } = await supabase.from('onboarding_states').update({ facts: emptyDraft(), summary: null }).eq('user_id', user.id);
+  if (e1 || e2) return { error: 'No pudimos borrarla. Intenta de nuevo.' };
+  revalidatePath('/app', 'layout');
+  return { message: 'Conversación borrada.' };
 }

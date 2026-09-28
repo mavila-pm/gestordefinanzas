@@ -3,14 +3,14 @@ import { ActionForm } from '../../../components/action-form';
 import { PurchaseSimulator } from '../../../components/purchase-simulator';
 import { Icon } from '../../../components/ui/icon';
 import { Sheet } from '../../../components/ui/sheet';
-import { loadPlanningData, planFor } from '../../../lib/planning';
+import { loadEssentialsSuggestion, loadPlanningData, planFor, planTimeline } from '../../../lib/planning';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import type { Plan, PlanLine } from '../../../src/engine/planning';
 import { shortDate } from '../../../src/web/dates';
 import { isUuid } from '../../../src/web/transaction-input';
 import {
-  markObligationPaidAction, patchObligationAction, recordBalanceAction, resolveVariationAction, saveIncomeAction, saveSettingsAction,
+  acceptEssentialsAction, linkIncomeAction, markObligationPaidAction, patchObligationAction, recordBalanceAction, resolveVariationAction, saveIncomeAction, saveSettingsAction,
 } from './actions';
 
 export const metadata = { title: 'Dinero libre' };
@@ -75,6 +75,8 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const incomeCurrency = d.recentIncome?.transactionId === incomeId ? d.recentIncome!.currency : 'PEN';
   const distribution = incomeId ? planFor(d, incomeCurrency, { transactionId: incomeId }) : null;
   const obligationsById = new Map(d.obligationRows.map((o) => [o.id, o]));
+  const essentials = await loadEssentialsSuggestion(supabase, d);
+  const upcoming = planTimeline(d).slice(0, 12);
 
   return (
     <main className="stack narrow-md">
@@ -175,6 +177,77 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
               </div>
             );
           })}
+        </section>
+      )}
+
+      {d.incomeMatches.length > 0 && (
+        <section className="stack-sm" aria-label="Ingresos detectados" data-testid="income-matches">
+          <h2>¿Te pagaron?</h2>
+          {d.incomeMatches.slice(0, 3).map((m) => (
+            <div key={m.transactionId} className="source row">
+              <span className="setting-text"><span>Entraron <Money v={m.receivedMinor} c={m.currency} /> el {shortDate(d.transactionsById.get(m.transactionId)?.occurredOn ?? m.expectedDate)}</span>
+                <small className="muted">Parece tu {m.name.toLowerCase()} del {shortDate(m.expectedDate)}{m.expectedMinor !== null && m.expectedMinor !== m.receivedMinor ? ` (esperabas ${formatMoney({ amountMinor: m.expectedMinor, currency: m.currency })})` : ''}.</small></span>
+              <ActionForm action={linkIncomeAction} className="inline" label={`Confirmar ingreso ${m.name}`}>
+                <input type="hidden" name="incomeId" value={m.incomeId} />
+                <input type="hidden" name="transactionId" value={m.transactionId} />
+                <input type="hidden" name="period" value={m.period} />
+                <button type="submit" className="quiet">Sí, es ese</button>
+              </ActionForm>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {d.observedAmounts.length > 0 && (
+        <section className="stack-sm" aria-label="Montos observados" data-testid="observed-amounts">
+          {d.observedAmounts.map((v) => (
+            <div key={v.obligationId} className="source">
+              <strong>{v.name}: pagaste <Money v={v.observedMinor} c={v.currency} /></strong>
+              <small className="muted">No sabías el monto. ¿Lo usamos para planificar?</small>
+              <div className="actions">
+                {(['update', 'keep'] as const).map((choice) => (
+                  <ActionForm key={choice} action={resolveVariationAction} className="inline" label={choice === 'update' ? `Usar monto observado de ${v.name}` : `Mantener sin monto ${v.name}`}>
+                    <input type="hidden" name="obligationId" value={v.obligationId} /><input type="hidden" name="period" value={v.period} />
+                    <input type="hidden" name="actual" value={v.observedMinor} /><input type="hidden" name="choice" value={choice} />
+                    <button type="submit" className={choice === 'update' ? 'quiet' : 'link small-link'}>{choice === 'update' ? `Usar ${formatMoney({ amountMinor: v.observedMinor, currency: v.currency })}` : 'Todavía no'}</button>
+                  </ActionForm>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {essentials && (
+        <section className="source" aria-label="Básicos observados" data-testid="essentials-suggestion">
+          <strong>Tus básicos vienen siendo <Money v={essentials.observedMinor} c="PEN" /> al mes</strong>
+          <small className="muted">Estimaste <Money v={essentials.estimateMinor} c="PEN" />. Promedio de alimentación y transporte en {essentials.months.length} meses completos.</small>
+          <div className="actions">
+            <ActionForm action={acceptEssentialsAction} className="inline" label="Usar básicos observados">
+              <button type="submit" className="quiet">Usar {formatMoney({ amountMinor: essentials.observedMinor, currency: 'PEN' })}</button>
+            </ActionForm>
+          </div>
+        </section>
+      )}
+
+      {upcoming.length > 0 && (
+        <section className="stack-sm" aria-labelledby="timeline" data-testid="timeline">
+          <h2 id="timeline">Lo que viene</h2>
+          <ul className="list card" style={{ paddingTop: 4, paddingBottom: 4 }}>
+            {upcoming.map((t, i) => (
+              <li key={i} data-kind={t.kind}>
+                <span className="setting-text">
+                  <span>{t.label}</span>
+                  <small className={t.overdue && t.kind !== 'income' ? 'error' : 'muted'}>
+                    {[t.date ? `${shortDate(t.date)}${t.dateMax ? `–${shortDate(t.dateMax)} aprox.` : ''}` : 'Fecha por confirmar',
+                      t.kind === 'income' ? (t.overdue ? 'Esperado, aún no registrado' : 'Ingreso esperado') : t.overdue ? 'Venció' : null,
+                      t.amountStatus === 'estimated' ? 'estimado' : null].filter(Boolean).join(' · ')}
+                  </small>
+                </span>
+                <span className="amount">{t.amountMinor === null ? <span className="muted">por confirmar</span> : <>{t.kind === 'income' ? '+' : '−'}<Money v={t.amountMinor} c={t.currency} /></>}</span>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

@@ -133,6 +133,13 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(answer({ k: 'update_amount', name: 'alquiler', amountMinor: 160000 }, view)!.actions![0]).toMatchObject({ type: 'act', act: 'patch_obligation', fields: { id: 'o1', amount: '1600.00' } });
     expect(answer({ k: 'unknown' }, view)).toBeNull();
   });
+  it('"ya me pagaron" offers to link a matching deposit (confirmation, never automatic); otherwise asks the balance', () => {
+    const m = { incomeId: 'i1', name: 'Sueldo', period: '2026-09', expectedDate: '2026-09-25', transactionId: 't1', receivedMinor: 570000, currency: 'PEN' as const, expectedMinor: 570000, confidence: 'high' as const };
+    const a = answer({ k: 'got_paid' }, { ...view, incomeMatches: [m] })!;
+    expect(a.text).toContain('¿Es tu sueldo del 25 set?');
+    expect(a.actions![0]).toMatchObject({ type: 'act', act: 'link_income', fields: { incomeId: 'i1', transactionId: 't1', period: '2026-09' } });
+    expect(answer({ k: 'got_paid' }, view)!.pending).toBe('balance');
+  });
   it('asks for the missing data instead of guessing (§66)', () => {
     const noBase = { ...view, plans: [{ ...plan, base: null, freeMinor: null, missing: [{ code: 'balance' as const, text: 'Indica cuánto tienes hoy en tu cuenta.' }] }] };
     const a = answer({ k: 'can_spend', amountMinor: 1000, currency: 'PEN' }, noBase)!;
