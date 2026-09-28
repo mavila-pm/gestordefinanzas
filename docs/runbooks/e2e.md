@@ -112,3 +112,6 @@ select provider, model, operation, count(*) calls, sum(input_tokens) input, sum(
 from public.ai_calls where created_at > now() - interval '30 days' group by 1, 2, 3 order by usd desc;
 select percentile_cont(array[.5,.9,.95]) within group (order by weighted_tokens) from public.ai_usage where bucket like 'm:%';
 ```
+
+## Perf probe
+`scripts/e2e.sh perf` (seed s11a): prints `PERF` rows (tap → first visible feedback, tap → result) measured in the page from `pointerdown`; fails if any feedback > 100 ms.

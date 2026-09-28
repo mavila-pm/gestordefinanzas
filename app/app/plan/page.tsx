@@ -3,7 +3,7 @@ import { ActionForm } from '../../../components/action-form';
 import { PurchaseSimulator } from '../../../components/purchase-simulator';
 import { Icon } from '../../../components/ui/icon';
 import { Sheet } from '../../../components/ui/sheet';
-import { loadEssentialsSuggestion, loadPlanningData, planFor, planTimeline } from '../../../lib/planning';
+import { essentialsFor, loadEssentialRows, loadPlanningData, planFor, planTimeline } from '../../../lib/planning';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import type { Plan, PlanLine } from '../../../src/engine/planning';
@@ -80,14 +80,15 @@ function Headline({ p, testId }: { p: Plan; testId: string }) {
 export default async function PlanPage({ searchParams }: { searchParams: Promise<{ ingreso?: string }> }) {
   const { ingreso } = await searchParams;
   const supabase = await createSupabaseServerClient();
-  const d = await loadPlanningData(supabase);
+  // One parallel round: the observed-essentials read no longer waits for the plan data.
+  const [d, essentialRows] = await Promise.all([loadPlanningData(supabase), loadEssentialRows(supabase)]);
   const currencies = (['PEN', 'USD'] as const).filter((c, i) => i === 0 || d.balances[c] || d.incomes.some((x) => x.currency === c) || d.obligations.some((o) => o.currency === c));
   const incomeId = ingreso && isUuid(ingreso) && d.transactionsById.has(ingreso) ? ingreso : null;
   const incomeTx = incomeId ? d.transactionsById.get(incomeId)! : null;
   const incomeCurrency = d.recentIncome?.transactionId === incomeId ? d.recentIncome!.currency : 'PEN';
   const distribution = incomeId ? planFor(d, incomeCurrency, { transactionId: incomeId }) : null;
   const obligationsById = new Map(d.obligationRows.map((o) => [o.id, o]));
-  const essentials = await loadEssentialsSuggestion(supabase, d);
+  const essentials = essentialsFor(d, essentialRows);
   const upcoming = planTimeline(d).slice(0, 12);
 
   return (

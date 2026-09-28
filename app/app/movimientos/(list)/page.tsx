@@ -1,14 +1,14 @@
 import Link from 'next/link';
-import { createSupabaseServerClient } from '../../../lib/supabase/server';
-import { LINKED_SELECT, loadCatalog, toLinked } from '../../../lib/queries';
-import { formatMoney } from '../../../src/domain/money';
-import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';
+import { createSupabaseServerClient } from '../../../../lib/supabase/server';
+import { LINKED_SELECT, loadCatalog, toLinked } from '../../../../lib/queries';
+import { formatMoney } from '../../../../src/domain/money';
+import { limaMonth, limaMonthRange } from '../../../../src/web/auth-input';
 import {
   filtersToQuery, KIND_TYPES, PAGE_SIZE, parseMovementFilters, searchAmountMinor, SOURCE_VALUES, STATUS_VALUES,
-} from '../../../src/web/movement-filters';
-import { TxRow } from '../../../components/tx-row';
-import { Icon } from '../../../components/ui/icon';
-import { limaDateKey, limaDayLabel, monthLabel } from '../../../src/web/labels';
+} from '../../../../src/web/movement-filters';
+import { TxRow } from '../../../../components/tx-row';
+import { Icon } from '../../../../components/ui/icon';
+import { limaDateKey, limaDayLabel, monthLabel } from '../../../../src/web/labels';
 
 export const metadata = { title: 'Movimientos' };
 

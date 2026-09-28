@@ -154,18 +154,28 @@ export function planTimeline(d: PlanningData, days = 35): TimelineItem[] {
  * Estimated day-to-day spending vs what the movements show (PEN). Reads the last ~3 complete months separately
  * (only the plan page needs it). Suggestion only: the estimate changes when the person accepts.
  */
-export async function loadEssentialsSuggestion(supabase: SupabaseClient, d: PlanningData): Promise<EssentialsSuggestion | null> {
-  const estimate = d.settings.PEN?.essentialsMonthlyMinor ?? null;
-  if (estimate === null) return null;
-  const month = d.today.slice(0, 7);
-  const [y, m] = month.split('-').map(Number) as [number, number];
+export type EssentialRows = Array<Parameters<typeof essentialSpendByMonth>[0][number]>;
+
+/** The last ~3 complete months of PEN movements, split-aware. Fetched in parallel with loadPlanningData. */
+export async function loadEssentialRows(supabase: SupabaseClient, now = new Date()): Promise<EssentialRows> {
+  const [y, m] = limaToday(now).slice(0, 7).split('-').map(Number) as [number, number];
   const start = new Date(Date.UTC(y, m - 4, 1, 5)).toISOString(); // Lima midnight, three months back
   const { data } = await supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed').eq('currency', 'PEN')
     .gte('occurred_at', start).order('occurred_at', { ascending: false }).limit(2000);
-  const txs = ((data ?? []) as unknown as TransactionRow[]).map(rowToTransaction).map((t) => ({
+  return ((data ?? []) as unknown as TransactionRow[]).map(rowToTransaction).map((t) => ({
     occurredOn: limaDate(t.occurredAt), amountMinor: t.amountMinor, currency: t.currency, isExpense: financialEffect(t.type) === 'expense',
     category: t.category, allocations: t.allocations,
   }));
-  const s = essentialsSuggestion(estimate, essentialSpendByMonth(txs, 'PEN'), month);
+}
+
+/** Estimated day-to-day spending vs what the movements show (PEN). Suggestion only; hidden if the person decided. */
+export function essentialsFor(d: PlanningData, rows: EssentialRows): EssentialsSuggestion | null {
+  const estimate = d.settings.PEN?.essentialsMonthlyMinor ?? null;
+  if (estimate === null) return null;
+  const s = essentialsSuggestion(estimate, essentialSpendByMonth(rows, 'PEN'), d.today.slice(0, 7));
   return s && !isSuppressed(d.decisions, 'essentials', 'PEN', s.observedMinor, d.today) ? s : null;
+}
+
+export async function loadEssentialsSuggestion(supabase: SupabaseClient, d: PlanningData): Promise<EssentialsSuggestion | null> {
+  return essentialsFor(d, await loadEssentialRows(supabase));
 }

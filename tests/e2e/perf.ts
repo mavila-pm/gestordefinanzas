@@ -81,7 +81,7 @@ await runSuite('perf', async ({ page, check }) => {
   const t0 = now();
   await page.locator('.composer button[type=submit]').click();
   const shown = await until(page, t0, `document.querySelectorAll('[data-testid=user-msg]').length > ${users}`);
-  const answered = await until(page, t0, `document.querySelectorAll('[data-testid=velsuno-msg]').length > ${velsuno}`);
+  const answered = await until(page, t0, `!document.querySelector('.composer[aria-busy=true]') && !document.querySelector('.typing') && document.querySelectorAll('[data-testid=velsuno-msg]').length >= ${velsuno}`);
   log('Preguntar send', shown, answered);
   check('Preguntar: sent message visible < 100 ms', shown < 100, String(shown));
 

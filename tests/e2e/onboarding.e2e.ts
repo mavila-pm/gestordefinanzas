@@ -35,6 +35,9 @@ await runSuite('onboarding', async ({ page, check }) => {
   await tap(page, 'Después');
   v = await lastVelsuno(page);
   check('"Después" moves on (unknown, never 0)', !v.includes('¿Cuánto tienes hoy') && !v.includes('Saldo de hoy S/ 0'), v);
+  check('next: a payment date that is missing (the card due day)', v.includes('¿Qué día vence la tarjeta bcp?'), v);
+  await send(page, 'el 19');
+  v = await lastVelsuno(page);
   check('next: the payment amount that is missing', v.includes('¿Cuánto pagas de carro?'), v);
 
   await send(page, '900');
