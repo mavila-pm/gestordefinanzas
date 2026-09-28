@@ -95,3 +95,20 @@ New suite `cashflow` (seed s11: synthetic demo — balance S/ 5,000, salary on t
 card, internet with unknown amount, phone, rent after the income, yearly insurance, electricity 129→160, unlinked car
 payment, a salary that just came in, two debts one without rate). Assertions are date-independent (arithmetic and
 honesty rules). Full regression: 163 + 24 = **187/187**; visual 132 screenshots, 0 overflow, 0 UX issues.
+
+## Conversational onboarding + AI usage (ADR-0006) — 2026-09-28
+New suite `onboarding` (seed s12: s12a first-time user, demo-allowlisted; s12b another user with its own
+conversation/usage/income). `scripts/e2e.sh` starts the server with `AI_PROVIDER=fixture AI_ALLOW_FIXTURE=1`, so
+inference paths (reservation, validation, usage recording, camera) run with synthetic answers and the synthetic
+images of `tests/fixtures/ai/vision` (regenerate with `scripts/gen-vision-fixtures.ts`). Every other probe user
+is seeded with onboarding completed. Full regression: 187 + 38 = **225/225**; visual 144 screenshots (adds
+Preguntar and the welcome conversation), 0 overflow, 0 UX issues. Cleanup 0|0.
+
+Internal cost view (§82), run with the SQL tool:
+```sql
+select provider, model, operation, count(*) calls, sum(input_tokens) input, sum(output_tokens) output,
+  sum(est_cost_micro_usd)/1e6 usd, avg(latency_ms)::int avg_ms,
+  round(100.0 * count(*) filter (where outcome <> 'ok') / count(*), 1) error_pct
+from public.ai_calls where created_at > now() - interval '30 days' group by 1, 2, 3 order by usd desc;
+select percentile_cont(array[.5,.9,.95]) within group (order by weighted_tokens) from public.ai_usage where bucket like 'm:%';
+```

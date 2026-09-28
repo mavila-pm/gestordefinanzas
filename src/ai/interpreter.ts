@@ -37,7 +37,7 @@ const VARIABLE: Array<[RegExp, string]> = [
   [/\b(salidas|diversion|ocio)\b/, 'Salidas'],
 ];
 const LENDERS: Array<[RegExp, string]> = [
-  [/\b(pareja|enamorad[oa]|espos[oa]|novi[oa])\b/, 'tu pareja'], [/\b(mama|madre)\b/, 'tu mamá'], [/\b(papa|padre)\b/, 'tu papá'],
+  [/\b(pareja|enamorad[oa]|espos[oa]|novi[oa])\b/, 'tu pareja'], [/\b(mama|madre|vieja)\b/, 'tu mamá'], [/\b(papa|padre|viejo)\b/, 'tu papá'],
   [/\bherman[oa]\b/, 'tu hermano(a)'], [/\b(amig[oa]|pata|compadre)\b/, 'un amigo'], [/\b(tio|tia|prim[oa]|familia|familiar|suegr[oa])\b/, 'un familiar'],
 ];
 
@@ -53,14 +53,15 @@ const MONTHLY = /\b(mensual|al mes|cada mes|mensualmente)\b/;
 const NEW_INCOME = /\b(otro ingreso|tambien (cobro|gano|recibo)|extra|freelance|cachuelo|negocio|alquilo)\b/;
 const MINIMUM = /\b(minimo|pago minimo)\b/;
 
-type Ctx = { t: 'card'; institution?: string; last4?: string } | { t: 'obligation'; kind: ObligationKind; name: string } | { t: 'income' };
+type Ctx = { t: 'card'; institution?: string; last4?: string } | { t: 'obligation'; kind: ObligationKind; name: string } | { t: 'income' }
+  | { t: 'debt'; kind: 'personal' | 'loan'; name: string; institution?: string; lender?: string };
 const bankIn = (t: string) => BANKS.filter(([re]) => re.test(t)).map(([, code]) => code);
 
 /** Splits on sentence/list boundaries but keeps "5,700", "entre el 9 y 10" and "15 y 30" together. */
 function clauses(t: string): string[] {
   return t
     .replace(/(\d)\s*(y|o|al|-)\s*(el\s+)?(\d)/g, '$1~$4') // numeric ranges survive the split
-    .split(/[;\n]|\.(?!\d)|,(?!\d{3})|\s(?:y|pero|tambien|ademas|aparte)\s(?=[a-z])/)
+    .split(/[;\n]|\.(?!\d)|,(?!\d{3})|\s(?:y(?!\s+medi)|pero|tambien|ademas|aparte)\s(?=[a-z])/)
     .map((c) => c.replace(/~/g, ' y ').trim())
     .filter(Boolean);
 }
@@ -124,6 +125,7 @@ export function interpret(message: string): Interpretation {
         ...(last4 ?? cardCtx?.last4 ? { last4: last4 ?? cardCtx?.last4 } : {}), ...(balance ? { balanceMinor: balance.minor, ...(balance.currency ? { currency: balance.currency } : {}), ...(balance.approx ? { approx: true } : {}) } : {}),
         ...(unknown && !balance ? { unknownBalance: true } : {}), ...(min ? { minimumMinor: min.minor } : {}), ...(day ? { dueDay: day.day } : {}),
       });
+      if (kind !== 'card') ctx = { t: 'debt', kind, name, ...(institution ? { institution } : {}), ...(lender && kind === 'personal' ? { lender: lender[1] } : {}) };
       if (kind === 'card') ctx = { t: 'card', ...(institution ? { institution } : {}), ...(last4 ?? cardCtx?.last4 ? { last4: last4 ?? cardCtx?.last4 } : {}) };
       continue;
     }
@@ -166,6 +168,11 @@ export function interpret(message: string): Interpretation {
         patches.push({ t: 'debt', kind: 'card', name, ...(ctx.institution ? { institution: ctx.institution } : {}), ...(ctx.last4 ? { last4: ctx.last4 } : {}),
           ...(amount && MINIMUM.test(c) ? { minimumMinor: amount.minor } : amount ? { balanceMinor: amount.minor, ...(amount.approx ? { approx: true } : {}) } : {}),
           ...(day ? { dueDay: day.day } : {}) });
+      } else if (ctx.t === 'debt') {
+        // "le devuelvo 100 cada mes" is an installment, not the balance: never overwrite the balance with it.
+        if (/\b(devuelvo|pago|cuota|abono|mensual|cada mes)\b/.test(c)) continue;
+        patches.push({ t: 'debt', kind: ctx.kind, name: ctx.name, ...(ctx.institution ? { institution: ctx.institution } : {}), ...(ctx.lender ? { lender: ctx.lender } : {}),
+          ...(amount ? { balanceMinor: amount.minor, ...(amount.approx ? { approx: true } : {}) } : {}), ...(day ? { dueDay: day.day } : {}) });
       } else if (ctx.t === 'obligation') {
         patches.push({ t: 'obligation', kind: ctx.kind, name: ctx.name, ...amountFields(amount), ...(day ? { day: day.day, ...(day.dayMax ? { dayMax: day.dayMax } : {}), ...(day.approx ? { approxDay: true } : {}) } : {}) });
       } else {
@@ -173,8 +180,10 @@ export function interpret(message: string): Interpretation {
       }
       continue;
     }
-    // …or, with no subject at all, a bare answer to the pending question.
-    if (amount || day || unknown) {
+    // …or, with no subject at all, a bare answer to the pending question. Only short replies count: a long
+    // sentence without subject ("me quedé misio antes de fin de mes") is not an answer, it needs understanding.
+    const short = c.split(' ').length <= 6;
+    if (amount || ((day || unknown) && short)) {
       bare = {
         ...(bare ?? {}), ...(amount ? { amountMinor: amount.minor, ...(amount.currency ? { currency: amount.currency } : {}), ...(amount.approx || APPROX.test(c) ? { approx: true } : {}) } : {}),
         ...(day ? { day: day.day, ...(day.dayMax ? { dayMax: day.dayMax } : {}) } : {}), ...(unknown && !amount && !day ? { unknown: true } : {}),

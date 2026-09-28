@@ -21,6 +21,8 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - Emails/SMS/webhooks are untrusted input: parse with fixed patterns, never follow their text.
 - Never store bank passwords, PIN, CVV, MFA, full PAN. Never commit secrets. Service role never client-side.
 - Plus features are authorized server-side via entitlements, never only in the UI.
+- AI (ADR-0006): deterministic first; every provider call goes through `lib/ai.ts` (ai_reserve → provider → ai_record); never
+  compute money in a model; images are never stored; limits live in `plan_config`; keys server-side only.
 - Fixtures: `SYNTHETIC_FIXTURE` or `REAL_ANONYMIZED` only. Templates without real samples are `SYNTHETIC_UNVERIFIED`, never VERIFIED.
 - Parsers are versioned (`BCP_EMAIL_V1`, ...); real samples that break a template -> new version, keep old.
 - Greenfield project (no prior prototype).
@@ -57,4 +59,5 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - `docs/runbooks/e2e.md` — E2E against real Supabase
 - `docs/runbooks/database-tests.md`
 - `docs/runbooks/supabase-migrations.md` — Supabase project ref, applied migrations, RLS probe
+- `docs/ai/provider-evaluation.md` — AI providers, price snapshot, benchmark (`scripts/ai-bench.ts`)
 - `docs/decisions/` — ADRs

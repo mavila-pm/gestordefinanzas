@@ -47,14 +47,20 @@ export function findAmounts(t: string, skip: Array<{ index: number; end: number 
     const [i = '0', d = ''] = num.split('.');
     let minor = Number(i) * 100 + Number(d.padEnd(2, '0').slice(0, 2));
     const unit = m[3];
-    if (unit === 'mil' || unit === 'k' || unit === 'luca' || unit === 'lucas') minor *= 1000;
+    let end = m.index! + m[0].length;
+    if (unit === 'mil' || unit === 'k' || unit === 'luca' || unit === 'lucas') {
+      minor *= 1000;
+      // "2 lucas y media" / "3 mil y medio" = 2,500 / 3,500 (never silently 2,000)
+      const half = /^\s+y\s+medi[ao]\b/.exec(t.slice(end));
+      if (half) { minor += 50_000; end += half[0].length; }
+    }
     const marker = m[1];
     const currency: Currency | null = marker === 'us$' || marker === '$' || marker === 'usd' || unit === 'dolares' || unit === 'dolar' || unit === 'usd'
       ? 'USD' : marker || unit === 'soles' || unit === 'sol' || unit === 'pen' ? 'PEN' : null;
     if (!Number.isSafeInteger(minor) || minor <= 0) continue;
     if (!marker && !unit && minor < 1000) continue; // "2 tarjetas", "3 veces"
     const before20 = t.slice(Math.max(0, start - 20), start);
-    out.push({ minor, currency, approx: APPROX.test(before20), index: start, end: m.index! + m[0].length });
+    out.push({ minor, currency, approx: APPROX.test(before20), index: start, end });
   }
   return out;
 }

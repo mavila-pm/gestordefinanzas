@@ -26,7 +26,13 @@ export interface AIResult { text: string; usage: AIUsage; model: string; latency
 
 export type AIFailure = 'timeout' | 'http' | 'rate_limited' | 'invalid_output' | 'unsupported' | 'not_configured';
 export class AIProviderError extends Error {
-  constructor(readonly kind: AIFailure, message: string, readonly retryable = false, readonly usage: AIUsage | null = null) { super(message); }
+  readonly kind: AIFailure;
+  readonly retryable: boolean;
+  readonly usage: AIUsage | null;
+  constructor(kind: AIFailure, message: string, retryable = false, usage: AIUsage | null = null) {
+    super(message);
+    this.kind = kind; this.retryable = retryable; this.usage = usage;
+  }
 }
 
 export interface AIProvider {

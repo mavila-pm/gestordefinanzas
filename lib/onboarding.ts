@@ -42,17 +42,28 @@ async function save(supabase: SupabaseClient, userId: string, draft: Draft, extr
   if (error) throw new Error('onboarding_save_failed');
 }
 
-/** Creates the state (once) with the greeting. Demo-allowlisted users are marked so their reset is exact. */
+/** Creates the state (once). Demo-allowlisted users are marked so their reset is exact. Idempotent under races. */
 export async function startOnboarding(supabase: SupabaseClient, userId: string): Promise<OnboardingState> {
   const existing = await loadOnboarding(supabase);
   if (existing) return existing;
   const { data: demo } = await supabase.from('demo_access').select('user_id').maybeSingle();
-  await supabase.from('onboarding_states').insert({ user_id: userId, status: 'active', is_demo: !!demo, facts: emptyDraft() });
-  const name = preferredName(await loadProfile(supabase));
-  await say(supabase, userId, 'onboarding', 'velsuno', `${name ? `Hola, ${name}. ` : 'Hola. '}Vamos a ordenar esto juntos.`);
-  await say(supabase, userId, 'onboarding', 'velsuno', 'Cuéntame de tu dinero como te salga: cuánto recibes y cuándo, qué pagos tienes y si debes algo.',
-    { replies: [], actions: [{ kind: 'camera', label: 'Mostrar una foto' }] });
-  return (await loadOnboarding(supabase))!;
+  const { error } = await supabase.from('onboarding_states').insert({ user_id: userId, status: 'active', is_demo: !!demo, facts: emptyDraft() });
+  if (!error) return { status: 'active', isDemo: !!demo, draft: emptyDraft(), applied: {} };
+  // 23505: a parallel request created it. Re-read with a different query: identical GETs are memoized within a render.
+  if (error.code !== '23505') throw new Error(`onboarding_start_failed: ${error.code}`);
+  const { data } = await supabase.from('onboarding_states').select('status,is_demo,facts,applied').eq('user_id', userId).single();
+  return { status: data!.status, isDemo: data!.is_demo, draft: { ...emptyDraft(), ...(data!.facts ?? {}) }, applied: data!.applied ?? {} };
+}
+
+/** The opening is fixed copy, not stored: it is always there and cannot be lost or duplicated (§4). */
+export async function onboardingConversation(supabase: SupabaseClient): Promise<ChatMessage[]> {
+  const [name, messages] = await Promise.all([loadProfile(supabase).then(preferredName), loadMessages(supabase, 'onboarding')]);
+  return [
+    { id: 'greet-1', role: 'velsuno', body: `${name ? `Hola, ${name}. ` : 'Hola. '}Vamos a ordenar esto juntos.`, card: null },
+    { id: 'greet-2', role: 'velsuno', body: 'Cuéntame de tu dinero como te salga: cuánto recibes y cuándo, qué pagos tienes y si debes algo.',
+      card: messages.length ? null : { actions: [{ kind: 'camera', label: 'Mostrar una foto' }] } },
+    ...messages,
+  ];
 }
 
 function followUp(draft: Draft, changed: Changed[]): { body: string; card: MessageCard; draft: Draft } {
@@ -215,9 +226,5 @@ export async function resetDemoOnboarding(supabase: SupabaseClient, userId: stri
   await supabase.from('conversation_messages').delete().eq('thread', 'onboarding');
   await supabase.rpc('reset_demo_ai_onboarding');
   await supabase.from('onboarding_states').update({ status: 'active', is_demo: true, facts: emptyDraft(), applied: {}, summary: null, completed_at: null, started_at: new Date().toISOString() }).eq('user_id', userId);
-  const name = preferredName(await loadProfile(supabase));
-  await say(supabase, userId, 'onboarding', 'velsuno', `${name ? `Hola, ${name}. ` : 'Hola. '}Vamos a ordenar esto juntos.`);
-  await say(supabase, userId, 'onboarding', 'velsuno', 'Cuéntame de tu dinero como te salga: cuánto recibes y cuándo, qué pagos tienes y si debes algo.',
-    { actions: [{ kind: 'camera', label: 'Mostrar una foto' }] });
   return { ok: true };
 }

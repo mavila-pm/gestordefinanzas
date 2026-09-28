@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account splits cashflow)
+ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account splits cashflow onboarding)
 PORT="${E2E_PORT:-3000}"
 BASE="http://localhost:${PORT}"
 STATE=.e2e
@@ -61,7 +61,7 @@ if [[ ! -f .next/BUILD_ID ]] || [[ -n "$(find app components lib src next.config
 fi
 
 # 3. Start in its own process group and wait for a healthy answer (not a fixed sleep).
-setsid node_modules/.bin/next start -p "$PORT" >"$LOG" 2>&1 &
+AI_PROVIDER=fixture AI_ALLOW_FIXTURE=1 setsid node_modules/.bin/next start -p "$PORT" >"$LOG" 2>&1 &
 echo $! >"$PIDFILE"
 for _ in $(seq 1 60); do
   code="$(curl -s -o /dev/null -w '%{http_code}' "$BASE/login" || true)"

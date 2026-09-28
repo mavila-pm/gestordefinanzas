@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { Chat } from '../../components/chat';
 import { Logo } from '../../components/ui/logo';
 import { aiAvailability } from '../../src/ai/config';
-import { loadMessages, onboardingResume, startOnboarding } from '../../lib/onboarding';
+import { onboardingConversation, onboardingResume, startOnboarding } from '../../lib/onboarding';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { leaveOnboarding, onboardingAction } from './actions';
 
@@ -17,7 +17,7 @@ export default async function Bienvenida() {
   const state = await startOnboarding(supabase, user.id);
   if (state.status === 'completed') redirect('/app');
   if (state.status === 'skipped') await onboardingResume(supabase, user.id);
-  const messages = await loadMessages(supabase, 'onboarding');
+  const messages = await onboardingConversation(supabase);
   const { vision } = aiAvailability();
   return (
     <div className="onboarding">

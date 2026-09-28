@@ -40,6 +40,7 @@ Swapping a synthetic template for a real one touches only `adapters/<bank>/` and
 | Persistence | `src/infrastructure/{postgres,supabase}/`, `lib/queries.ts`, `app/app/actions.ts` | `db/*` |
 | RLS / privileges / A-B isolation guard | `supabase/migrations/` | `db/rls` (must stay green), `db/secure-writes` |
 | Splits (Dividir gasto) | `src/domain/allocations.ts`, `components/split-editor.tsx`, `set_transaction_split` | `splits`, `db/splits`, E2E `splits` |
+| Conversational onboarding, Preguntar, AI entitlements (ADR-0006) | `src/ai/*`, `lib/ai.ts`, `lib/onboarding.ts`, `lib/assistant.ts`, `app/bienvenida/`, `app/app/preguntar/`, `components/chat.tsx` | `ai-interpreter`, `ai-core`, `db/ai`, E2E `onboarding`, `scripts/ai-bench.ts` |
 | Cash-flow planning (ADR-0005) | `src/engine/planning.ts`, `lib/planning.ts`, `app/app/plan/`, `src/web/planning-input.ts` | `planning`, `db/planning`, E2E `cashflow` |
 | Profile names (presentation only) | `src/domain/profile.ts`, `components/profile-fields.tsx` | `profile` |
 | Design system / shell | `app/globals.css`, `components/ui/*`, `components/tx-row.tsx`, `src/web/labels.ts` | E2E `visual` |
@@ -47,4 +48,4 @@ Swapping a synthetic template for a real one touches only `adapters/<bank>/` and
 
 Migrations: `000001` core · `002` RLS hardening · `003` RLS perf · `004` secure writes (app_writer) · `005` accounts,
 rules, learning · `006-007` import channel + write path · `008` email bridge · `009` budgets · `010` commitments ·
-`011` plans/entitlements · `012` reported values (dedupe after corrections) · `013` card auto-link · `014` transaction allocations (splits) · `015` split stale errcode · `016` profile names · `017` cash-flow planning. Applied list: `docs/runbooks/supabase-migrations.md`.
+`011` plans/entitlements · `012` reported values (dedupe after corrections) · `013` card auto-link · `014` transaction allocations (splits) · `015` split stale errcode · `016` profile names · `017` cash-flow planning · `018` AI onboarding, usage and entitlements. Applied list: `docs/runbooks/supabase-migrations.md`.

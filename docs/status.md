@@ -27,6 +27,8 @@ Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e
 | TASK-021 Product UX pass: profile names, Ajustes, Análisis, Presupuestos, Próximos pagos, Cuentas, Lo que recuerda, Conexiones, Tu plan, Más | **VERIFIED** | Migration 000016; unit (profile); E2E 163/163; visual 114 screenshots + UX audit (console/hydration, duplicate ids, labels, 44px targets) 0 issues | PO walkthrough on a real phone |
 | TASK-022 Cash-flow planning: próximos pagos, próximo ingreso, Dinero libre, distribución, ¿puedo gastar?, cambios de monto, estrategias de deuda | **VERIFIED** | ADR-0005; migration 000017; unit 23 + DB 4; E2E `cashflow` 24/24 (synthetic demo s11); visual incl. planning screens | Reminder delivery (email/push) needs a provider; income receipts are not auto-linked to expected incomes yet (horizon uses dates only) |
 
+| TASK-023 Conversational onboarding (/bienvenida), Preguntar, camera reads, provider-independent AI entitlements + usage accounting, demo controls | **VERIFIED** (with fixture provider) · real provider NOT VERIFIED | ADR-0006; migration 000018; unit 17 + DB 8; E2E `onboarding` 38/38; full regression 225/225; benchmark `local` 90% recall, 26/30 | Provider choice + API key (DeepSeek and/or Gemini) to run the benchmark and enable AI; camera in Preguntar; observed-vs-estimated suggestions; base spec "Conversational Financial Discovery & Planning Engine" not received |
+
 ## Backlog (known debt)
 | Item | Origin | Note |
 |---|---|---|
@@ -38,11 +40,14 @@ Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e
 | Plan limits enforcement | §81, PO | Computed and shown; not enforced during beta |
 
 ## External blockers / decisions
+- AI provider: choose DeepSeek and/or Gemini and set the key server-side (docs/ai/provider-evaluation.md). AI limits are PROPUESTO (ADR-0006).
 - Email Bridge real: inbound provider, domain + MX, server env `INBOUND_EMAIL_SECRET`, `DATABASE_URL`, `INGEST_EMAIL_DOMAIN`.
 - Billing: provider, price and periodicity (§78). Trial 14 days is PROPUESTO (§77) and configurable (`plan_config`).
 - Gmail OAuth, Android SMS app: not started (post-beta per §53).
 
 ## FINAL MANUAL ACCEPTANCE CHECKLIST (run on the Preview when ready)
+- Onboarding: Tu plan → Modo demo → "Reiniciar bienvenida demo"; write your situation in one message; answer or say "No sé"; Ver mi resumen → Empezar; check Dinero libre. Reset again to repeat (only onboarding rows are removed).
+- Preguntar: "¿Cuánto tengo libre?", "¿Puedo gastar S/ 300?", "¿Qué viene esta semana?".
 - Dinero libre with your real data: saldo de hoy, próximo ingreso, tus pagos (monto/fecha dudosa), básicos y colchón; check that every number is explained.
 - Velsuno UI on a real phone (one hand): bottom navigation, Dividir gasto sheet, keyboard over the sheet, light/dark from Más.
 - [ ] TASK-003: password recovery email → `/reset-password` → change password → login with the new one; old one rejected.

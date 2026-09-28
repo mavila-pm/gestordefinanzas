@@ -15,8 +15,14 @@ type Send = (prev: ChatState, form: FormData) => Promise<ChatState>;
 const MAX_SIDE = 1600;
 async function shrink(file: File): Promise<Blob> {
   try {
+    // Not an image by content: let the server answer with the right message (never trust the name or type).
+    const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const isImage = (head[0] === 0x89 && head[1] === 0x50) || (head[0] === 0xff && head[1] === 0xd8) || (head[8] === 0x57 && head[9] === 0x45);
+    if (!isImage) return file;
     const bmp = await createImageBitmap(file);
     const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    // Already small (typical screenshot): send as is; the server strips metadata segments before any read.
+    if (scale === 1 && file.size <= 1_500_000 && /^image\/(png|jpeg|webp)$/.test(file.type)) { bmp.close(); return file; }
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(bmp.width * scale);
     canvas.height = Math.round(bmp.height * scale);
@@ -98,7 +104,9 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
     if (file.current) file.current.value = '';
     submit(fd);
   };
-  const lastVelsuno = [...state.messages].reverse().find((m) => m.role === 'velsuno')?.id;
+  // The newest card with something to tap stays live even if plain text came after it (never strand "Empezar").
+  const hasActions = (c: MessageCard | null) => !!c && !!(c.replies?.length || c.actions?.length || c.acts?.length || c.links?.length);
+  const lastVelsuno = [...state.messages].reverse().find((m) => m.role === 'velsuno' && hasActions(m.card))?.id;
 
   return (
     <div className="chat" aria-label={props.label}>

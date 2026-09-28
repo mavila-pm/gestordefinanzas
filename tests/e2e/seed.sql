@@ -1,6 +1,6 @@
 -- E2E seed for ALL suites (docs/runbooks/e2e.md). Idempotent: removes every previous probe user first.
 -- Probe users live on the non-deliverable .invalid domain; one A/B pair per suite, so suites never share data:
---   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits   s11* cashflow
+--   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits   s11* cashflow   s12* onboarding
 -- __E2E_PASSWORD__ is replaced at run time (scripts/e2e.sh render) — the password is never committed.
 -- B rows attacked by id in the suites have fixed ids (see B_TX in tests/e2e/lib.ts).
 -- Deleting a user cascades to all of its rows.
@@ -12,7 +12,7 @@ declare r record; u uuid; ta uuid;
   c_tr uuid := (select id from public.categories where user_id is null and name = 'Transporte');
   c_otros uuid := (select id from public.categories where user_id is null and name = 'Otros');
 begin
-  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b')) v(tag) loop
+  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b'),('s12a'),('s12b')) v(tag) loop
     u := gen_random_uuid();
     insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -112,10 +112,18 @@ begin
     elsif r.tag = 's11b' then
       insert into public.fixed_expenses (id, user_id, name, currency, amount_minor, due_day) values ('00000000-0000-4000-8000-00000000e11b', u, 'B secreto', 'PEN', 99900, 10);
       insert into public.balance_snapshots (user_id, currency, amount_minor) values (u, 'PEN', 777700);
+    elsif r.tag = 's12b' then
+      -- B for the onboarding suite: its own conversation, usage and planning rows A must never see or consume.
+      insert into public.conversation_messages (user_id, thread, role, body) values (u, 'assistant', 'user', 'B secreto conversación');
+      insert into public.ai_usage (user_id, bucket, weighted_tokens, camera_reads) values (u, 'onboarding', 777, 1);
+      insert into public.expected_incomes (user_id, name, currency, amount_minor, amount_status, day_of_month) values (u, 'B sueldo secreto', 'PEN', 999900, 'confirmed', 7);
     elsif r.tag = 's9b' then
       insert into public.budgets (user_id, category_id, amount_minor) values (u, c_food, 99900);
       insert into public.debts (user_id, name, principal_minor, balance_minor) values (u, 'B deuda secreta', 100000, 50000);
       insert into public.subscriptions (user_id, plan, status) values (u, 'plus', 'active');
     end if;
+    -- Every probe user has finished onboarding except s12a, the first-time user of the onboarding suite (ADR-0006).
+    if r.tag <> 's12a' then insert into public.onboarding_states (user_id, status, completed_at) values (u, 'completed', now()); end if;
+    if r.tag = 's12a' then insert into public.demo_access (user_id) values (u); end if;
   end loop;
 end $$;

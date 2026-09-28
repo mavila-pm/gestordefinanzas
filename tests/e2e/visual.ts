@@ -68,7 +68,7 @@ for (const theme of ['light', 'dark'] as const) {
     for (const [name, path] of [['dashboard', '/app?month=2026-09'], ['movements', '/app/movimientos?month=2026-09'], ['review', '/app/revisar'], ['more', '/app/mas'],
       ['analysis', '/app/analisis?month=2026-09'], ['budgets', '/app/presupuestos'], ['payments', '/app/compromisos'], ['accounts', '/app/tarjetas'],
       ['rules', '/app/reglas'], ['connections', '/app/conexiones'], ['account-plan', '/app/cuenta'], ['settings', '/app/ajustes'], ['new', '/app/movimientos/nuevo'],
-      ['import', '/app/importar']] as const) {
+      ['import', '/app/importar'], ['ask', '/app/preguntar']] as const) {
       await page.goto(`${BASE}${path}`);
       await shoot(page, name, width, theme, save);
     }
@@ -99,6 +99,13 @@ for (const theme of ['light', 'dark'] as const) {
       await page.goto(`${BASE}${path}`);
       await shoot(page, name, width, theme, save);
     }
+    // Conversational onboarding (seed s12a; runs after the onboarding suite, which leaves it reset to a fresh start).
+    await ctx.clearCookies();
+    await ctx.addCookies([{ name: 'vs-theme', value: theme, url: BASE }]);
+    await login(page, probe('s12a'));
+    await page.goto(`${BASE}/bienvenida`);
+    await page.getByTestId('velsuno-msg').nth(1).waitFor();
+    await shoot(page, 'welcome', width, theme, save);
     await ctx.close();
   }
 }

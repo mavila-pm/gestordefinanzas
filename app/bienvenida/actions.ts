@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import {
-  loadMessages, onboardingFinish, onboardingImages, onboardingLeave, onboardingSkip, onboardingSummary, onboardingText, onboardingVision,
+  onboardingConversation, onboardingFinish, onboardingImages, onboardingLeave, onboardingSkip, onboardingSummary, onboardingText, onboardingVision,
 } from '../../lib/onboarding';
 import type { ChatState } from '../../src/ai/conversation';
 
@@ -22,7 +22,7 @@ export async function onboardingAction(_prev: ChatState, form: FormData): Promis
     const images = form.getAll('images').filter((f): f is File => f instanceof File && f.size > 0);
     if (op === 'start') {
       const r = await onboardingFinish(supabase, user.id);
-      if (!r.ok) return { messages: await loadMessages(supabase, 'onboarding'), error: 'No pudimos guardar tu configuración. Intenta de nuevo.' };
+      if (!r.ok) return { messages: await onboardingConversation(supabase), error: 'No pudimos guardar tu configuración. Intenta de nuevo.' };
       revalidatePath('/app', 'layout');
       redirect('/app');
     }
@@ -31,10 +31,10 @@ export async function onboardingAction(_prev: ChatState, form: FormData): Promis
     else if (typeof reply === 'string' && reply) await (SKIP.has(reply) ? onboardingSkip(supabase, user.id, reply) : onboardingText(supabase, user.id, reply));
     else if (images.length) await onboardingImages(supabase, user.id, images);
     else if (typeof text === 'string' && text.trim()) await onboardingText(supabase, user.id, text);
-    return { messages: await loadMessages(supabase, 'onboarding') };
+    return { messages: await onboardingConversation(supabase) };
   } catch (e) {
     if ((e as { digest?: string }).digest?.startsWith('NEXT_REDIRECT')) throw e;
-    return { messages: await loadMessages(supabase, 'onboarding'), error: 'Algo falló. Tu progreso está guardado.' };
+    return { messages: await onboardingConversation(supabase), error: 'Algo falló. Tu progreso está guardado.' };
   }
 }
 
