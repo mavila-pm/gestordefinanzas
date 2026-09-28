@@ -36,6 +36,7 @@
 | 20260928000019_learning_decisions.sql | learning_decisions | 2026-09-28 |
 | 20260928000020_planning_preferences.sql | planning_preferences | 2026-09-28 |
 | 20260928000021_recurrence_lifecycle.sql | recurrence_lifecycle | 2026-09-28 |
+| 20260928000022_review_queue_index.sql | review_queue_index | 2026-09-28 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

@@ -2,7 +2,7 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20260928000021`.
+migrations applied through `20260928000022`.
 
 ## Checkpoint (2026-09-28)
 Last full regression: unit 271 · DB 94 · E2E 231/231 on clean seeds · perf probe 8/8 (tap feedback < 40 ms) · cleanup 0|0.
