@@ -210,16 +210,18 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         <section className="stack-sm" aria-label="Ingresos detectados" data-testid="income-matches">
           <h2>¿Te pagaron?</h2>
           {d.incomeMatches.slice(0, 3).map((m) => (
-            <div key={m.transactionId} className="source row">
+            <div key={m.transactionId} className="source row" data-testid="income-match">
               <span className="setting-text"><span>Entraron <Money v={m.receivedMinor} c={m.currency} /> el {shortDate(d.transactionsById.get(m.transactionId)?.occurredOn ?? m.expectedDate)}</span>
-                <small className="muted">{m.ambiguous ? `¿Es tu ${m.name.toLowerCase()}? Puede ser otro ingreso.` : `Parece tu ${m.name.toLowerCase()} del ${shortDate(m.expectedDate)}.`}{m.expectedMinor !== null && m.expectedMinor !== m.receivedMinor ? ` Esperabas ${formatMoney({ amountMinor: m.expectedMinor, currency: m.currency })}.` : ''}</small></span>
+                <small className="muted">{m.ambiguous ? '¿Cuál ingreso es?' : `Parece tu ${m.name.toLowerCase()} del ${shortDate(m.expectedDate)}.`}{m.expectedMinor !== null && m.expectedMinor !== m.receivedMinor ? ` Esperabas ${formatMoney({ amountMinor: m.expectedMinor, currency: m.currency })}.` : ''}</small></span>
               <div className="actions">
-                <ActionForm action={linkIncomeAction} className="inline" label={`Confirmar ingreso ${m.name}`}>
-                  <input type="hidden" name="incomeId" value={m.incomeId} />
-                  <input type="hidden" name="transactionId" value={m.transactionId} />
-                  <input type="hidden" name="period" value={m.period} />
-                  <button type="submit" className="quiet">Sí, es ese</button>
-                </ActionForm>
+                {(m.candidates ?? [m]).map((c) => (
+                  <ActionForm key={c.incomeId} action={linkIncomeAction} className="inline" label={`Confirmar ingreso ${c.name}`}>
+                    <input type="hidden" name="incomeId" value={c.incomeId} />
+                    <input type="hidden" name="transactionId" value={m.transactionId} />
+                    <input type="hidden" name="period" value={c.period} />
+                    <button type="submit" className="quiet">{m.candidates ? `Es ${c.name.toLowerCase()}` : 'Sí, es ese'}</button>
+                  </ActionForm>
+                ))}
                 <Decide kind="income_match" subject={m.transactionId} decision="dismissed" label="No es ese" />
               </div>
             </div>

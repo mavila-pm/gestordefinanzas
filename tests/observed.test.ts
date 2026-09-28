@@ -151,6 +151,7 @@ describe('decisions on suggestions', () => {
     const b = inc({ id: 'b', name: 'Freelance', amountMinor: 300000 });
     const [m] = suggestIncomeMatches([a, b], [dep('t1', '2026-10-05', 300000)], none, new Set());
     expect(m).toMatchObject({ ambiguous: true, confidence: 'medium' });
+    expect(m!.candidates!.map((c) => c.name).sort()).toEqual(['Freelance', 'Sueldo']);
     expect(suggestIncomeMatches([a], [dep('t1', '2026-10-05', 300000)], none, new Set())[0]?.ambiguous).toBeUndefined();
   });
 });

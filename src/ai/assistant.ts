@@ -155,6 +155,12 @@ export function answer(intent: Intent, v: View): Answer | null {
     case 'got_paid': {
       // A real deposit that looks like the expected income: the person confirms the link (never automatic).
       const m = v.incomeMatches?.[0];
+      if (m?.candidates) {
+        return {
+          text: `Vi un ingreso de ${money(m.receivedMinor, m.currency)}. ¿Cuál es?`,
+          actions: m.candidates.map((c) => ({ type: 'act' as const, label: `Es ${c.name.toLowerCase()}`, act: 'link_income' as const, fields: { incomeId: c.incomeId, transactionId: m.transactionId, period: c.period } })),
+        };
+      }
       if (m) {
         return {
           text: `Vi un ingreso de ${money(m.receivedMinor, m.currency)}. ¿Es tu ${m.name.toLowerCase()} del ${dm(m.expectedDate)}?`,

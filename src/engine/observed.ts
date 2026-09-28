@@ -15,6 +15,8 @@ export interface IncomeMatch {
   expectedMinor: number | null; confidence: 'high' | 'medium';
   /** Another expected income fits this deposit equally well: the person must pick (never auto-resolved). */
   ambiguous?: boolean;
+  /** Every equally good candidate (this one included), so the person can choose which income it was. */
+  candidates?: Array<{ incomeId: string; name: string; period: string; expectedDate: string }>;
 }
 
 /** Days around the expected date (or window) a real deposit may land and still be "that" income. PROPUESTO. */
@@ -36,7 +38,7 @@ export function suggestIncomeMatches(
   for (const t of byDate) {
     if (usedTx.has(t.id)) continue;
     let best: { m: IncomeMatch; distance: number } | null = null;
-    let tie = false;
+    let ties: IncomeMatch[] = [];
     for (const i of incomes) {
       if (i.currency !== t.currency) continue;
       const occs = incomeOccurrencesBetween(i, addDays(t.occurredOn, -40), addDays(t.occurredOn, 40));
@@ -55,11 +57,14 @@ export function suggestIncomeMatches(
           incomeId: i.id, name: i.name, period: o.period, expectedDate: o.date, transactionId: t.id, receivedMinor: t.amountMinor, currency: t.currency,
           expectedMinor: expected, confidence: expected !== null && distance <= 2 ? 'high' : 'medium',
         };
-        if (!best || distance < best.distance) { best = { m, distance }; tie = false; }
-        else if (distance === best.distance && best.m.incomeId !== i.id) tie = true;
+        if (!best || distance < best.distance) { best = { m, distance }; ties = []; }
+        else if (distance === best.distance && best.m.incomeId !== i.id) ties.push(m);
       }
     }
-    if (best && tie) best.m = { ...best.m, confidence: 'medium', ambiguous: true };
+    if (best && ties.length) {
+      const all = [best.m, ...ties].map((x) => ({ incomeId: x.incomeId, name: x.name, period: x.period, expectedDate: x.expectedDate }));
+      best.m = { ...best.m, confidence: 'medium', ambiguous: true, candidates: all };
+    }
     if (best) { out.push(best.m); usedTx.add(t.id); usedOcc.add(`${best.m.incomeId}|${best.m.period}`); }
   }
   return out;

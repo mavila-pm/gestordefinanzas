@@ -23,7 +23,8 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Conversational onboarding, Preguntar, camera, AI entitlements (023, ADR-0006) | VERIFIED with fixture provider | Real provider NOT VERIFIED (needs key) |
 | Observed vs planned: income links, observed amounts, timeline, camera in Preguntar, undo/forget (024, ADR-0007) | VERIFIED | — |
 | Decisions + learning trail, what-if, payoff comparison, preference, question by impact, tap performance (025, ADR-0008) | VERIFIED | Tap feel on a real phone (PO) |
-| Recurrence lifecycle: pause / resume / end, edit history, per-income controls (026, ADR-0010) | VERIFIED | Deterministic E2E for income linking still pending |
+| Recurrence lifecycle: pause / resume / end, edit history, per-income controls (026, ADR-0010) | VERIFIED | — |
+| Received ↔ expected income E2E: link moves horizon, dismiss keeps data, tie → choose, PEN/USD apart, no auto-link, idempotent, A/B (027) | VERIFIED | — |
 
 ## Blockers / decisions (external)
 - AI provider (DeepSeek and/or Gemini) + server key → then `scripts/ai-bench.ts` against the local baseline (synthetic data only).
@@ -31,8 +32,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 - Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); plan limits enforcement.
 
 ## Next work (no external decision needed)
-1. Deterministic E2E for income linking (seed a deposit on the expected day) + ambiguous-match UI check.
-2. Scenarios + payoff comparison visible in Dinero libre / Próximos pagos (engine done; today only via Preguntar).
-3. Camera: retry + failure states UX; copy pass on screens not touched since TASK-021.
+1. Scenarios + payoff comparison visible in Dinero libre / Próximos pagos (engine done; today only via Preguntar).
+2. Camera: retry + failure states UX; copy pass on screens not touched since TASK-021.
 
 PO manual checklist: `docs/runbooks/acceptance-checklist.md`.

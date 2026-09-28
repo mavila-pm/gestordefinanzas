@@ -139,6 +139,10 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(a.text).toContain('¿Es tu sueldo del 25 set?');
     expect(a.actions![0]).toMatchObject({ type: 'act', act: 'link_income', fields: { incomeId: 'i1', transactionId: 't1', period: '2026-09' } });
     expect(answer({ k: 'got_paid' }, view)!.pending).toBe('balance');
+    const amb = { ...m, ambiguous: true, candidates: [{ incomeId: 'a', name: 'Bono A', period: '2026-09', expectedDate: '2026-09-25' }, { incomeId: 'b', name: 'Bono B', period: '2026-09', expectedDate: '2026-09-25' }] };
+    const pick = answer({ k: 'got_paid' }, { ...view, incomeMatches: [amb] })!;
+    expect(pick.text).toBe('Vi un ingreso de S/ 5,700. ¿Cuál es?');
+    expect(pick.actions!.map((x) => (x as { fields: Record<string, string> }).fields.incomeId)).toEqual(['a', 'b']);
   });
   it('what-if questions are simulated by the engine (nothing written) and answered in one line', () => {
     expect(detectIntent('¿qué pasa si pago S/ 1,000 a la tarjeta?')).toEqual({ k: 'what_pay_debt', amountMinor: 100000, target: 'tarjeta' });

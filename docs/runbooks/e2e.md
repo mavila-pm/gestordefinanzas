@@ -115,3 +115,6 @@ select percentile_cont(array[.5,.9,.95]) within group (order by weighted_tokens)
 
 ## Perf probe
 `scripts/e2e.sh perf` (seed s11a): prints `PERF` rows (tap → first visible feedback, tap → result) measured in the page from `pointerdown`; fails if any feedback > 100 ms.
+
+## Partial seed
+`scripts/e2e.sh render-seed s13a s13b` renders only those pairs (delete + recreate, only their branches; ~3.5 KB instead of ~16 KB) — use it to reseed the suites you re-run. Pair map: header of `tests/e2e/seed.sql` (s13* = income-link).

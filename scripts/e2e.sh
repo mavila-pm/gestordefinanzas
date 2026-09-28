@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account splits cashflow onboarding)
+ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account splits cashflow onboarding income-link)
 PORT="${E2E_PORT:-3000}"
 BASE="http://localhost:${PORT}"
 STATE=.e2e
@@ -17,7 +17,9 @@ mkdir -p "$STATE"
 
 : "${E2E_PASSWORD:?E2E_PASSWORD is required}"
 render_seed() { sed "s/__E2E_PASSWORD__/${E2E_PASSWORD//\'/\'\'}/" tests/e2e/seed.sql; }
-if [[ "${1:-}" == "render-seed" ]]; then render_seed; exit 0; fi
+# `render-seed s11a s11b …` renders only those probe pairs (delete + recreate just them): smaller paste, same data.
+render_partial() { render_seed | python3 scripts/qa/seed-subset.py "$@"; }
+if [[ "${1:-}" == "render-seed" ]]; then shift; if (($#)); then render_partial "$@"; else render_seed; fi; exit 0; fi
 
 if [[ -f .env.local ]]; then set -a; source .env.local; set +a; fi
 export E2E_BASE_URL="$BASE"
