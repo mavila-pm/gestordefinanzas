@@ -1,4 +1,5 @@
 import type { SourceChannel, TransactionStatus, TransactionType } from '../domain/types';
+import { parseAmountToMinor } from '../domain/money';
 import { isUuid } from './transaction-input';
 
 /** Movement list filters, parsed from the URL (untrusted). Unknown values fall back to "all". */
@@ -37,6 +38,13 @@ const pick = <T extends string>(v: unknown, allowed: readonly T[], fallback: T):
 export function sanitizeSearch(v: unknown): string {
   if (typeof v !== 'string') return '';
   return v.normalize('NFC').replace(/[^\p{L}\p{N} &.\-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+/** A search that is just an amount ("44.90", "1,200", "S/ 35") also matches movements of exactly that amount. */
+export function searchAmountMinor(q: string): number | null {
+  // sanitizeSearch already turned "S/ 35" into "S 35" and "1,200.50" into "1 200.50" (commas never reach a filter).
+  const digits = q.replace(/^(?:US|S)\s+/i, '');
+  return /^\d{1,3}( \d{3})+(\.\d{1,2})?$/.test(digits) ? parseAmountToMinor(digits.replace(/ /g, '')) : parseAmountToMinor(digits);
 }
 
 export function parseMovementFilters(sp: Record<string, string | string[] | undefined>, defaultMonth: string): MovementFilters {

@@ -53,7 +53,9 @@ export function authNextCookieOptions(secure: boolean) {
 }
 
 /** A `next` query param (token_hash email templates) wins; else the cookie; always same-origin, default /app. */
-export function resolveAuthNext(queryNext: unknown, cookieNext: unknown): string {
+export function resolveAuthNext(queryNext: unknown, cookieNext: unknown, type?: unknown): string {
+  // A recovery link always ends on the password form, whatever next/cookie say (cross-device: no cookie there).
+  if (type === 'recovery') return '/reset-password';
   if (typeof queryNext === 'string' && queryNext) return safeNextPath(queryNext);
   return safeNextPath(cookieNext);
 }

@@ -48,6 +48,11 @@ await runSuite('analysis-dashboard', async ({ browser, page, check }) => {
   check('search is case-insensitive across months: 2 RESTAURANTE', ((await page.getByTestId('movement-count').textContent()) ?? '').startsWith('2 movimiento'), (await page.getByTestId('movement-count').textContent()) ?? '');
   await page.goto(`${BASE}/app/movimientos?month=all&status=pending`);
   check('filter: pending = 1', ((await page.getByTestId('movement-count').textContent()) ?? '').startsWith('1 movimiento'));
+  await page.goto(`${BASE}/app/movimientos?month=2026-09&q=${encodeURIComponent('S/ 400.00')}`);
+  const byAmount = (await page.getByTestId('movement-list').textContent()) ?? '';
+  check('search by amount finds the S/ 400.00 movement (UBER E2E) and nothing else', byAmount.includes('UBER E2E') && ((await page.getByTestId('movement-count').textContent()) ?? '').startsWith('1 movimiento'), byAmount);
+  await page.goto(`${BASE}/app/movimientos?month=all&q=${encodeURIComponent('1,0),amount_minor.gt.0')}`);
+  check('amount search cannot inject extra filters', (await page.getByTestId('movement-count').count()) === 1 && (await page.locator('[role=alert]:not(#__next-route-announcer__)').count()) === 0);
   await page.goto(`${BASE}/app/movimientos?month=all&q=%25%27%29%28*`);
   check('hostile search is neutralized (no error)', (await page.getByTestId('movement-count').count()) === 1 && (await page.locator('[role=alert]:not(#__next-route-announcer__)').count()) === 0);
   await page.goto(`${BASE}/app/movimientos?month=all&source=import`);

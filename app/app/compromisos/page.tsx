@@ -1,6 +1,6 @@
 import { ActionForm } from '../../../components/action-form';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
-import { loadCatalog, loadCommitmentData } from '../../../lib/queries';
+import { loadCatalog, loadCommitmentData, loadEntitlements, loadRecurring } from '../../../lib/queries';
 import { formatMoney } from '../../../src/domain/money';
 import { debtProgress, monthCommitments, totalsByCurrency } from '../../../src/engine/commitments';
 import { limaMonth } from '../../../src/web/auth-input';
@@ -11,8 +11,10 @@ const CUR = <><option value="PEN">Soles (S/)</option><option value="USD">Dólare
 
 export default async function Commitments() {
   const supabase = await createSupabaseServerClient();
-  const [{ fixed, debts }, catalog] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase)]);
+  const [{ fixed, debts }, catalog, { entitlements }] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase), loadEntitlements(supabase)]);
   const month = limaMonth();
+  // Plus feature: decided and computed on the server only (§84).
+  const recurring = entitlements.features.recurringDetection ? await loadRecurring(supabase, month, fixed) : null;
   const today = formatLimaDateTime(new Date().toISOString()).slice(0, 10).split('/').reverse().join('-');
   const items = monthCommitments(month, today, fixed, debts);
   const totals = totalsByCurrency(items);
@@ -38,6 +40,33 @@ export default async function Commitments() {
             <p data-testid="commitment-total"><strong>Total del mes:</strong> {Object.entries(totals).map(([cur, v]) => formatMoney({ amountMinor: v!, currency: cur as 'PEN' | 'USD' })).join(' + ')}</p>
           </>
         )}
+      </section>
+
+
+      <section className="card stack-sm" data-testid="recurring">
+        <h2>Gastos recurrentes detectados</h2>
+        {!entitlements.features.recurringDetection ? (
+          <p className="muted">Disponible en Plus: detectamos cobros que se repiten cada mes (misma tienda, monto y fecha parecidos) para que no se te pase ninguno.</p>
+        ) : recurring === null ? <p role="alert" className="error">No se pudo analizar tus movimientos.</p>
+          : recurring.length === 0 ? <p className="muted">Aún no vemos cobros que se repitan al menos 3 meses con monto y fecha estables.</p> : (
+          <ul className="list" data-testid="recurring-list">
+            {recurring.map((r) => (
+              <li key={`${r.currency}-${r.merchant}`}>
+                <span>{r.merchant}<br /><small className="muted">alrededor del día {r.dayOfMonth} · {r.months.length} meses seguidos · último {r.lastSeen.slice(8, 10)}/{r.lastSeen.slice(5, 7)}</small></span>
+                <span className="actions"><span className="amount">{formatMoney({ amountMinor: r.typicalAmountMinor, currency: r.currency })}</span>
+                  {r.tracked ? <small className="muted">Ya es gasto fijo</small> : (
+                    <ActionForm action={saveFixedExpenseAction} className="inline" label={`Agregar ${r.merchant} como gasto fijo`}>
+                      <input type="hidden" name="name" value={r.merchant.slice(0, 60)} />
+                      <input type="hidden" name="amount" value={(r.typicalAmountMinor / 100).toFixed(2)} />
+                      <input type="hidden" name="currency" value={r.currency} />
+                      <input type="hidden" name="dueDay" value={String(Math.min(r.dayOfMonth, 28))} />
+                      <button type="submit" className="link">Agregar como gasto fijo</button>
+                    </ActionForm>)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <small className="muted">Son sugerencias: no se crea nada hasta que lo agregues.</small>
       </section>
 
       <section className="card stack-sm">

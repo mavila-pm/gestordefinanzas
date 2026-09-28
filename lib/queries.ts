@@ -1,3 +1,6 @@
+import { detectRecurring, RECURRING_RULES } from '../src/engine/recurring';
+import { previousMonth } from '../src/engine/analysis';
+import { limaMonthRange } from '../src/web/auth-input';
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../src/infrastructure/supabase/transaction-row';
@@ -109,6 +112,15 @@ export async function loadCommitmentData(supabase: SupabaseClient) {
       installmentsTotal: r.installments_total as number | null, installmentsPaid: r.installments_paid as number, dueDay: r.due_day as number | null, active: r.active as boolean,
     })),
   };
+}
+
+/** Recurring-spending suggestions (Plus, §82): confirmed movements of the lookback window, read under RLS. */
+export async function loadRecurring(supabase: SupabaseClient, month: string, fixed: Parameters<typeof detectRecurring>[2]) {
+  const from = limaMonthRange(previousMonth(month, RECURRING_RULES.lookbackMonths - 1))!.from;
+  const { data, error } = await supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed')
+    .gte('occurred_at', from).lt('occurred_at', limaMonthRange(month)!.to).order('occurred_at').limit(5000);
+  if (error) return null;
+  return detectRecurring((data as unknown as TransactionRow[]).map(rowToTransaction), month, fixed);
 }
 
 /** Server-side entitlements for the signed-in user (spec §84): never decided in the browser. */

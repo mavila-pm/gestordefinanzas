@@ -28,7 +28,7 @@ export interface Entitlements {
   trialEndsAt: string | null;
   trialAvailable: boolean;
   limits: { autoMovementsPerMonth: number | null; historyMonths: number | null; institutions: number };
-  features: { monthComparison: boolean; fullHistory: boolean; advancedInsights: boolean; budgetsAdvanced: boolean };
+  features: { monthComparison: boolean; fullHistory: boolean; advancedInsights: boolean; budgetsAdvanced: boolean; recurringDetection: boolean };
 }
 
 export function entitlementsFor(sub: SubscriptionRow | null, cfg: PlanConfig, now: Date): Entitlements {
@@ -44,7 +44,7 @@ export function entitlementsFor(sub: SubscriptionRow | null, cfg: PlanConfig, no
     limits: plus
       ? { autoMovementsPerMonth: null, historyMonths: null, institutions: cfg.plus_institutions }
       : { autoMovementsPerMonth: cfg.free_auto_movements_per_month, historyMonths: cfg.free_history_months, institutions: cfg.free_institutions },
-    features: { monthComparison: plus, fullHistory: plus, advancedInsights: plus, budgetsAdvanced: plus },
+    features: { monthComparison: plus, fullHistory: plus, advancedInsights: plus, budgetsAdvanced: plus, recurringDetection: plus },
   };
 }
 

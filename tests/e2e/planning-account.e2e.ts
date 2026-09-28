@@ -30,6 +30,8 @@ await runSuite('planning-account', async ({ page, check }) => {
 
   // ── Commitments ─────────────────────────────────────────────────────────────────────────────────────
   await page.goto(`${BASE}/app/compromisos`);
+  check('Free: recurring detection offered as Plus, nothing computed', ((await page.getByTestId('recurring').textContent()) ?? '').includes('Disponible en Plus')
+    && (await page.getByTestId('recurring-list').count()) === 0);
   await page.click('text=Agregar gasto fijo');
   const ff = 'form[aria-label="Agregar gasto fijo"]';
   await page.fill(`${ff} input[name=name]`, 'E2E Alquiler');
@@ -69,6 +71,16 @@ await runSuite('planning-account', async ({ page, check }) => {
   check('trial active with exact end date', ((await page.getByTestId('plan').textContent()) ?? '').includes('Plan Plus (prueba)') && (await page.getByTestId('trial-end').count()) === 1);
   check('trial cannot be offered again', (await page.locator('form[aria-label="Probar Plus"]').count()) === 0);
 
+  // ── Recurring detection (Plus, TASK-016): 3 monthly NETFLIX E2E charges in the seed ──────────────────
+  await page.goto(`${BASE}/app/compromisos`);
+  const rec = (await page.getByTestId('recurring-list').textContent()) ?? '';
+  check('Plus: monthly charge detected with typical amount and day', rec.includes('NETFLIX E2E') && rec.includes('S/ 44.90') && rec.includes('día 5'), rec);
+  check('one-off merchant is not suggested', !rec.includes('MERCADO E2E'), rec);
+  await act(page, () => page.click('form[aria-label="Agregar NETFLIX E2E como gasto fijo"] button'));
+  await page.reload();
+  check('accepted suggestion becomes a fixed expense and is marked tracked',
+    ((await page.getByTestId('recurring-list').textContent()) ?? '').includes('Ya es gasto fijo'));
+
   // ── Connections ─────────────────────────────────────────────────────────────────────────────────────
   await page.goto(`${BASE}/app/conexiones`);
   check('bridge honestly marked unavailable', ((await page.getByTestId('bridge-status').textContent()) ?? '').includes('Aún no disponible'));
@@ -85,7 +97,7 @@ await runSuite('planning-account', async ({ page, check }) => {
     sb.from('budgets').select('amount_minor'), sb.from('debts').select('name'), sb.from('fixed_expenses').select('name'),
     sb.from('subscriptions').select('status'), sb.from('email_connections').select('status'),
   ]);
-  check('A sees only own budgets/debts/fixed', (b1.data ?? []).length === 1 && (b2.data ?? []).every((d) => d.name === 'E2E Préstamo') && (b3.data ?? []).length === 1,
+  check('A sees only own budgets/debts/fixed', (b1.data ?? []).length === 1 && (b2.data ?? []).every((d) => d.name === 'E2E Préstamo') && (b3.data ?? []).length === 2,
     JSON.stringify([b1.data, b2.data, b3.data]));
   check('A sees only own subscription (trialing) and own addresses', JSON.stringify(b4.data) === '[{"status":"trialing"}]' && (b5.data ?? []).length === 2, JSON.stringify([b4.data, b5.data]));
   const up = await sb.from('subscriptions').update({ status: 'active' }).neq('status', 'x').select('status');

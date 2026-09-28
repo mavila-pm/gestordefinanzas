@@ -40,6 +40,11 @@ describe('authCallbackUrl (emailRedirectTo / redirectTo)', () => {
 });
 
 describe('resolveAuthNext (destination after the email link)', () => {
+  it('a recovery link always lands on the password form (cross-device, no cookie; next cannot redirect it)', () => {
+    expect(resolveAuthNext(null, undefined, 'recovery')).toBe('/reset-password');
+    expect(resolveAuthNext('/app', '/app', 'recovery')).toBe('/reset-password');
+    expect(resolveAuthNext('https://evil.example', undefined, 'email')).toBe('/app');
+  });
   it('uses the remembered cookie: signup -> /app, recovery -> /reset-password', () => {
     expect(resolveAuthNext(null, '/app')).toBe('/app');
     expect(resolveAuthNext(null, '/reset-password')).toBe('/reset-password');

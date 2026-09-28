@@ -105,3 +105,16 @@ describe('movement filters (URL is untrusted)', () => {
     expect(filtersToQuery(f, { page: 3 })).toBe('month=all&status=confirmed&q=uber&page=3');
   });
 });
+
+describe('search by amount (§52)', () => {
+  it('a plain amount also matches movements of exactly that amount; text does not', async () => {
+    const { searchAmountMinor, sanitizeSearch } = await import('../src/web/movement-filters');
+    expect(searchAmountMinor(sanitizeSearch('44.90'))).toBe(4490);
+    expect(searchAmountMinor(sanitizeSearch('S/ 35'))).toBe(3500);
+    expect(searchAmountMinor(sanitizeSearch('1,200.50'))).toBe(120050);
+    expect(searchAmountMinor(sanitizeSearch('US$ 20'))).toBe(2000);
+    expect(searchAmountMinor(sanitizeSearch('NETFLIX'))).toBeNull();
+    expect(searchAmountMinor(sanitizeSearch('0'))).toBeNull();
+    expect(searchAmountMinor(sanitizeSearch('12.345'))).toBeNull();
+  });
+});

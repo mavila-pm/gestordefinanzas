@@ -14,7 +14,7 @@ const TYPES: readonly EmailOtpType[] = ['signup', 'recovery', 'email', 'invite',
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const cookieStore = await cookies();
-  const next = resolveAuthNext(params.get('next'), cookieStore.get(AUTH_NEXT_COOKIE)?.value);
+  const next = resolveAuthNext(params.get('next'), cookieStore.get(AUTH_NEXT_COOKIE)?.value, params.get('type'));
   const supabase = await createSupabaseServerClient();
 
   const tokenHash = params.get('token_hash');

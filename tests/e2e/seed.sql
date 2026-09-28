@@ -71,7 +71,11 @@ begin
       values (u, '2026-09-10 12:00-05', 'expense', 'outflow', 7777, 'PEN', 'E2E SECRET B', 'E2E SECRET B', c_otros, 'confirmed', 'high', 'e2e-b');
     elsif r.tag = 's9a' then
       insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint)
-      values (u, '2026-09-10 12:00-05', 'expense', 'outflow', 40000, 'PEN', 'MERCADO E2E', 'MERCADO E2E', c_food, 'confirmed', 'high', 'e2e-s9');
+      values (u, '2026-09-10 12:00-05', 'expense', 'outflow', 40000, 'PEN', 'MERCADO E2E', 'MERCADO E2E', c_food, 'confirmed', 'high', 'e2e-s9'),
+        -- recurring (TASK-016): outside September so this month's figures stay S/ 400.00
+        (u, '2026-06-05 12:00-05', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n6'),
+        (u, '2026-07-05 12:00-05', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n7'),
+        (u, '2026-08-06 12:00-05', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n8');
     elsif r.tag = 's9b' then
       insert into public.budgets (user_id, category_id, amount_minor) values (u, c_food, 99900);
       insert into public.debts (user_id, name, principal_minor, balance_minor) values (u, 'B deuda secreta', 100000, 50000);

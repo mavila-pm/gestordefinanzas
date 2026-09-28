@@ -4,7 +4,7 @@ import { LINKED_SELECT, loadCatalog, toLinked } from '../../../lib/queries';
 import { formatMoney } from '../../../src/domain/money';
 import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';
 import {
-  filtersToQuery, KIND_TYPES, PAGE_SIZE, parseMovementFilters, SOURCE_VALUES, STATUS_VALUES,
+  filtersToQuery, KIND_TYPES, PAGE_SIZE, parseMovementFilters, searchAmountMinor, SOURCE_VALUES, STATUS_VALUES,
 } from '../../../src/web/movement-filters';
 import { formatLimaDateTime, TYPE_LABEL } from '../../../src/web/transaction-input';
 
@@ -25,7 +25,9 @@ export default async function Movements({ searchParams }: { searchParams: Promis
   if (f.source !== 'all') q = q.in('src_filter.channel', SOURCE_VALUES[f.source]);
   if (f.categoryId) q = q.eq('category_id', f.categoryId);
   if (f.currency !== 'all') q = q.eq('currency', f.currency);
-  if (f.q) q = q.ilike('merchant_raw', `%${f.q}%`);
+  const amount = f.q ? searchAmountMinor(f.q) : null;
+  // f.q is whitelisted (sanitizeSearch) and the amount is an integer, so the or() filter cannot be injected.
+  if (f.q) q = amount ? q.or(`amount_minor.eq.${amount},merchant_raw.ilike.*${f.q}*`) : q.ilike('merchant_raw', `%${f.q}%`);
   const from = (f.page - 1) * PAGE_SIZE;
   const { data, count, error } = await q.order('occurred_at', { ascending: false }).range(from, from + PAGE_SIZE - 1);
   const txs = error ? [] : (data as never[]).map(toLinked);

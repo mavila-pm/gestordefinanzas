@@ -7,11 +7,11 @@ const sub = (o: Record<string, unknown>) => ({ plan: 'free', status: 'free', tri
 describe('entitlements (§81-84), decided server-side', () => {
   it('no subscription row = Free with configurable limits and a trial available', () => {
     expect(entitlementsFor(null, DEFAULT_PLAN_CONFIG, now)).toMatchObject({ plan: 'free', source: 'free', trialAvailable: true,
-      limits: { autoMovementsPerMonth: 50, historyMonths: 3, institutions: 1 }, features: { monthComparison: false } });
+      limits: { autoMovementsPerMonth: 50, historyMonths: 3, institutions: 1 }, features: { monthComparison: false, recurringDetection: false } });
   });
   it('active trial = Plus until the exact end date', () => {
     const e = entitlementsFor(sub({ plan: 'plus', status: 'trialing', trial_started_at: '2026-09-20T00:00:00Z', trial_ends_at: '2026-10-04T00:00:00Z' }), DEFAULT_PLAN_CONFIG, now);
-    expect(e).toMatchObject({ plan: 'plus', source: 'trial', trialEndsAt: '2026-10-04T00:00:00Z', trialAvailable: false, limits: { autoMovementsPerMonth: null, institutions: 3 } });
+    expect(e).toMatchObject({ plan: 'plus', source: 'trial', trialEndsAt: '2026-10-04T00:00:00Z', trialAvailable: false, limits: { autoMovementsPerMonth: null, institutions: 3 }, features: { recurringDetection: true } });
   });
   it('expired trial downgrades automatically to Free and cannot restart (no charge, §83)', () => {
     const e = entitlementsFor(sub({ plan: 'plus', status: 'trialing', trial_started_at: '2026-09-01T00:00:00Z', trial_ends_at: '2026-09-15T00:00:00Z' }), DEFAULT_PLAN_CONFIG, now);
