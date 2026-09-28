@@ -11,10 +11,11 @@ import { loadBudgets, loadCommitmentData } from '../../lib/queries';
 import { monthCommitments, totalsByCurrency } from '../../src/engine/commitments';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../src/web/auth-input';
-import { TYPE_LABEL } from '../../src/web/transaction-input';
+import { TxRow } from '../../components/tx-row';
+import { Icon } from '../../components/ui/icon';
+import { limaDayLabel, monthLabel } from '../../src/web/labels';
 
 const CURRENCIES: Currency[] = ['PEN', 'USD'];
-const SOURCE_LABEL: Record<string, string> = { email: 'Automático · Email', sms: 'Automático · SMS', import: 'Importado por ti', manual: 'Manual' };
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ month?: string; deleted?: string }> }) {
   const { month: requested, deleted } = await searchParams;
@@ -28,7 +29,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const windowFrom = limaMonthRange(previousMonth(month, 3))!.from;
   const since30 = new Date(now.getTime() - 30 * 86_400_000).toISOString();
   // RLS scopes every query to the signed-in user; no user_id filter can widen it.
-  const [txRes, pendingRes, oldestRes, unresolvedRes, autoRes, profileRes, budgets, commitmentData] = await Promise.all([
+  const [txRes, pendingRes, oldestRes, unresolvedRes, autoRes, profileRes, budgets, commitmentData, everRes] = await Promise.all([
     supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', windowFrom).lt('occurred_at', range.to)
       .order('occurred_at', { ascending: false }).limit(3000),
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
@@ -38,6 +39,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     supabase.from('profiles').select('display_name').maybeSingle(),
     loadBudgets(supabase),
     loadCommitmentData(supabase),
+    supabase.from('transactions').select('id', { count: 'exact', head: true }),
   ]);
 
   if (txRes.error) {
@@ -64,83 +66,143 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     ? closedMonthMilestone(all, previousMonth(currentMonth), 'PEN', { firstName, dataHealthOk: health.level !== 'ACTION_REQUIRED', budgets })
     : null;
   const HEALTH_LABEL = { HEALTHY: 'Datos al día', PARTIAL: 'Datos parciales', ACTION_REQUIRED: 'Requiere tu acción' } as const;
+  const pen = summaries[0]!;
+  const others = summaries.slice(1);
+  const money = (v: number, currency: Currency) => formatMoney({ amountMinor: Math.abs(v), currency });
+  const nextCommitment = commitments.find((c) => c.daysUntil >= 0);
+  const categories = Object.entries(pen.expensesByCategory).sort((a, b) => b[1] - a[1]);
+  const topCategory = categories[0]?.[1] ?? 0;
+  const firstTime = (everRes.count ?? 0) === 0;
+
+  if (firstTime) return <Welcome />;
 
   return (
     <main className="stack">
-      {deleted === '1' && <p role="status" className="ok">Movimiento eliminado.</p>}
-      <div className="row">
-        <h1>Resumen de {month}</h1>
-        <span className="actions">
-          <Link href={`/app?month=${previousMonth(month)}`}>← Anterior</Link>
-          {month < limaMonth() && <Link href={`/app?month=${previousMonth(month, -1)}`}>Siguiente →</Link>}
-        </span>
-      </div>
-      {milestone && <section className="card milestone" data-testid="milestone" aria-label="Cierre de mes"><p>{milestone.text}</p></section>}
-      <section className={`card health ${health.level.toLowerCase()}`} data-testid="data-health" aria-label="Estado de tus datos">
-        <strong>{HEALTH_LABEL[health.level]}</strong>
-        {health.reasons.length > 0 && <ul className="small">{health.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
+      {deleted === '1' && <p role="status" className="notice positive">Movimiento eliminado.</p>}
+      <header className="row">
+        <div className="page-head">
+          <h1>{month === currentMonth ? 'Tu mes' : monthLabel(month)}</h1>
+          <p>{month === currentMonth ? monthLabel(month) : 'Mes cerrado'} · Soles</p>
+        </div>
+        <nav className="month-nav" aria-label="Cambiar de mes">
+          <Link href={`/app?month=${previousMonth(month)}`} aria-label="Mes anterior"><Icon name="back" /></Link>
+          {month < currentMonth && <Link href={`/app?month=${previousMonth(month, -1)}`} aria-label="Mes siguiente"><Icon name="chevron" /></Link>}
+        </nav>
+      </header>
+
+      {milestone && <section className="milestone" data-testid="milestone" aria-label="Cierre de mes"><p>{milestone.text}</p></section>}
+
+      <section className="hero" aria-label="Resumen en soles">
+        <span className="label">Flujo neto del mes</span>
+        <p className="figure" data-testid="net-PEN">{pen.netCashFlowMinor < 0 ? '−' : ''}{money(pen.netCashFlowMinor, 'PEN')}</p>
+        <div data-testid="data-health" className="stack-sm" style={{ gap: 6 }}>
+          <span className={`state ${health.level.toLowerCase()}`}>{HEALTH_LABEL[health.level]}</span>
+          <small style={{ opacity: .82 }}>
+            {pen.savingsLabel === 'confirmed' ? 'Ahorro confirmado: todos tus movimientos del mes están revisados.' : 'Ahorro estimado'}
+            {health.reasons.length > 0 && ` · ${health.reasons.join(' · ')}`}
+          </small>
+        </div>
+        <div className="split">
+          <div><span className="label">Ingresos</span><p className="value" data-testid="income-PEN">{money(pen.incomeMinor, 'PEN')}</p></div>
+          <div><span className="label">Gastos</span><p className="value" data-testid="expenses-PEN">{money(pen.expensesMinor, 'PEN')}</p></div>
+        </div>
+        {pen.cashWithdrawalsMinor > 0 && <small style={{ opacity: .82 }}>Retiros de efectivo: {money(pen.cashWithdrawalsMinor, 'PEN')}. No cuentan como gasto hasta que sepas en qué se usaron.</small>}
       </section>
-      {alerts.length > 0 && (
-        <ul className="stack-sm plain" data-testid="alerts" aria-label="Alertas">
-          {alerts.map((a) => (
-            <li key={a.code} className={`alert ${a.level.toLowerCase()}`} data-alert={a.code}>
-              {a.href ? <Link href={a.href}>{a.text}</Link> : a.text}
-            </li>
-          ))}
-        </ul>
-      )}
-      {commitments.length > 0 && (
-        <section className="card stack-sm" data-testid="commitments" aria-label="Compromisos del mes">
-          <div className="row"><strong>Compromisos del mes</strong><Link href="/app/compromisos">Ver</Link></div>
-          <p className="small">{Object.entries(commitmentTotals).map(([c, v]) => formatMoney({ amountMinor: v!, currency: c as Currency })).join(' + ')} en {commitments.length} pago(s)
-            {(() => { const next = commitments.find((c) => c.daysUntil >= 0); return next ? ` · próximo: ${next.name} el ${next.dueDate.slice(8, 10)}/${next.dueDate.slice(5, 7)}` : ''; })()}</p>
+
+      {others.map((s) => (
+        <section key={s.currency} className="card" aria-label={`Resumen ${s.currency}`}>
+          <div className="row"><h2>En dólares</h2><small className="muted">No se suma a soles</small></div>
+          <div className="grid" style={{ marginTop: 8 }}>
+            <div><span className="muted small">Ingresos</span><p className="big" data-testid={`income-${s.currency}`}>{money(s.incomeMinor, s.currency)}</p></div>
+            <div><span className="muted small">Gastos</span><p className="big" data-testid={`expenses-${s.currency}`}>{money(s.expensesMinor, s.currency)}</p></div>
+            <div><span className="muted small">Flujo neto</span><p className="big" data-testid={`net-${s.currency}`}>{s.netCashFlowMinor < 0 ? '−' : ''}{money(s.netCashFlowMinor, s.currency)}</p></div>
+          </div>
+        </section>
+      ))}
+
+      {(alerts.length > 0 || insight) && (
+        <section aria-label="Necesita tu atención" className="stack-sm">
+          {alerts.length > 0 && <h2>Necesita tu atención</h2>}
+          {alerts.length > 0 && (
+            <ul className="plain attention" data-testid="alerts">
+              {alerts.map((a) => (
+                <li key={a.code} data-alert={a.code}>
+                  <Link href={a.href ?? '/app'} className={`item ${a.level.toLowerCase()}`}>
+                    <Icon name={a.level === 'INFORMATIONAL' ? 'alerts' : 'review'} />
+                    <span className="text">{a.text}</span>
+                    <Icon name="chevron" size={18} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {insight && <p className="insight muted" data-testid="insight" style={{ paddingTop: 8 }}>{insight.estimated ? 'Estimado: ' : ''}{insight.text}</p>}
         </section>
       )}
-      {insight && <p className="card insight" data-testid="insight">{insight.estimated ? 'Estimado: ' : ''}{insight.text}</p>}
-      <p className="actions small"><Link href={`/app/analisis?month=${month}`}>Ver análisis</Link><Link href={`/app/movimientos?month=${month}`}>Ver todos los movimientos</Link><a href={`/app/exportar?month=${month}`}>Exportar CSV</a></p>
-      {summaries.map((s) => {
-        const m = (v: number) => formatMoney({ amountMinor: Math.abs(v), currency: s.currency });
-        return (
-          <section key={s.currency} className="card stack" aria-label={`Resumen ${s.currency}`}>
-            <div className="grid">
-              <div><span className="muted">Ingresos</span><p className="big" data-testid={`income-${s.currency}`}>{m(s.incomeMinor)}</p></div>
-              <div><span className="muted">Gastos</span><p className="big" data-testid={`expenses-${s.currency}`}>{m(s.expensesMinor)}</p></div>
-              <div>
-                <span className="muted">{s.savingsLabel === 'confirmed' ? 'Ahorro confirmado' : 'Ahorro estimado'}</span>
-                <p className="big" data-testid={`net-${s.currency}`}>{s.netCashFlowMinor < 0 ? '−' : ''}{m(s.netCashFlowMinor)}</p>
-              </div>
-            </div>
-            {s.cashWithdrawalsMinor > 0 && <p className="muted">Retiros de efectivo (no cuentan como gasto): {m(s.cashWithdrawalsMinor)}</p>}
-            {s.pendingCount > 0 && <p className="warn">{s.pendingCount} movimiento(s) por revisar. Las cifras son estimadas hasta que los confirmes. <Link href="/app/revisar">Revisar ahora</Link></p>}
-            {Object.keys(s.expensesByCategory).length > 0 && (
-              <ul className="list">
-                {Object.entries(s.expensesByCategory).sort((a, b) => b[1] - a[1]).map(([cat, v]) => (
-                  <li key={cat}><span>{cat}</span><span>{m(v)}</span></li>
-                ))}
-              </ul>
-            )}
-          </section>
-        );
-      })}
 
-      <section className="card stack">
-        <h2>Movimientos</h2>
-        {txs.length === 0 ? <p className="muted">Aún no hay movimientos este mes.</p> : (
-          <ul className="list" data-testid="tx-list">
-            {txs.slice(0, 50).map((t) => (
-              <li key={t.id}>
-                <span>
-                  <Link href={`/app/movimientos/${t.id}`}><strong>{t.merchantRaw ?? TYPE_LABEL[t.type]}</strong></Link><br />
-                  <small className="muted">
-                    {[t.category, t.institution && t.cardLast4 ? `${t.institution} ****${t.cardLast4}` : t.institution, SOURCE_LABEL[t.sources[0]?.channel ?? 'manual'], t.status === 'ignored' ? 'Ignorado' : t.status !== 'confirmed' ? 'Por revisar' : null].filter(Boolean).join(' · ')}
-                  </small>
-                </span>
-                <span>{t.direction === 'inflow' ? '+' : t.direction === 'outflow' ? '−' : ''}{formatMoney(t)}</span>
+      {commitments.length > 0 && (
+        <section data-testid="commitments" aria-label="Compromisos del mes" className="row card">
+          <div className="stack-sm" style={{ gap: 2 }}>
+            <h2>Pagos del mes</h2>
+            <small className="muted">{Object.entries(commitmentTotals).map(([c, v]) => money(v!, c as Currency)).join(' + ')} en {commitments.length} pago(s)
+              {nextCommitment ? ` · próximo: ${nextCommitment.name} el ${nextCommitment.dueDate.slice(8, 10)}/${nextCommitment.dueDate.slice(5, 7)}` : ''}</small>
+          </div>
+          <Link href="/app/compromisos" className="section-link">Ver<Icon name="chevron" size={16} /></Link>
+        </section>
+      )}
+
+      {categories.length > 0 && (
+        <section className="card" aria-label="En qué se fue tu dinero">
+          <div className="row"><h2>En qué se fue tu dinero</h2><Link href={`/app/analisis?month=${month}`} className="section-link">Análisis<Icon name="chevron" size={16} /></Link></div>
+          <ul className="plain stack-sm" style={{ gap: 14, marginTop: 12 }}>
+            {categories.slice(0, 6).map(([cat, v]) => (
+              <li key={cat} className="cat-row">
+                <span>{cat}</span><span className="amount">{money(v, 'PEN')}</span>
+                <span className="progress" aria-hidden="true"><span className="fill" style={{ width: `${Math.max(2, (v / topCategory) * 100)}%` }} /></span>
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      <section aria-label="Últimos movimientos">
+        <div className="row"><h2>Últimos movimientos</h2><Link href={`/app/movimientos?month=${month}`} className="section-link">Ver todos<Icon name="chevron" size={16} /></Link></div>
+        {txs.length === 0 ? <p className="muted">Aún no hay movimientos en {monthLabel(month).toLowerCase()}.</p> : (
+          <ul className="tx-list" data-testid="tx-list">
+            {txs.slice(0, 8).map((t) => <li key={t.id}><TxRow t={t} when={limaDayLabel(t.occurredAt)} /></li>)}
+          </ul>
         )}
+        <p className="actions small" style={{ marginTop: 8 }}><a href={`/app/exportar?month=${month}`} className="quiet-link muted">Exportar CSV del mes</a></p>
       </section>
+    </main>
+  );
+}
+
+/** First visit: how movements arrive, what Velsuno checks, and one way to start. No bank credentials, ever. */
+function Welcome() {
+  return (
+    <main className="stack narrow-md" data-testid="welcome">
+      <div className="page-head">
+        <h1>Empecemos por lo esencial</h1>
+        <p>Velsuno ordena tus movimientos y te dice qué pasa con tu dinero. Nunca te pedirá la clave de tu banco.</p>
+      </div>
+      <ol className="plain stack-sm" style={{ gap: 12 }}>
+        <li className="card stack-sm">
+          <h2>Registra un movimiento</h2>
+          <p className="muted">Un gasto, un ingreso o un retiro. Tarda unos segundos.</p>
+          <Link href="/app/movimientos/nuevo" className="button" style={{ justifySelf: 'start' }}>Registrar movimiento</Link>
+        </li>
+        <li className="card stack-sm">
+          <h2>Pega un mensaje de tu banco</h2>
+          <p className="muted">Copia la notificación del BCP (correo o SMS) y la leemos por ti. Siempre la revisas antes de que cuente.</p>
+          <Link href="/app/importar" className="button secondary" style={{ justifySelf: 'start' }}>Pegar mensaje</Link>
+        </li>
+        <li className="card stack-sm">
+          <h2>Reenvío automático de correos</h2>
+          <p className="muted">Pronto podrás reenviar las notificaciones de tu banco a una dirección privada. Aún no está disponible.</p>
+        </li>
+      </ol>
+      <p className="muted small">Lo que no esté claro irá a <strong>Por revisar</strong>: nada dudoso se confirma solo.</p>
     </main>
   );
 }

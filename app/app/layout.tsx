@@ -2,6 +2,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { logout } from '../auth/actions';
+import { BottomNav, SidebarNav } from '../../components/ui/app-nav';
+import { Icon } from '../../components/ui/icon';
+import { Logo } from '../../components/ui/logo';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Defense in depth: proxy.ts already redirects, but every protected render re-validates the user.
@@ -10,29 +13,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect('/login');
   const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true })
     .in('status', ['review_required', 'possible_duplicate']);
+  const pending = count ?? 0;
   return (
-    <>
-      <header className="topbar">
-        <strong>Gestor Financiero</strong>
-        <nav className="nav">
-          <Link href="/app">Resumen</Link>
-          <Link href="/app/movimientos?month=all">Movimientos</Link>
-          <Link href="/app/revisar">Por revisar{count ? <span className="badge" data-testid="review-count">{count}</span> : null}</Link>
-          <Link href="/app/analisis">Análisis</Link>
-          <Link href="/app/presupuestos">Presupuestos</Link>
-          <Link href="/app/compromisos">Compromisos</Link>
-          <Link href="/app/movimientos/nuevo">Nuevo movimiento</Link>
-          <Link href="/app/importar">Importar</Link>
-          <Link href="/app/tarjetas">Tarjetas y cuentas</Link>
-          <Link href="/app/reglas">Reglas</Link>
-          <Link href="/app/conexiones">Conexiones</Link>
-          <Link href="/app/cuenta">Cuenta</Link>
-          <Link href="/app/ajustes">Ajustes</Link>
-        </nav>
-        <span className="muted">{user.email}</span>
-        <form action={logout}><button type="submit" className="link">Cerrar sesión</button></form>
-      </header>
-      {children}
-    </>
+    <div className="shell">
+      <aside className="sidebar">
+        <Link href="/app" className="brand" aria-label="Velsuno, ir al resumen"><Logo height={26} /></Link>
+        <Link href="/app/movimientos/nuevo" className="button wide"><Icon name="add" />Registrar movimiento</Link>
+        <SidebarNav pending={pending} />
+        <div className="foot">
+          <small className="muted" title={user.email ?? ''} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</small>
+          <form action={logout}><button type="submit" className="link" style={{ paddingLeft: 0 }}>Cerrar sesión</button></form>
+        </div>
+      </aside>
+      <div className="shell-main">
+        <header className="topbar">
+          <Link href="/app" className="brand" aria-label="Velsuno, ir al resumen"><Logo height={22} /></Link>
+          <Link href="/app/movimientos/nuevo" className="button icon" aria-label="Registrar movimiento"><Icon name="add" size={22} /></Link>
+        </header>
+        {children}
+      </div>
+      <BottomNav pending={pending} />
+    </div>
   );
 }

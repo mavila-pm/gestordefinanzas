@@ -1,11 +1,20 @@
 import Link from 'next/link';
+import { Logo } from '../components/ui/logo';
 
 export default function Home() {
   return (
-    <main className="narrow stack">
-      <h1>Gestor Financiero</h1>
-      <p>Tus finanzas se registran prácticamente solas y la aplicación te explica qué está pasando con tu dinero.</p>
-      <p><Link href="/signup">Crear cuenta</Link> · <Link href="/login">Iniciar sesión</Link></p>
+    <main className="auth">
+      <div className="auth-panel">
+        <Logo height={30} />
+        <div className="page-head">
+          <h1 style={{ fontSize: 36, lineHeight: '44px' }}>Tu dinero, más claro.</h1>
+          <p>Tus movimientos, ordenados y explicados. Lo dudoso te lo preguntamos; nada se confirma solo. Nunca te pediremos la clave de tu banco.</p>
+        </div>
+        <div className="stack-sm" style={{ gap: 12 }}>
+          <Link href="/signup" className="button wide">Crear cuenta</Link>
+          <Link href="/login" className="button secondary wide">Entrar</Link>
+        </div>
+      </div>
     </main>
   );
 }
