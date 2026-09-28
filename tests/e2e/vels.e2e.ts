@@ -1,0 +1,90 @@
+/**
+ * Vels (ADR-0011) end-to-end on the real project, seed pair s14: the floating bubble on every /app screen opens the
+ * conversational interface of the SAME financial core. Simulations never write; confirmed actions write once.
+ * Run: scripts/e2e.sh vels (seed: scripts/e2e.sh render-seed s14a s14b).
+ */
+import type { Page } from 'playwright-core';
+import { act, apiAs, BASE, login, probe, runSuite } from './lib.ts';
+
+const A = probe('s14a');
+const panel = (page: Page) => page.getByTestId('vels-panel');
+const lastVels = async (page: Page) => ((await panel(page).getByTestId('velsuno-msg').last().textContent()) ?? '').replace(/\s+/g, ' ');
+async function say(page: Page, text: string) {
+  await panel(page).locator('#chat-text').fill(text);
+  await act(page, () => panel(page).locator('.composer button[type=submit]').click());
+}
+async function openVels(page: Page): Promise<number> {
+  await page.evaluate(() => { (window as unknown as { __t0: number }).__t0 = 0; addEventListener('pointerdown', () => { (window as unknown as { __t0: number }).__t0 = performance.now(); }, { once: true, capture: true }); });
+  await page.getByTestId('vels-fab').click();
+  const h = await page.waitForFunction(() => document.querySelector('dialog.vels-panel[open]') ? Math.round(performance.now() - (window as unknown as { __t0: number }).__t0) : false, undefined, { polling: 'raf' });
+  await panel(page).locator('.composer').waitFor();
+  return (await h.jsonValue()) as number;
+}
+
+await runSuite('vels', async ({ page, check }) => {
+  const sb = await apiAs(A);
+  const debts = async () => (await sb.from('debts').select('name,balance_minor,active').order('name')).data ?? [];
+  const settlements = async () => (await sb.from('plan_settlements').select('id')).data?.length ?? 0;
+  const txs = async () => (await sb.from('transactions').select('id', { count: 'exact', head: true })).count;
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, A);
+  await page.goto(`${BASE}/app`);
+  check('bubble visible on the dashboard, labelled "Hablar con Vels"', await page.getByRole('button', { name: 'Hablar con Vels' }).isVisible());
+  const opened = await openVels(page);
+  check('tap → panel open immediately (< 100 ms), before data', opened < 100, String(opened));
+  const box = await panel(page).boundingBox();
+  check('mobile: Vels opens full-screen', !!box && Math.round(box.width) === 390, JSON.stringify(box));
+  const openers = await panel(page).getByTestId('vels-openers').locator('button').allTextContents();
+  check('a few openers from the real state (max 3)', openers.length > 0 && openers.length <= 3, JSON.stringify(openers));
+  await page.keyboard.press('Escape');
+  check('Escape closes Vels; the page stays usable', !(await panel(page).isVisible()) && (await page.getByRole('navigation', { name: 'Principal' }).isVisible()));
+
+  // Context of the screen only seeds the openers; answers come from the same core.
+  await page.goto(`${BASE}/app/compromisos`);
+  await openVels(page);
+  const o2 = await panel(page).getByTestId('vels-openers').locator('button').allTextContents();
+  check('in Próximos pagos, Vels offers "¿Qué pago primero?"', o2.includes('¿Qué pago primero?'), JSON.stringify(o2));
+
+  await say(page, '¿Hasta cuánto puedo usar la tarjeta?');
+  const lim = await lastVels(page);
+  check('card: bank limit ≠ operating limit ("El banco te permite S/ 10,000. Para este ciclo, tu límite real es…")', lim.includes('El banco te permite S/ 10,000') && lim.includes('límite real es S/'), lim);
+
+  const d0 = JSON.stringify(await debts()); const s0 = await settlements(); const t0 = await txs();
+  await say(page, '¿Qué pasa si pago S/ 1,000 a la tarjeta?');
+  const sim = await lastVels(page);
+  check('simulation answers with the engine (debt after S/ 2,000)', sim.includes('Si pagas S/ 1,000 a Tarjeta BCP') && sim.includes('S/ 2,000'), sim);
+  check('simulation writes nothing (debts, settlements, movements unchanged)', JSON.stringify(await debts()) === d0 && (await settlements()) === s0 && (await txs()) === t0);
+
+  await say(page, 'Tengo que pagarle S/ 1,000 a mi pareja');
+  const prop = await lastVels(page);
+  check('planned ≠ paid: Vels proposes, marks it pending, writes nothing yet', prop.includes('Queda pendiente, no pagada') && JSON.stringify(await debts()) === d0, prop);
+  await act(page, () => panel(page).getByRole('button', { name: 'Guardar' }).click());
+  const after = await debts();
+  check('confirmed → one debt with tu pareja, S/ 1,000 pending; no payment, no movement', after.filter((x) => x.name === 'Deuda con tu pareja' && Number(x.balance_minor) === 100000).length === 1
+    && (await settlements()) === s0 && (await txs()) === t0, JSON.stringify(after));
+  await say(page, 'Tengo que pagarle S/ 1,000 a mi pareja');
+  await act(page, () => panel(page).getByRole('button', { name: 'Guardar' }).click());
+  check('same confirmation again writes nothing more (idempotent)', (await debts()).filter((x) => x.name === 'Deuda con tu pareja').length === 1 && (await lastVels(page)).includes('Ya la tenía guardada'));
+
+  await say(page, '¿Qué pago primero?');
+  check('no cross-user data in answers', !(await panel(page).textContent() ?? '').includes('B deuda secreta'));
+
+  // Same state for both interfaces: the dashboard shows what Vels saved; reload keeps the conversation.
+  await page.keyboard.press('Escape');
+  await page.reload();
+  check('the visual interface shows the debt Vels saved', ((await page.locator('main').textContent()) ?? '').includes('Deuda con tu pareja'));
+  await openVels(page);
+  check('reload keeps the conversation', ((await panel(page).textContent()) ?? '').includes('Tengo que pagarle S/ 1,000 a mi pareja'));
+  await page.keyboard.press('Escape');
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/app/plan`);
+  await openVels(page);
+  const db = await panel(page).boundingBox();
+  check('desktop: floating panel (not full screen), bottom-right', !!db && db.width <= 420 && db.x > 600, JSON.stringify(db));
+  await page.getByRole('button', { name: 'Cerrar' }).last().click();
+  check('close button closes the panel', !(await panel(page).isVisible()));
+  await page.goto(`${BASE}/app/preguntar`);
+  check('Vels page (existing route) says Vels and has no second bubble', ((await page.locator('h1').textContent()) ?? '') === 'Vels' && (await page.getByTestId('vels-fab').count()) === 0);
+});

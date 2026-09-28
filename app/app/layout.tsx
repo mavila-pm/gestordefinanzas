@@ -5,6 +5,7 @@ import { logout } from '../auth/actions';
 import { BottomNav, SidebarNav } from '../../components/ui/app-nav';
 import { Icon } from '../../components/ui/icon';
 import { Logo } from '../../components/ui/logo';
+import { VelsBubble } from '../../components/vels';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Defense in depth: proxy.ts already redirects, but every protected render re-validates the user.
@@ -37,6 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {children}
       </div>
       <BottomNav pending={pending} />
+      <VelsBubble />
     </div>
   );
 }

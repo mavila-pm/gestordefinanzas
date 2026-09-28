@@ -206,3 +206,14 @@ describe('skipping an occurrence ("este mes no lo pago") — skipped ≠ paid', 
     expect(after.lines.some((l) => l.kind === 'overdue')).toBe(false);
   });
 });
+
+describe('estimated basics keep the plan "estimado" (estimated ≠ confirmed)', () => {
+  it('same numbers, but status partial and the note says "estimaste"', () => {
+    const base = buildPlan(demo({ obligations: [], settledObligations: new Map() }));
+    const est = buildPlan(demo({ obligations: [], settledObligations: new Map(), essentialsEstimated: true }));
+    expect(est.freeMinor).toBe(base.freeMinor);
+    expect(base.status).toBe('confirmed');
+    expect(est.status).toBe('partial');
+    expect(est.lines.find((l) => l.kind === 'essentials')?.note).toContain('estimaste');
+  });
+});

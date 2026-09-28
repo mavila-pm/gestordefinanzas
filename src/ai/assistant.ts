@@ -1,5 +1,5 @@
 import type { Currency } from '../domain/money';
-import type { IncomeMatch } from '../engine/observed';
+import type { IncomeMatch, TimelineItem } from '../engine/observed';
 import { compareDebtStrategies, simulatePurchase, type MatchSuggestion, type Plan, type PlanInput } from '../engine/planning';
 import { changeBill, delayIncome, extraDebtPayment, payDebt, type ScenarioResult } from '../engine/scenarios';
 import type { AssistantAct } from './conversation';
@@ -15,6 +15,8 @@ export type Intent =
   | { k: 'pay_first' } | { k: 'how' } | { k: 'why_free' } | { k: 'paid'; name: string } | { k: 'got_paid' }
   | { k: 'update_amount'; name: string; amountMinor: number } | { k: 'income_changed'; amountMinor: number | null } | { k: 'debt_paid'; name: string }
   | { k: 'changed' } | { k: 'help' } | { k: 'unknown' }
+  | { k: 'card_limit' } | { k: 'organize' } | { k: 'pay_min' } | { k: 'owe'; amountMinor: number; currency: Currency; lender: string }
+  | { k: 'estimate_basics'; amountMinor: number }
   | { k: 'pref_zero_debt'; on: boolean } | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number };
 
 const NAMES = ['carro', 'auto', 'alquiler', 'internet', 'luz', 'agua', 'gas', 'celular', 'telefono', 'tarjeta', 'seguro', 'colegio', 'universidad', 'netflix', 'spotify', 'gimnasio', 'prestamo', 'cable'];
@@ -24,6 +26,13 @@ export function detectIntent(message: string): Intent {
   const t = fold(message);
   const amount = findAmounts(t)[0];
   const name = nameIn(t);
+  // Vels (ADR-0011): card operating limit, organize until the next income, minimum vs total, "le debo X a Y", estimates.
+  if (/\btarjeta\b/.test(t) && /\b(hasta cuanto|cuanto) (puedo|podria) (usar|gastar)\b|\blimite (real|de mi tarjeta)\b/.test(t)) return { k: 'card_limit' };
+  if (/\bque hago con mi (sueldo|plata|dinero|pago)\b|\borganiza(me|r)?( mi| mis)? (dinero|plata|sueldo|pagos)\b|\borganizalos\b|\bcomo llego al proximo (sueldo|ingreso|pago)\b/.test(t)) return { k: 'organize' };
+  if (/\b(pago|pagar|pagamos) (solo )?(el )?minimo\b|\bminimo o (el )?total\b|\bpago (el )?total\b.*\btarjeta\b/.test(t)) return { k: 'pay_min' };
+  const owe = t.match(/\b(le debo|tengo que pagarle|tengo que devolverle|debo)\b.*?\ba (mi |la |el |)([a-zñ]{3,20})\b/);
+  if (owe && amount && !/\b(banco|tarjeta|visa|prestamo)\b/.test(t)) return { k: 'owe', amountMinor: amount.minor, currency: amount.currency ?? 'PEN', lender: `${owe[2] === 'mi ' ? 'tu ' : owe[2]}${owe[3]}` };
+  if (amount && /\b(comida|basicos|mercado|lo basico)\b/.test(t) && /\b(pongamosle|pongale|pon|creo|como|unos|aprox|mas o menos|calculo)\b/.test(t)) return { k: 'estimate_basics', amountMinor: amount.minor };
   // Stated preference (§12): recorded only after the person confirms; the trade-off is shown first.
   if (/\bno quiero quedarme en cero\b|\b(quiero|prefiero) (guardar|tener|dejar) (algo|un colchon|colchon)\b/.test(t)) return { k: 'pref_zero_debt', on: false };
   if (/\b(no me importa|me da igual|no hay problema)\b.*\b(cero|nada|sin plata|sin nada)\b/.test(t) || /\bprefiero pagar (la |mis )?deudas?\b/.test(t)) return { k: 'pref_zero_debt', on: true };
@@ -62,6 +71,9 @@ export interface View {
   reviewCount: number;
   suggestions: MatchSuggestion[];
   incomeMatches?: IncomeMatch[];
+  cards?: Array<{ name: string; currency: Currency; creditLimitMinor: number | null }>;
+  recentIncome?: { amountMinor: number; currency: Currency; date: string } | null;
+  timeline?: TimelineItem[];
   /** Plan inputs per currency, for what-if scenarios (simulated copies; nothing is written). */
   inputs?: Partial<Record<Currency, PlanInput>>;
   debtLinks?: Array<{ id: string; name: string; currency: Currency; balanceMinor: number; annualRateBp: number | null; obligationId: string | null }>;
@@ -70,7 +82,7 @@ export type Action =
   | { type: 'link'; label: string; href: string }
   | { type: 'act'; label: string; act: AssistantAct; fields: Record<string, string> }
   | { type: 'reply'; label: string };
-export interface Answer { text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' | 'income_amount' }
+export interface Answer { title?: string; text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' | 'income_amount' }
 
 const dm = (d: string) => `${Number(d.slice(8, 10))} ${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'][Number(d.slice(5, 7)) - 1]}`;
 const primary = (v: View) => v.plans.find((p) => p.base) ?? v.plans[0] ?? null;
@@ -212,6 +224,45 @@ export function answer(intent: Intent, v: View): Answer | null {
       if (!r || r.freeAfterMinor === null) return { text: 'Me falta tu saldo o tu próximo ingreso para simularlo.', actions: [PLAN_LINK] };
       return { text: `Si ${o.name} sube a ${money(intent.amountMinor, o.currency)}: ${freeText(r)}`, actions: [PLAN_LINK] };
     }
+    case 'card_limit': {
+      if (!p || p.freeMinor === null) return { text: 'Para calcularlo me falta tu saldo de hoy y tu próximo ingreso.', actions: [PLAN_LINK], pending: !p?.base ? 'balance' : undefined };
+      const real = Math.max(0, p.freeMinor);
+      const bank = (v.cards ?? []).find((c) => c.currency === p.currency && c.creditLimitMinor);
+      return {
+        text: `${bank ? `El banco te permite ${money(bank.creditLimitMinor!, p.currency)}. ` : ''}Para este ciclo, tu límite real es ${money(real, p.currency)}${p.status !== 'confirmed' ? ' (estimado)' : ''}.`,
+        rows: [{ label: 'Por qué', value: 'Lo que podrías pagar completo sin tocar tus pagos' }], actions: [PLAN_LINK],
+      };
+    }
+    case 'organize': {
+      if (!p || p.freeMinor === null) return answer({ k: 'free' }, v);
+      const rows = p.lines.filter((l) => l.amountMinor !== null).slice(0, 7).map((l) => ({ label: `${l.label}${l.kind === 'overdue' ? ' (vencido)' : ''}`, value: `${money(l.amountMinor!, p.currency)}${l.date ? ` · ${dm(l.date)}` : ''}` }));
+      rows.push({ label: p.freeMinor >= 0 ? 'Libre' : 'Faltan', value: money(Math.abs(p.freeMinor), p.currency) });
+      const pending = p.lines.filter((l) => l.amountMinor === null).length;
+      return {
+        title: p.until ? `Hasta el ${dm(p.until)}` : 'Tu plan', text: `Así va tu dinero hasta tu próximo ingreso${p.status !== 'confirmed' ? ' (estimado)' : ''}:`,
+        rows: pending ? [...rows, { label: 'Por confirmar', value: `${pending} monto${pending > 1 ? 's' : ''}` }] : rows,
+        actions: [{ type: 'reply', label: '¿Qué pago primero?' }, { type: 'reply', label: '¿Puedo gastar S/ 300?' }, PLAN_LINK],
+      };
+    }
+    case 'pay_min': {
+      const input = v.inputs?.PEN;
+      const card = (v.debtLinks ?? []).find((d) => d.currency === 'PEN' && (d.obligationId || /tarjeta|visa|mastercard|amex/i.test(d.name)));
+      if (!card) return { text: '¿De qué tarjeta? No tengo una deuda de tarjeta registrada.', actions: [{ type: 'link', label: 'Agregar deuda', href: '/app/compromisos' }] };
+      if (!input?.base) return { text: 'Me falta tu saldo de hoy para responderte.', pending: 'balance' };
+      const total = payDebt(input, card, card.balanceMinor)!;
+      const min = v.obligations.find((o) => o.id === card.obligationId)?.amountMinor ?? null;
+      if (total.freeAfterMinor !== null && total.freeAfterMinor >= 0) {
+        return { text: `Paga el total (${money(card.balanceMinor, 'PEN')}): te quedan ${money(total.freeAfterMinor, 'PEN')} libres y no pagas intereses.`, actions: [PLAN_LINK] };
+      }
+      return { text: `Con el total te faltarían ${money(-(total.freeAfterMinor ?? 0), 'PEN')}. Paga${min ? ` al menos el mínimo (${money(min, 'PEN')})` : ' al menos el mínimo'} y abona lo que puedas.`,
+        actions: [{ type: 'reply', label: `¿Qué pasa si pago S/ ${Math.round(Math.max(0, (p?.freeMinor ?? 0)) / 100)} a la tarjeta?` }, PLAN_LINK] };
+    }
+    case 'owe':
+      return { text: `¿Lo guardo como deuda con ${intent.lender}: ${money(intent.amountMinor, intent.currency)}? Queda pendiente, no pagada.`,
+        actions: [{ type: 'act', label: 'Guardar', act: 'create_debt', fields: { lender: intent.lender.slice(0, 40), amount: String(intent.amountMinor), currency: intent.currency } }] };
+    case 'estimate_basics':
+      return { text: `¿Uso ${money(intent.amountMinor, 'PEN')} al mes para lo básico? Queda como estimado.`,
+        actions: [{ type: 'act', label: 'Usar', act: 'set_essentials', fields: { amount: String(intent.amountMinor) } }] };
     case 'help':
       return { text: 'Puedo decirte cuánto tienes libre, qué pagos vienen, si te alcanza para una compra o qué pagar primero.', actions: [{ type: 'reply', label: '¿Cuánto tengo libre?' }, { type: 'reply', label: '¿Qué viene esta semana?' }] };
     default:
@@ -241,3 +292,27 @@ export function compactView(v: View): string {
   if (v.reviewCount) lines.push(`Movimientos por revisar: ${v.reviewCount}`);
   return lines.join('\n').slice(0, 2500);
 }
+
+/**
+ * Up to 3 openers when Vels opens, from real state first, then from the screen the person is on (ADR-0011).
+ * Only questions Vels answers deterministically; nothing here writes.
+ */
+export function velsSuggestions(v: View, path: string): string[] {
+  const out: string[] = [];
+  const add = (q: string | null) => { if (q && !out.includes(q) && out.length < 3) out.push(q); };
+  const p = primary(v);
+  if (v.incomeMatches?.length) add('Ya me pagaron');
+  else if (v.recentIncome && daysFrom(v.today, v.recentIncome.date) <= 3) add('Organiza mi dinero');
+  const soon = (v.timeline ?? []).find((t) => t.kind !== 'income' && t.date !== null && !t.overdue && daysFrom(t.date, v.today) <= 7 && /tarjeta|visa|amex|mastercard/i.test(t.label));
+  if (soon) add('¿Pago el mínimo?');
+  if (path.startsWith('/app/plan') && p?.freeMinor != null) add(`¿Por qué tengo ${money(Math.max(0, p.freeMinor), p.currency)} libres?`);
+  if (path.startsWith('/app/compromisos')) add('¿Qué pago primero?');
+  if (path.startsWith('/app/tarjetas')) add('¿Hasta cuánto puedo usar la tarjeta?');
+  if (path.startsWith('/app/movimientos') || path.startsWith('/app/analisis')) add('¿Qué cambió este mes?');
+  const before = p ? p.lines.filter((l) => l.kind === 'payment' || l.kind === 'overdue' || l.kind === 'debt').length : 0;
+  if (before >= 3) add('Organiza mis pagos');
+  add('¿Cuánto tengo libre?');
+  add('¿Puedo gastar S/ 300?');
+  return out;
+}
+const daysFrom = (later: string, earlier: string) => Math.round((Date.parse(`${later}T00:00:00Z`) - Date.parse(`${earlier}T00:00:00Z`)) / 86_400_000);

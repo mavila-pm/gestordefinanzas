@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account splits cashflow onboarding income-link)
+ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account splits cashflow onboarding income-link vels)
 PORT="${E2E_PORT:-3000}"
 BASE="http://localhost:${PORT}"
 STATE=.e2e

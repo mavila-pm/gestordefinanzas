@@ -127,7 +127,7 @@ export async function saveSettingsAction(_p: ActionState, form: FormData): Promi
   const v = parsed.value;
   const { data: before } = await supabase.from('planning_settings').select('allow_zero_for_debt').eq('currency', v.currency).maybeSingle();
   const { error } = await supabase.from('planning_settings').upsert({ user_id: user.id, currency: v.currency,
-    essentials_monthly_minor: v.essentialsMonthlyMinor, cushion_minor: v.cushionMinor, allow_zero_for_debt: v.allowZeroForDebt, updated_at: new Date().toISOString() });
+    essentials_monthly_minor: v.essentialsMonthlyMinor, essentials_status: 'confirmed', cushion_minor: v.cushionMinor, allow_zero_for_debt: v.allowZeroForDebt, updated_at: new Date().toISOString() });
   if (error) return { error: SAVE_ERROR };
   if ((before?.allow_zero_for_debt ?? false) !== v.allowZeroForDebt) {
     await logLearning(supabase, user.id, 'preference', v.allowZeroForDebt ? 'accepted' : 'restored', null, { key: 'allow_zero_for_debt', value: v.allowZeroForDebt });
@@ -174,7 +174,7 @@ export async function acceptEssentialsAction(_p: ActionState, _form: FormData): 
   const { loadPlanningData, loadEssentialsSuggestion } = await import('../../../lib/planning');
   const s = await loadEssentialsSuggestion(supabase, await loadPlanningData(supabase));
   if (!s) return { error: 'Ya no hay una sugerencia vigente.' };
-  const { error } = await supabase.from('planning_settings').update({ essentials_monthly_minor: s.observedMinor, updated_at: new Date().toISOString() })
+  const { error } = await supabase.from('planning_settings').update({ essentials_monthly_minor: s.observedMinor, essentials_status: 'confirmed', updated_at: new Date().toISOString() })
     .eq('currency', 'PEN');
   if (error) return { error: SAVE_ERROR };
   await logLearning(supabase, user.id, 'essentials', 'accepted', null, { from: s.estimateMinor, to: s.observedMinor, months: s.months });

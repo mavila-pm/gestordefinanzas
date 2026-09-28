@@ -6,7 +6,7 @@ export const PRIMARY: Item[] = [
   { href: '/app', match: '/app', label: 'Resumen', icon: 'home', exact: true },
   { href: '/app/movimientos?month=all', match: '/app/movimientos', label: 'Movimientos', icon: 'transfer' },
   { href: '/app/revisar', match: '/app/revisar', label: 'Por revisar', icon: 'review' },
-  { href: '/app/preguntar', match: '/app/preguntar', label: 'Preguntar', icon: 'chat' },
+  { href: '/app/preguntar', match: '/app/preguntar', label: 'Vels', icon: 'chat' },
   { href: '/app/plan', match: '/app/plan', label: 'Dinero libre', icon: 'milestone' },
   { href: '/app/analisis', match: '/app/analisis', label: 'Análisis', icon: 'analytics' },
   { href: '/app/presupuestos', match: '/app/presupuestos', label: 'Presupuestos', icon: 'categories' },

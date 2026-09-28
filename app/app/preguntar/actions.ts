@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { assistantAct, assistantImages, assistantTurn, assistantVision, clearAssistant } from '../../../lib/assistant';
+import { assistantAct, assistantImages, assistantTurn, assistantVision, clearAssistant, velsOpen } from '../../../lib/assistant';
 import { loadMessages } from '../../../lib/onboarding';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import type { ChatState } from '../../../src/ai/conversation';
@@ -42,4 +42,12 @@ export async function clearAssistantAction() {
   const supabase = await createSupabaseServerClient();
   await clearAssistant(supabase);
   revalidatePath('/app/preguntar');
+}
+
+/** Vels opens instantly on the client; this fills it (recent messages + openers from the real state and screen). */
+export async function velsOpenAction(path: string) {
+  const supabase = await createSupabaseServerClient();
+  const user = await authUser(supabase);
+  if (!user) return { messages: [], suggestions: [] };
+  return velsOpen(supabase, typeof path === 'string' ? path.slice(0, 80) : '/app');
 }

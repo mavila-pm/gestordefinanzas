@@ -82,7 +82,7 @@ function Card({ card, live, onOp, onReply, onCamera, onCorrect }: {
   );
 }
 
-export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolean; placeholder: string; label: string }) {
+export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolean; placeholder: string; label: string; suggestions?: string[] }) {
   const [state, formAction, pending] = useActionState(props.send, { messages: props.initial });
   const [text, setText] = useState('');
   const [hint, setHint] = useState(props.placeholder);
@@ -140,6 +140,11 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
         <p role="alert" className="chat-error">{state.error}{' '}
           {lastSent.current && <button type="button" className="link" onClick={() => lastSent.current && submit(lastSent.current)}>Reintentar</button>}
         </p>
+      )}
+      {!pending && !text && (props.suggestions?.length ?? 0) > 0 && messages.length <= props.initial.length && (
+        <div className="chat-actions vels-openers" data-testid="vels-openers">
+          {props.suggestions!.map((q) => <button key={q} type="button" className="chip" onClick={() => sendReply(q)}>{q}</button>)}
+        </div>
       )}
       <form className="composer" onSubmit={(e) => { e.preventDefault(); sendText(text); }} aria-busy={pending}>
         {props.camera && (

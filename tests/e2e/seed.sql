@@ -1,6 +1,6 @@
 -- E2E seed for ALL suites (docs/runbooks/e2e.md). Idempotent: removes every previous probe user first.
 -- Probe users live on the non-deliverable .invalid domain; one A/B pair per suite, so suites never share data:
---   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits   s11* cashflow   s12* onboarding   s13* income-link
+--   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits   s11* cashflow   s12* onboarding   s13* income-link   s14* vels
 -- __E2E_PASSWORD__ is replaced at run time (scripts/e2e.sh render) — the password is never committed.
 -- B rows attacked by id in the suites have fixed ids (see B_TX in tests/e2e/lib.ts).
 -- Deleting a user cascades to all of its rows.
@@ -12,7 +12,7 @@ declare r record; u uuid; ta uuid;
   c_tr uuid := (select id from public.categories where user_id is null and name = 'Transporte');
   c_otros uuid := (select id from public.categories where user_id is null and name = 'Otros');
 begin
-  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b'),('s12a'),('s12b'),('s13a'),('s13b')) v(tag) loop
+  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b'),('s12a'),('s12b'),('s13a'),('s13b'),('s14a'),('s14b')) v(tag) loop
     u := gen_random_uuid();
     insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -135,6 +135,16 @@ begin
     elsif r.tag = 's13b' then
       insert into public.expected_incomes (id, user_id, name, currency, amount_minor, amount_status, day_of_month)
         values ('00000000-0000-4000-8000-00000000e13b', u, 'B sueldo secreto', 'PEN', 400000, 'confirmed', 5);
+    elsif r.tag = 's14a' then
+      -- Vels (ADR-0011): same core as the dashboard. Card with a bank limit, its debt and planned payment.
+      insert into public.balance_snapshots (user_id, currency, amount_minor) values (u, 'PEN', 500000);
+      insert into public.expected_incomes (user_id, name, currency, amount_minor, amount_status, frequency, day_of_month) values (u, 'Sueldo', 'PEN', 400000, 'estimated', 'monthly', 15);
+      insert into public.planning_settings (user_id, currency, essentials_monthly_minor, cushion_minor) values (u, 'PEN', 80000, 0);
+      insert into public.fixed_expenses (user_id, name, kind, currency, amount_minor, amount_status, due_day) values (u, 'Tarjeta BCP', 'card', 'PEN', 50000, 'estimated', 10);
+      insert into public.debts (user_id, name, principal_minor, balance_minor, annual_rate_bp) values (u, 'Tarjeta BCP', 300000, 300000, 6000);
+      insert into public.cards (user_id, institution_code, alias, kind, currency, last4, credit_limit_minor) values (u, 'BCP', 'Tarjeta BCP', 'credit', 'PEN', '1111', 1000000);
+    elsif r.tag = 's14b' then
+      insert into public.debts (user_id, name, principal_minor, balance_minor) values (u, 'B deuda secreta', 100000, 90000);
     elsif r.tag = 's9b' then
       insert into public.budgets (user_id, category_id, amount_minor) values (u, c_food, 99900);
       insert into public.debts (user_id, name, principal_minor, balance_minor) values (u, 'B deuda secreta', 100000, 50000);

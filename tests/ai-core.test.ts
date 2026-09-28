@@ -168,6 +168,32 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(a.text).toMatch(/^Entendido: si pagas deuda, puedes quedarte en cero\..*¿Lo guardo\?$/);
     expect(a.actions![0]).toMatchObject({ act: 'set_pref', fields: { key: 'allow_zero_for_debt', value: 'on' } });
   });
+  it('Vels: card operating limit ≠ bank limit; organize block; minimum vs total; owe → confirm; estimated basics', () => {
+    expect(detectIntent('¿Hasta cuánto puedo usar la tarjeta?')).toEqual({ k: 'card_limit' });
+    expect(detectIntent('¿qué hago con mi sueldo?')).toEqual({ k: 'organize' });
+    expect(detectIntent('Organiza mis pagos')).toEqual({ k: 'organize' });
+    expect(detectIntent('¿Pago el mínimo?')).toEqual({ k: 'pay_min' });
+    expect(detectIntent('Tengo que pagarle S/1,000 a mi pareja')).toEqual({ k: 'owe', amountMinor: 100000, currency: 'PEN', lender: 'tu pareja' });
+    expect(detectIntent('No sé cuánto gasto en comida, pongámosle 500')).toEqual({ k: 'estimate_basics', amountMinor: 50000 });
+    const free = plan.freeMinor!;
+    const lim = answer({ k: 'card_limit' }, { ...view, cards: [{ name: 'Visa', currency: 'PEN', creditLimitMinor: 2500000 }] })!;
+    expect(lim.text).toBe(`El banco te permite S/ 25,000. Para este ciclo, tu límite real es S/ ${(free / 100).toLocaleString('en-US')}.`);
+    const org = answer({ k: 'organize' }, view)!;
+    expect(org.title).toMatch(/^Hasta el /);
+    expect(org.rows!.at(-1)!.label).toBe('Libre');
+    const owe = answer({ k: 'owe', amountMinor: 100000, currency: 'PEN', lender: 'tu pareja' }, view)!;
+    expect(owe.text).toContain('Queda pendiente, no pagada');
+    expect(owe.actions![0]).toMatchObject({ act: 'create_debt', fields: { lender: 'tu pareja', amount: '100000', currency: 'PEN' } });
+    expect(answer({ k: 'estimate_basics', amountMinor: 50000 }, view)!.text).toContain('estimado');
+    expect(answer({ k: 'pay_min' }, view)!.text).toContain('No tengo una deuda de tarjeta');
+  });
+  it('Vels openers: from real state and the current screen, max 3, deterministic', async () => {
+    const { velsSuggestions } = await import('../src/ai/assistant');
+    expect(velsSuggestions(view, '/app/compromisos')).toContain('¿Qué pago primero?');
+    expect(velsSuggestions(view, '/app/tarjetas')[0]).toBe('¿Hasta cuánto puedo usar la tarjeta?');
+    expect(velsSuggestions({ ...view, recentIncome: { amountMinor: 1, currency: 'PEN', date: '2026-09-27' } }, '/app')[0]).toBe('Organiza mi dinero');
+    expect(velsSuggestions(view, '/app/plan').length).toBeLessThanOrEqual(3);
+  });
   it('asks for the missing data instead of guessing (§66)', () => {
     const noBase = { ...view, plans: [{ ...plan, base: null, freeMinor: null, missing: [{ code: 'balance' as const, text: 'Indica cuánto tienes hoy en tu cuenta.' }] }] };
     const a = answer({ k: 'can_spend', amountMinor: 1000, currency: 'PEN' }, noBase)!;
@@ -190,7 +216,7 @@ describe('onboarding → domain rows (§67), plan display (§48)', () => {
     expect(w.deferred).toEqual(expect.arrayContaining(['Tarjeta BCP: falta el saldo', 'Deuda con tu pareja: falta el saldo']));
     expect(w.accounts).toEqual([{ user_id: 'u1', institution_code: 'BCP', alias: 'BCP', currency: 'PEN' }]);
     expect(w.balance).toEqual({ user_id: 'u1', currency: 'PEN', amount_minor: 300000 });
-    expect(w.settings).toEqual({ user_id: 'u1', currency: 'PEN', essentials_monthly_minor: 50000 });
+    expect(w.settings).toEqual({ user_id: 'u1', currency: 'PEN', essentials_status: 'confirmed', essentials_monthly_minor: 50000 });
   });
 
   it('usage is shown as a bar and a count, from plan_config, per plan; demo simulation is labelled', () => {

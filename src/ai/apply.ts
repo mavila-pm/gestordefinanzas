@@ -65,7 +65,7 @@ export function domainWrites(d: Draft, userId: string): DomainWrites {
   }
   if (d.balance?.amountMinor != null) w.balance = { user_id: userId, currency: d.balance.currency, amount_minor: d.balance.amountMinor };
   const known = d.variable.filter((v) => v.amountMinor !== null && v.currency === 'PEN');
-  if (known.length) w.settings = { user_id: userId, currency: 'PEN', essentials_monthly_minor: known.reduce((s, v) => s + v.amountMinor!, 0) };
+  if (known.length) w.settings = { user_id: userId, currency: 'PEN', essentials_status: known.some((v) => v.amountStatus !== 'confirmed') ? 'estimated' : 'confirmed', essentials_monthly_minor: known.reduce((s, v) => s + v.amountMinor!, 0) };
   for (const v of d.variable) if (v.amountMinor === null) w.deferred.push(`${v.name}: falta el monto`);
   return w;
 }

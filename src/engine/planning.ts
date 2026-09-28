@@ -184,6 +184,8 @@ export interface PlanInput {
   settledIncomes: ReadonlyMap<string, ReadonlySet<string>>;
   essentialsMonthlyMinor: number | null;
   cushionMinor: number;
+  /** The basics amount is the person's estimate ("pongámosle S/500"): the plan stays "estimado". */
+  essentialsEstimated?: boolean;
   /** What-if only: the next income arrives this many days later than expected (scenarios.ts). */
   incomeDelayDays?: number;
 }
@@ -265,7 +267,7 @@ export function buildPlan(input: PlanInput): Plan {
   if (until) {
     const days = daysBetween(from, until) + 1;
     if (input.essentialsMonthlyMinor === null) missing.push({ code: 'essentials', text: 'Indica cuánto necesitas al mes para lo básico (comida, transporte).' });
-    else if (input.essentialsMonthlyMinor > 0) lines.push({ kind: 'essentials', label: 'Gastos básicos', amountMinor: roundUnit((input.essentialsMonthlyMinor * days) / 30), date: null, dateMax: null, note: `${days} días de lo que indicaste al mes` });
+    else if (input.essentialsMonthlyMinor > 0) lines.push({ kind: 'essentials', label: 'Gastos básicos', amountMinor: roundUnit((input.essentialsMonthlyMinor * days) / 30), date: null, dateMax: null, note: `${days} días de lo que ${input.essentialsEstimated ? 'estimaste' : 'indicaste'} al mes` });
   }
   if (input.cushionMinor > 0) lines.push({ kind: 'cushion', label: 'Colchón', amountMinor: input.cushionMinor, date: null, dateMax: null, note: 'Lo que prefieres no tocar' });
 
@@ -273,7 +275,7 @@ export function buildPlan(input: PlanInput): Plan {
   const reservedMinor = lines.reduce((s, l) => s + (l.amountMinor ?? 0), 0);
   const freeMinor = input.base && until ? input.base.amountMinor - reservedMinor : null;
   const blocking = missing.some((m) => m.code === 'balance' || m.code === 'next_income');
-  const status: PlanStatus = blocking ? 'incomplete' : missing.length ? 'partial' : 'confirmed';
+  const status: PlanStatus = blocking ? 'incomplete' : missing.length || (input.essentialsEstimated && until) ? 'partial' : 'confirmed';
   return { currency, status, base: input.base, from, nextIncome: next, until, lines, reservedMinor, freeMinor, missing };
 
   function line(x: Occurrence, kind: LineKind, note: string | null): PlanLine {

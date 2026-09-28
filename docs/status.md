@@ -2,10 +2,10 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20260928000022`.
+migrations applied through `20260928000023`.
 
 ## Checkpoint (2026-09-28)
-Last full regression: unit 271 · DB 94 · E2E 231/231 on clean seeds · perf probe 8/8 (tap feedback < 40 ms) · cleanup 0|0.
+Last full regression: unit 280 · DB 94 · E2E 271/271 (10 suites, clean seed) · visual 144 shots, no overflow · cleanup 0|0.
 Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify` / `task-close` / `financial-safety`.
 
 ## Product areas
@@ -27,6 +27,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Received ↔ expected income E2E: link moves horizon, dismiss keeps data, tie → choose, PEN/USD apart, no auto-link, idempotent, A/B (027) | VERIFIED | — |
 | Skip an occurrence ('No lo pago'), what-if panel (retraso / abono), payoff simulator by monthly amount (028) | VERIFIED | — |
 | Camera read idempotency: same photos on an open proposal reuse it (no second charge; SHA-256 key, never the image; re-validated) (029) | VERIFIED (fixture provider) | Real provider timeout/retry behavior NOT VERIFIED (needs key) |
+| Vels: floating bubble + panel on every /app screen, full page (route /app/preguntar), contextual openers, card operating limit, organize block, minimum vs total, 'le debo X' → pending debt (confirm), estimated basics (030, ADR-0011) | VERIFIED | 'Aplicar plan' needs a reservations model (PO); concurrent double submit of 'le debo X' can duplicate own row (low, needs a constraint) |
 
 ## Blockers / decisions (external)
 - AI provider (DeepSeek and/or Gemini) + server key → then `scripts/ai-bench.ts` against the local baseline (synthetic data only).
@@ -34,6 +35,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 - Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); plan limits enforcement.
 
 ## Next work (no external decision needed)
-1. Copy pass on screens not touched since TASK-021; camera failure-state UX with a real provider (key).
+1. Vels: cycle-exact card reasoning with `cards.statement_day/payment_day` (billed vs post-cut, interest risk).
+2. Copy pass on screens not touched since TASK-021; camera failure-state UX with a real provider (key).
 
 PO manual checklist: `docs/runbooks/acceptance-checklist.md`.

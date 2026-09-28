@@ -1,16 +1,17 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { answer, compactView, detectIntent, type Answer, type View } from '../src/ai/assistant';
+import { answer, compactView, detectIntent, velsSuggestions, type Answer, type View } from '../src/ai/assistant';
 import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
 import { findAmounts, fold } from '../src/ai/text';
+import { money } from '../src/ai/draft';
 import { ASSISTANT_SYSTEM } from '../src/ai/prompts';
 import { sanitizeUserText } from '../src/ai/sanitize';
 import { isSmallTalk } from '../src/ai/interpreter';
 import { infer, STOP_TEXT } from './ai';
 import { logLearning } from './learning';
 import { loadMessages, readImages } from './onboarding';
-import { loadPlanningData, planFor, planInputFor } from './planning';
+import { loadPlanningData, planFor, planInputFor, planTimeline } from './planning';
 
 /**
  * "Preguntar" (§19-§22, §69): the assistant reads the structured financial state (planning engine), never the
@@ -20,9 +21,10 @@ import { loadPlanningData, planFor, planInputFor } from './planning';
 const KEEP = 40;
 
 async function view(supabase: SupabaseClient): Promise<View> {
-  const [d, review] = await Promise.all([
+  const [d, review, cards] = await Promise.all([
     loadPlanningData(supabase),
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
+    supabase.from('cards').select('alias,currency,credit_limit_minor').limit(20),
   ]);
   const currencies = [...new Set<'PEN' | 'USD'>(['PEN', ...d.obligations.map((o) => o.currency), ...d.incomes.map((i) => i.currency), ...(Object.keys(d.balances) as Array<'PEN' | 'USD'>)])];
   return {
@@ -33,6 +35,9 @@ async function view(supabase: SupabaseClient): Promise<View> {
     reviewCount: review.count ?? 0,
     suggestions: d.suggestions,
     incomeMatches: d.incomeMatches,
+    cards: (cards.data ?? []).map((c) => ({ name: c.alias as string, currency: c.currency, creditLimitMinor: c.credit_limit_minor === null ? null : Number(c.credit_limit_minor) })),
+    recentIncome: d.recentIncome,
+    timeline: planTimeline(d, 14),
     inputs: Object.fromEntries(currencies.map((c) => [c, planInputFor(d, c)])),
     debtLinks: d.debts.map((x) => ({ ...x, obligationId: d.obligationRows.find((o) => o.active && o.kind === 'card' && o.currency === x.currency && fold(o.name) === fold(x.name))?.id ?? null })),
   };
@@ -40,6 +45,7 @@ async function view(supabase: SupabaseClient): Promise<View> {
 
 function toCard(a: Answer): MessageCard | null {
   const card: MessageCard = {};
+  if (a.title) card.title = a.title;
   if (a.rows?.length) card.rows = a.rows;
   const links = (a.actions ?? []).filter((x) => x.type === 'link') as Array<{ label: string; href: string }>;
   const acts = (a.actions ?? []).filter((x) => x.type === 'act') as unknown as MessageCard['acts'];
@@ -110,6 +116,29 @@ export async function assistantAct(supabase: SupabaseClient, userId: string, act
     const { error } = await supabase.from('plan_settlements').insert({ user_id: userId, fixed_expense_id: fields.obligationId, period: fields.period, transaction_id: fields.transactionId });
     return error ? 'No pude marcarlo. Puede que ya esté enlazado.' : 'Listo, marcado como pagado.';
   }
+  if (act === 'create_debt') {
+    // Confirmation required (ADR-0011 class D): a debt the person owes — pending, never marked paid.
+    const amount = Number(fields.amount);
+    const lender = (fields.lender ?? '').replace(/[^a-zA-ZñÑáéíóúÁÉÍÓÚ ]/g, '').trim().slice(0, 40);
+    const currency = fields.currency === 'USD' ? 'USD' : 'PEN';
+    if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 1e11 || !lender) return 'No pude guardarla.';
+    const name = `Deuda con ${lender}`.slice(0, 60);
+    // Idempotent against a double tap: the same debt (name + amount) already open is not created twice.
+    const { data: same } = await supabase.from('debts').select('id').eq('name', name).eq('balance_minor', amount).eq('currency', currency).eq('active', true).limit(1);
+    if (same?.length) return 'Ya la tenía guardada.';
+    const { data, error } = await supabase.from('debts').insert({ user_id: userId, name, lender, currency, principal_minor: amount, balance_minor: amount }).select('id').single();
+    if (error) return 'No pude guardarla.';
+    await logLearning(supabase, userId, 'obligation', 'accepted', data.id, { kind: 'debt', lender, amount, currency });
+    return `Listo. Debes ${money(amount, currency)} a ${lender}. No la cuento en Dinero libre hasta que tenga fecha.`;
+  }
+  if (act === 'set_essentials') {
+    const amount = Number(fields.amount);
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1e11) return 'No pude guardarlo.';
+    const { error } = await supabase.from('planning_settings').upsert({ user_id: userId, currency: 'PEN', essentials_monthly_minor: amount, essentials_status: 'estimated', updated_at: new Date().toISOString() }, { onConflict: 'user_id,currency' });
+    if (error) return 'No pude guardarlo.';
+    await logLearning(supabase, userId, 'essentials', 'corrected', null, { to: amount, status: 'estimated' });
+    return `Listo. Uso ${money(amount, 'PEN')} al mes para lo básico (estimado). Te aviso si tus gastos dicen otra cosa.`;
+  }
   if (act === 'set_pref') {
     if (fields.key !== 'allow_zero_for_debt' || (fields.value !== 'on' && fields.value !== 'off')) return 'No pude guardarlo.';
     const on = fields.value === 'on';
@@ -176,4 +205,10 @@ export async function assistantVision(supabase: SupabaseClient, userId: string, 
 
 export async function clearAssistant(supabase: SupabaseClient) {
   await supabase.from('conversation_messages').delete().eq('thread', 'assistant');
+}
+
+/** Opening Vels (bubble or page): recent conversation + up to 3 openers from the real state and the current screen. */
+export async function velsOpen(supabase: SupabaseClient, path: string): Promise<{ messages: Awaited<ReturnType<typeof loadMessages>>; suggestions: string[] }> {
+  const [messages, v] = await Promise.all([loadMessages(supabase, 'assistant', KEEP), view(supabase)]);
+  return { messages, suggestions: velsSuggestions(v, path) };
 }
