@@ -1,6 +1,6 @@
 -- E2E seed for ALL suites (docs/runbooks/e2e.md). Idempotent: removes every previous probe user first.
 -- Probe users live on the non-deliverable .invalid domain; one A/B pair per suite, so suites never share data:
---   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account
+--   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits
 -- __E2E_PASSWORD__ is replaced at run time (scripts/e2e.sh render) — the password is never committed.
 -- B rows attacked by id in the suites have fixed ids (see B_TX in tests/e2e/lib.ts).
 -- Deleting a user cascades to all of its rows.
@@ -12,7 +12,7 @@ declare r record; u uuid; ta uuid;
   c_tr uuid := (select id from public.categories where user_id is null and name = 'Transporte');
   c_otros uuid := (select id from public.categories where user_id is null and name = 'Otros');
 begin
-  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b')) v(tag) loop
+  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b')) v(tag) loop
     u := gen_random_uuid();
     insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -76,6 +76,14 @@ begin
         (u, '2026-06-05 12:00-05', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n6'),
         (u, '2026-07-05 12:00-05', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n7'),
         (u, '2026-08-06 12:00-05', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n8');
+    elsif r.tag = 's10a' then
+      -- splits (TASK-020): S/ 180.00 confirmed restaurant this month + S/ 50 pending (not splittable)
+      insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint) values
+        (u, '2026-09-12 21:00-05', 'credit_card_purchase', 'outflow', 18000, 'PEN', 'RESTAURANTE SPLIT E2E', 'RESTAURANTE SPLIT E2E', c_food, 'confirmed', 'high', 'e2e-s10-1'),
+        (u, '2026-09-13 10:00-05', 'expense', 'outflow', 5000, 'PEN', 'PENDIENTE SPLIT E2E', 'PENDIENTE SPLIT E2E', c_otros, 'review_required', 'medium', 'e2e-s10-2');
+    elsif r.tag = 's10b' then
+      insert into public.transactions (id, user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint)
+      values ('00000000-0000-4000-8000-00000000e10b', u, '2026-09-12 12:00-05', 'expense', 'outflow', 9900, 'PEN', 'E2E SECRET B', 'E2E SECRET B', c_food, 'confirmed', 'high', 'e2e-s10-b');
     elsif r.tag = 's9b' then
       insert into public.budgets (user_id, category_id, amount_minor) values (u, c_food, 99900);
       insert into public.debts (user_id, name, principal_minor, balance_minor) values (u, 'B deuda secreta', 100000, 50000);

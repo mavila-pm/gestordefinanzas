@@ -73,7 +73,7 @@ export function SplitEditor(props: {
               <button type="button" className="icon" onClick={() => setParts((ps) => ps.filter((x) => x.key !== p.key))}
                 aria-label={`Quitar la parte ${i + 1}`} disabled={parts.length === 1}><Icon name="trash" /></button>
               <input className="note" value={p.note} onChange={(e) => update(p.key, { note: e.target.value })} maxLength={NOTE_MAX}
-                placeholder="Nota (opcional): Amigos, Trabajo…" aria-label={`Nota de la parte ${i + 1}`} style={{ gridColumn: '1 / 3', minHeight: 40, padding: '8px 12px' }} />
+                placeholder="Nota (opcional)" aria-label={`Nota de la parte ${i + 1}`} style={{ gridColumn: '1 / 3', minHeight: 40, padding: '8px 12px' }} />
             </li>
           ))}
         </ul>

@@ -18,10 +18,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="shell">
       <aside className="sidebar">
         <Link href="/app" className="brand" aria-label="Velsuno, ir al resumen"><Logo height={26} /></Link>
-        <Link href="/app/movimientos/nuevo" className="button wide"><Icon name="add" />Registrar movimiento</Link>
+        <Link href="/app/movimientos/nuevo" className="button wide"><Icon name="add" />Nuevo movimiento</Link>
         <SidebarNav pending={pending} />
         <div className="foot">
-          <small className="muted" title={user.email ?? ''} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</small>
+          <small className="muted" title={user.email ?? ''}>{user.email}</small>
           <form action={logout}><button type="submit" className="link" style={{ paddingLeft: 0 }}>Cerrar sesión</button></form>
         </div>
       </aside>

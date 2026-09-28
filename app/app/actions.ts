@@ -70,8 +70,9 @@ export async function correctAction(_prev: ActionState, form: FormData): Promise
   if (Object.keys(changes).length === 0 && !confirm && !rememberRule) return { message: 'No había cambios que guardar.' };
   const { error } = await supabase.rpc('correct_transaction', { p_id: id, p_changes: changes, p_confirm: confirm, p_remember_rule: rememberRule });
   if (error) return dbError(error);
-  const saved = confirm ? 'Cambios guardados y movimiento confirmado.' : 'Cambios guardados.';
-  return done(rememberRule ? `${saved} Los próximos movimientos de este comercio usarán esta categoría.` : saved);
+  // Confirming changes the screen (the movement leaves review): show the result on the reloaded detail.
+  if (confirm) { revalidatePath('/app', 'layout'); redirect(`/app/movimientos/${id}?ok=${rememberRule ? 'rule' : 'confirmed'}`); }
+  return done(rememberRule ? 'Cambios guardados. Los próximos movimientos de este comercio usarán esta categoría.' : 'Cambios guardados.');
 }
 
 export async function createManualAction(_prev: ActionState, form: FormData): Promise<ActionState> {

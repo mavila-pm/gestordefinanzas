@@ -101,12 +101,12 @@ await runSuite('import-learning', async ({ page, check }) => {
   await page.selectOption(`${corr} select[name=categoryId]`, { label: 'Alimentación' });
   await page.check(`${corr} input[name=rememberRule]`);
   await act(page, () => page.click(`${corr} button[value="1"]`));
-  check('correction saved with rule', ((await page.locator(`${corr} [role=status]`).textContent()) ?? '').includes('usarán esta categoría'));
+  check('correction saved with rule', ((await page.locator(`[data-testid=saved-notice], ${corr} [role=status]`).first().textContent()) ?? '').includes('usarán esta categoría'));
   await page.goto(`${BASE}/app/reglas`);
   check('rule listed', ((await page.getByTestId('rule-list').textContent()) ?? '').includes('BODEGA DON PEPE → Alimentación'));
   const s2 = await importText('sms', SMS_SHOP_2);
   await page.goto(`${BASE}${s2.href}`);
-  check('next import of that merchant auto-categorized by the learned rule', ((await page.locator('main small.muted').first().textContent()) ?? '').includes('Alimentación'),
+  check('next import of that merchant auto-categorized by the learned rule', ((await page.getByTestId('detail-meta').textContent()) ?? '').includes('Alimentación'),
     (await page.locator('main small.muted').first().textContent()) ?? '');
 
   // Confirmed purchase counts once (email+SMS merged): confirm it and check the dashboard.
@@ -123,6 +123,7 @@ await runSuite('import-learning', async ({ page, check }) => {
   await Promise.all([page.waitForURL(/ok=1/), page.click('form[aria-label="Registrar movimiento"] button[type=submit]')]);
   await page.goto(`${BASE}/app`);
   await nav(page, () => page.click('text=E2E BORRAR'));
+  await page.click('details.danger-zone > summary');
   await page.check('form[aria-label="Eliminar movimiento"] input[name=confirmDelete]');
   await Promise.all([page.waitForURL(/deleted=1/), page.click('form[aria-label="Eliminar movimiento"] button[type=submit]')]);
   check('manual movement deleted', !((await page.locator('main').textContent()) ?? '').includes('E2E BORRAR'));

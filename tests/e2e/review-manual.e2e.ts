@@ -42,7 +42,7 @@ await runSuite('review-manual', async ({ page, check }) => {
   await page.selectOption(`${correction} select[name=accountId]`, { label: 'E2E Ahorros ****9001' });
   await page.fill(`${correction} input[name=amount]`, '95.50');
   await act(page, () => page.click(`${correction} button[value="1"]`));
-  const status = await page.locator(`${correction} [role=status], ${correction} ${ALERT}`).first().textContent();
+  const status = await page.locator(`[data-testid=saved-notice], ${correction} ${ALERT}`).first().textContent();
   check('correction saved and confirmed', !!status?.includes('confirmado'), status ?? '');
   await page.reload();
   const history = (await page.getByTestId('audit-list').textContent()) ?? '';

@@ -10,7 +10,7 @@ import { existsSync, readdirSync } from 'node:fs';
 export const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
 export const ALERT = '[role=alert]:not(#__next-route-announcer__)';
 /** Fixed ids of the B rows the suites attack directly (seed.sql). */
-export const B_TX = { review: '00000000-0000-4000-8000-00000000e4b1', import: '00000000-0000-4000-8000-00000000e56b' } as const;
+export const B_TX = { review: '00000000-0000-4000-8000-00000000e4b1', import: '00000000-0000-4000-8000-00000000e56b', split: '00000000-0000-4000-8000-00000000e10b' } as const;
 
 /** Probe user email for a seed tag (s3a, s4a, ...). */
 export const probe = (tag: string) => `e2e-${tag}@gestordefinanzas.invalid`;

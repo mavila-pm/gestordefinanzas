@@ -23,8 +23,9 @@ const FIELD_LABEL: Record<string, string> = {
   category_id: 'Categoría', card_id: 'Tarjeta', account_id: 'Cuenta', status: 'Estado',
 };
 
-export default async function TransactionDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function TransactionDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string }> }) {
   const { id } = await params;
+  const { ok } = await searchParams;
   if (!isUuid(id)) notFound();
   const supabase = await createSupabaseServerClient();
   // RLS: another user's id simply returns no row (same 404 as a non-existent one).
@@ -114,10 +115,15 @@ export default async function TransactionDetail({ params }: { params: Promise<{ 
         <Icon name="back" size={18} />{pending ? 'Por revisar' : 'Movimientos'}
       </Link>
 
+      {(ok === 'confirmed' || ok === 'rule') && (
+        <p role="status" className="notice positive" data-testid="saved-notice">
+          Cambios guardados y movimiento confirmado.{ok === 'rule' ? ' Los próximos movimientos de este comercio usarán esta categoría.' : ''}
+        </p>
+      )}
       <header className="detail-head">
         <h1>{t.merchantRaw ?? TYPE_LABEL[t.type]}</h1>
         <p className={`figure${t.direction === 'inflow' ? ' in' : ''}`}>{sign}{formatMoney(t)}</p>
-        <p className="muted">
+        <p className="muted" data-testid="detail-meta">
           {[parts.length ? `Dividido en ${parts.length + (allocated < t.amountMinor ? 1 : 0)} partes` : t.category ?? TYPE_LABEL[t.type],
             formatLimaDateTime(t.occurredAt)].join(' · ')}
         </p>
@@ -239,15 +245,17 @@ export default async function TransactionDetail({ params }: { params: Promise<{ 
         </div>
       </details>
       {manualOnly && (
-        <section className="stack-sm" aria-label="Eliminar">
-          <h2>Eliminar</h2>
+        <details className="danger-zone" aria-label="Eliminar">
+          <summary>Eliminar movimiento</summary>
+          <div className="stack-sm" style={{ paddingTop: 8 }}>
           <p className="muted">Solo los movimientos que registraste tú se pueden eliminar. Queda constancia en tu historial.</p>
           <ActionForm action={deleteTransactionAction} label="Eliminar movimiento">
             <input type="hidden" name="id" value={t.id} />
             <label className="check"><input type="checkbox" name="confirmDelete" value="1" /> <span>Confirmo que quiero eliminarlo</span></label>
             <button type="submit" className="danger">Eliminar movimiento</button>
           </ActionForm>
-        </section>
+        </div>
+        </details>
       )}
     </main>
   );

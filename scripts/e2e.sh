@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account)
+ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account splits)
 PORT="${E2E_PORT:-3000}"
 BASE="http://localhost:${PORT}"
 STATE=.e2e
@@ -79,7 +79,8 @@ if [[ -n "${E2E_DB_URL:-}" ]]; then render_seed | psql "$E2E_DB_URL" -q -v ON_ER
 if (($#)); then SUITES=("$@"); else SUITES=("${ALL[@]}"); fi
 pass=0; total=0; failed=()
 for s in "${SUITES[@]}"; do
-  out="$(node --experimental-strip-types --no-warnings "tests/e2e/$s.e2e.ts" 2>&1)" && ok=1 || ok=0
+  file="tests/e2e/$s.e2e.ts"; [[ -f "$file" ]] || file="tests/e2e/$s.ts"   # e.g. "visual" (screenshots + overflow check)
+  out="$(node --experimental-strip-types --no-warnings "$file" 2>&1)" && ok=1 || ok=0
   line="$(grep -E "^$s: [0-9]+/[0-9]+ passed" <<<"$out" || echo "$s: crashed")"
   echo "$line"
   if [[ "$line" =~ ([0-9]+)/([0-9]+) ]]; then pass=$((pass + BASH_REMATCH[1])); total=$((total + BASH_REMATCH[2])); fi

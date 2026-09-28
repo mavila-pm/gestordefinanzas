@@ -1,6 +1,9 @@
 import { ActionForm } from '../../../components/action-form';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { saveProfileAction } from '../actions';
+import { ThemeControl } from '../../../components/ui/theme-control';
+
+export const metadata = { title: 'Ajustes' };
 
 export default async function Settings() {
   const supabase = await createSupabaseServerClient();
@@ -13,9 +16,10 @@ export default async function Settings() {
           <label className="stack-sm"><span>¿Cómo te llamamos?</span>
             <input name="displayName" maxLength={80} defaultValue={(data?.display_name as string | null) ?? ''} placeholder="Mauro" /></label>
           <p className="muted small">Solo se usa para mensajes como el cierre de mes.</p>
-          <button type="submit">Guardar</button>
+          <button type="submit" style={{ justifySelf: 'start' }}>Guardar</button>
         </ActionForm>
       </section>
+      <section className="card"><ThemeControl /></section>
     </main>
   );
 }

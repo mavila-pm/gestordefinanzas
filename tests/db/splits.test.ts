@@ -141,3 +141,14 @@ async function commitAs(pool: pg.Pool, user: string, sql: string, params: unknow
     await c.query('commit');
   } catch (e) { await c.query('rollback'); throw e; } finally { c.release(); }
 }
+
+describe.skipIf(!DATABASE_URL)('TASK-020: stale edits fail fast', () => {
+  it('stale is not a serialization failure (40001 would be retried forever by PostgREST)', async () => {
+    const pool = makePool();
+    try {
+      const src = (await pool.query(`select prosrc from pg_proc where proname = 'set_transaction_split'`)).rows[0].prosrc as string;
+      expect(src).toContain(`'stale' using errcode = '55000'`);
+      expect(src).not.toContain('40001');
+    } finally { await pool.end(); }
+  });
+});
