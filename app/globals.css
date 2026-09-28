@@ -261,3 +261,32 @@ a.button.icon:hover { background: var(--bg-secondary); }
 .sidebar .foot small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar > a.button { padding: 12px 14px; white-space: nowrap; }
 details.danger-zone > summary { color: var(--semantic-error); font-weight: 600; }
+
+/* ── Grouped settings list ─────────────────────────────────────────────────────────────────────── */
+.group { display: grid; gap: var(--space-8); }
+.group-title { font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); padding: 0 var(--space-4); margin: 0; }
+.rows { background: var(--surface-default); border-radius: var(--radius-card); padding: 0 var(--space-16); }
+.setting { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); min-height: 60px; padding: var(--space-12) 0; }
+.setting + .setting { border-top: 1px solid var(--border-subtle); }
+.setting > .segmented, .setting > fieldset { flex: 1; }
+.setting-text { display: grid; gap: 2px; min-width: 0; }
+.setting-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.link-row { text-decoration: none; color: inherit; }
+a.link-row:hover .setting-text strong { text-decoration: underline; }
+a.link-row > svg { color: var(--text-muted); flex: none; }
+.lead { font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.005em; }
+.figures { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-16); }
+.figures .big { margin: 2px 0; }
+.budget-list { display: grid; gap: var(--space-8); }
+.budget { display: grid; gap: var(--space-8); padding: var(--space-16) var(--space-16) var(--space-4); background: var(--surface-default); border-radius: var(--radius-control); }
+.state-word { font-size: 14px; font-weight: 600; }
+.state-word.ok { color: var(--semantic-success); } .state-word.warning { color: var(--semantic-warning); } .state-word.exceeded { color: var(--semantic-error); }
+.small-link { justify-self: start; min-height: 40px; font-size: 14px; }
+.muted-link { color: var(--text-secondary); }
+.list.card > li:first-child { border-top: 0; }
+.sources { display: grid; gap: var(--space-8); }
+.source { background: var(--surface-default); border-radius: var(--radius-control); padding: var(--space-16); display: grid; gap: var(--space-8); }
+.source.row { display: flex; }
+.muted-source strong { color: var(--text-secondary); }
+.tag.positive-tag { background: var(--status-positive-bg); color: var(--semantic-success); }
+code { font-size: 14px; overflow-wrap: anywhere; }

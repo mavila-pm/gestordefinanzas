@@ -1,3 +1,4 @@
+import type { ProfileNames } from '../src/domain/profile';
 import { detectRecurring, RECURRING_RULES } from '../src/engine/recurring';
 import { previousMonth } from '../src/engine/analysis';
 import { limaMonthRange } from '../src/web/auth-input';
@@ -131,4 +132,10 @@ export async function loadEntitlements(supabase: SupabaseClient, now = new Date(
   ]);
   const config = planConfigFrom(cfg.data ?? []);
   return { entitlements: entitlementsFor((sub.data as SubscriptionRow | null) ?? null, config, now), config };
+}
+
+/** The signed-in person's names (RLS: own row only). */
+export async function loadProfile(supabase: SupabaseClient): Promise<ProfileNames> {
+  const { data } = await supabase.from('profiles').select('display_name,given_names,family_names').maybeSingle();
+  return { displayName: (data?.display_name as string | null) ?? null, givenNames: (data?.given_names as string | null) ?? null, familyNames: (data?.family_names as string | null) ?? null };
 }

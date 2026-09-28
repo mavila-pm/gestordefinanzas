@@ -23,20 +23,22 @@ await runSuite('import-learning', async ({ page, check }) => {
 
   // ── TASK-005: accounts and cards ────────────────────────────────────────────────────────────────────────
   await page.goto(`${BASE}/app/tarjetas`);
-  await page.click('text=Registrar cuenta');
+  await page.getByRole('button', { name: 'Agregar cuenta' }).first().click();
   const acc = 'form[aria-label="Registrar cuenta"]';
   await page.fill(`${acc} input[name=alias]`, 'E2E BBVA Ahorros');
   await page.fill(`${acc} input[name=last4]`, '9001');
   await page.selectOption(`${acc} select[name=institution]`, 'BBVA');
   await act(page, () => page.click(`${acc} button[type=submit]`));
   check('account registered', ((await page.getByTestId('account-list').textContent()) ?? '').includes('E2E BBVA Ahorros ****9001'));
-  // React resets the form after a successful action: fill it again with the same digits.
+  // The sheet closed on success: open it again and try the same digits.
+  await page.getByRole('button', { name: 'Agregar cuenta' }).first().click();
   await page.fill(`${acc} input[name=alias]`, 'E2E BBVA Otra');
   await page.fill(`${acc} input[name=last4]`, '9001');
   await page.selectOption(`${acc} select[name=institution]`, 'BBVA');
   await act(page, () => page.click(`${acc} button[type=submit]`));
   check('duplicate account digits rejected', ((await page.locator(`${acc} [role=alert]`).textContent()) ?? '').includes('Ya registraste una cuenta'));
-  await page.click('text=Registrar tarjeta');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Agregar tarjeta' }).first().click();
   const card = 'form[aria-label="Registrar tarjeta"]';
   await page.fill(`${card} input[name=alias]`, 'E2E Visa');
   await page.fill(`${card} input[name=last4]`, '4821');
@@ -132,6 +134,7 @@ await runSuite('import-learning', async ({ page, check }) => {
 
   // Deactivate card
   await page.goto(`${BASE}/app/tarjetas`);
+  await page.getByRole('button', { name: 'Opciones de E2E Visa' }).click();
   await act(page, () => page.click('form[aria-label="Desactivar E2E Visa"] button'));
   check('card deactivated', (await page.getByTestId('card-list').count()) === 0);
 

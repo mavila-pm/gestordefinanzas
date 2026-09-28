@@ -8,13 +8,13 @@ export const PRIMARY: Item[] = [
   { href: '/app/revisar', match: '/app/revisar', label: 'Por revisar', icon: 'review' },
   { href: '/app/analisis', match: '/app/analisis', label: 'Análisis', icon: 'analytics' },
   { href: '/app/presupuestos', match: '/app/presupuestos', label: 'Presupuestos', icon: 'categories' },
-  { href: '/app/compromisos', match: '/app/compromisos', label: 'Compromisos', icon: 'debt' },
+  { href: '/app/compromisos', match: '/app/compromisos', label: 'Próximos pagos', icon: 'debt' },
 ];
 export const SETUP: Item[] = [
-  { href: '/app/tarjetas', match: '/app/tarjetas', label: 'Tarjetas y cuentas', icon: 'cards' },
-  { href: '/app/reglas', match: '/app/reglas', label: 'Reglas', icon: 'check' },
+  { href: '/app/tarjetas', match: '/app/tarjetas', label: 'Cuentas y tarjetas', icon: 'cards' },
+  { href: '/app/reglas', match: '/app/reglas', label: 'Lo que recuerda', icon: 'check' },
   { href: '/app/conexiones', match: '/app/conexiones', label: 'Conexiones', icon: 'connections' },
-  { href: '/app/cuenta', match: '/app/cuenta', label: 'Cuenta y plan', icon: 'lock' },
+  { href: '/app/cuenta', match: '/app/cuenta', label: 'Tu plan', icon: 'lock' },
   { href: '/app/ajustes', match: '/app/ajustes', label: 'Ajustes', icon: 'settings' },
 ];
 export const MOBILE: Item[] = [

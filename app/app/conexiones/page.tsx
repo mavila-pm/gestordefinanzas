@@ -4,6 +4,8 @@ import { rotateAddressAction } from '../actions';
 import { describeSyncEvent, type SyncEventRow } from '../../../src/web/sync-history';
 import { formatLimaDateTime } from '../../../src/web/transaction-input';
 
+export const metadata = { title: 'Conexiones' };
+
 export default async function Connections() {
   const supabase = await createSupabaseServerClient();
   const [{ data }, history] = await Promise.all([
@@ -14,36 +16,49 @@ export default async function Connections() {
   const events = (history.data ?? []) as SyncEventRow[];
   const domain = process.env.INGEST_EMAIL_DOMAIN;
   const ready = !!domain && !!process.env.INBOUND_EMAIL_SECRET && !!process.env.DATABASE_URL;
+  const bridgeActive = ready && !!data;
   return (
     <main className="stack narrow-md">
-      <h1>Conexiones</h1>
-      <section className="card stack-sm">
-        <h2>Reenvío de correos del banco (Email Bridge)</h2>
-        <p className="muted">Tendrás una dirección privada. Configuras en tu correo que solo las notificaciones de tu banco se reenvíen ahí;
-          no leemos el resto de tu bandeja y no guardamos el texto de los correos.</p>
-        {!ready && (
-          <p className="warn" data-testid="bridge-status">Aún no disponible: falta activar el proveedor de correo entrante y el dominio.
-            Mientras tanto puedes <a href="/app/importar">importar mensajes pegándolos</a>.</p>
-        )}
-        {data ? (
-          <p data-testid="bridge-address">Tu dirección: <code>{data.address_local}@{domain ?? '(dominio pendiente)'}</code></p>
-        ) : <p className="muted">Todavía no generaste tu dirección.</p>}
-        <ActionForm action={rotateAddressAction} label="Generar dirección">
-          <button type="submit" className={data ? 'secondary' : ''}>{data ? 'Generar una nueva (la actual deja de funcionar)' : 'Generar mi dirección'}</button>
-        </ActionForm>
-      </section>
-      <section className="card stack-sm">
-        <h2>Otras fuentes</h2>
-        <ul className="list">
-          <li><span>Gmail</span><span className="muted">Próximamente (requiere autorización OAuth)</span></li>
-          <li><span>SMS de Android</span><span className="muted">Próximamente (requiere app Android)</span></li>
-          <li><span>Importar mensaje pegado</span><a href="/app/importar">Disponible</a></li>
-          <li><span>Registro manual</span><a href="/app/movimientos/nuevo">Disponible</a></li>
-        </ul>
-      </section>
+      <div className="page-head">
+        <h1>Conexiones</h1>
+        <p>Así llegan tus movimientos a Velsuno.</p>
+      </div>
 
-      <section className="card stack-sm">
-        <h2>Historial de sincronización</h2>
+      <ul className="plain sources">
+        <li className="source">
+          <div className="row" style={{ alignItems: 'baseline' }}>
+            <strong>Reenvío de correos del banco</strong>
+            {bridgeActive ? <span className="tag positive-tag">Activo</span> : <span className="tag" data-testid="bridge-status">Aún no disponible</span>}
+          </div>
+          <p className="muted small">Una dirección privada a la que reenvías solo las notificaciones de tu banco. No leemos el resto de tu correo.</p>
+          {data ? (
+            <p className="small" data-testid="bridge-address">Tu dirección: <code>{data.address_local}@{domain ?? '(dominio pendiente)'}</code></p>
+          ) : null}
+          <ActionForm action={rotateAddressAction} label="Generar dirección" className="inline">
+            <button type="submit" className={data ? 'link small-link' : 'quiet'}>{data ? 'Cambiar dirección (la actual deja de funcionar)' : 'Generar mi dirección'}</button>
+          </ActionForm>
+        </li>
+        <li className="source row">
+          <span className="setting-text"><strong>Pegar un mensaje del banco</strong><small className="muted">Copias el correo o SMS y lo leemos.</small></span>
+          <a href="/app/importar" className="button quiet">Pegar</a>
+        </li>
+        <li className="source row">
+          <span className="setting-text"><strong>Registro manual</strong><small className="muted">Para efectivo o lo que no llega del banco.</small></span>
+          <a href="/app/movimientos/nuevo" className="button quiet">Registrar</a>
+        </li>
+        <li className="source row muted-source">
+          <span className="setting-text"><strong>Gmail</strong><small className="muted">Conexión directa con tu correo.</small></span>
+          <span className="tag">Próximamente</span>
+        </li>
+        <li className="source row muted-source">
+          <span className="setting-text"><strong>SMS en Android</strong><small className="muted">Lectura de los SMS del banco en tu teléfono.</small></span>
+          <span className="tag">Próximamente</span>
+        </li>
+      </ul>
+
+      <details className="card">
+        <summary>Últimos mensajes recibidos</summary>
+        <div className="stack-sm" style={{ marginTop: 8 }}>
         {history.error ? <p role="alert" className="error">No se pudo cargar el historial.</p>
           : events.length === 0 ? <p className="muted">Aún no llega ninguna notificación.</p> : (
           <ul className="list" data-testid="sync-history">
@@ -58,8 +73,9 @@ export default async function Connections() {
             })}
           </ul>
         )}
-        <small className="muted">Últimos 30 eventos. Los mensajes repetidos o que no son movimientos no crean nada.</small>
-      </section>
+        <small className="muted">Los 30 más recientes. Los repetidos o los que no son movimientos no crean nada.</small>
+        </div>
+      </details>
     </main>
   );
 }

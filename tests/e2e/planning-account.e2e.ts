@@ -20,11 +20,13 @@ await runSuite('planning-account', async ({ page, check }) => {
   // ── Budgets ──────────────────────────────────────────────────────────────────────────────────────────
   await page.goto(`${BASE}/app/presupuestos`);
   const bf = 'form[aria-label="Guardar presupuesto"]';
+  check('no budgets yet: short empty state with one action', ((await page.locator('main').textContent()) ?? '').includes('Aún no hay presupuestos'));
+  await page.getByRole('button', { name: 'Nuevo presupuesto' }).click();
   await page.selectOption(`${bf} select[name=categoryId]`, { label: 'Alimentación' });
   await page.fill(`${bf} input[name=amount]`, '350');
   await act(page, () => page.click(`${bf} button[type=submit]`));
   const blist = (await page.getByTestId('budget-list').textContent()) ?? '';
-  check('budget shows S/ 400.00 / S/ 350.00 exceeded', blist.includes('S/ 400.00 / S/ 350.00') && blist.includes('Excedido por S/ 50.00'), blist);
+  check('budget shows spent, limit, remaining and state in words', blist.includes('S/ 400.00 de S/ 350.00') && blist.includes('Te pasaste por S/ 50.00') && blist.includes('Te pasaste'), blist);
   await page.goto(`${BASE}/app`);
   check('dashboard alert: budget exceeded', ((await page.locator('[data-alert="budget_exceeded:Alimentación"]').textContent()) ?? '').includes('Presupuesto excedido'));
 
@@ -44,6 +46,7 @@ await runSuite('planning-account', async ({ page, check }) => {
   await page.fill(`${df} input[name=principal]`, '30000');
   await page.fill(`${df} input[name=balance]`, '18000');
   await page.fill(`${df} input[name=installment]`, '1000');
+  await page.click(`${df} summary`);
   await page.fill(`${df} input[name=installmentsTotal]`, '36');
   await page.fill(`${df} input[name=installmentsPaid]`, '12');
   await page.fill(`${df} input[name=dueDay]`, dueTomorrow);
@@ -53,6 +56,7 @@ await runSuite('planning-account', async ({ page, check }) => {
   check('commitment total = rent + installment', ((await page.getByTestId('commitment-total').textContent()) ?? '').includes('S/ 2,500.00'),
     (await page.getByTestId('commitment-total').textContent()) ?? '');
   const debtBefore = (await page.getByTestId('debt').textContent()) ?? '';
+  await page.getByRole('button', { name: 'Registrar pago de E2E Préstamo' }).click();
   await page.fill('form[aria-label="Pago E2E Préstamo"] input[name=amount]', '1000');
   await page.click('form[aria-label="Pago E2E Préstamo"] button[type=submit]');
   await changed(page, 'debt', debtBefore);

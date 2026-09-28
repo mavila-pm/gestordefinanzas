@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
 import { parseAmountToMinor } from '../../src/domain/money';
 import { SPLIT_ERROR_TEXT } from '../../src/domain/allocations';
+import { parseProfileForm } from '../../src/domain/profile';
 import { ingestRawEvent } from '../../src/engine/ingest';
 import { loadUserContext } from '../../lib/queries';
 import { SupabaseImportRepository } from '../../src/infrastructure/supabase/import-repository';
@@ -148,6 +149,18 @@ export async function deleteRuleAction(_prev: ActionState, form: FormData): Prom
   return done('Regla eliminada. Los movimientos ya registrados no cambian.');
 }
 
+/** Change the category Velsuno remembers for a merchant (RLS + policy check: own rule, global or own category). */
+export async function changeRuleAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const categoryId = form.get('categoryId');
+  if (!isUuid(id) || !isUuid(categoryId)) return { error: errorText('invalid_request') };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { data, error } = await supabase.from('merchant_rules').update({ category_id: categoryId }).eq('id', id).select('id');
+  if (error || !data?.length) return { error: 'No pudimos guardar el cambio. Intenta de nuevo.' };
+  return done('Listo. Se usará en los próximos movimientos.');
+}
+
 export async function deleteTransactionAction(_prev: ActionState, form: FormData): Promise<ActionState> {
   const id = form.get('id');
   if (!isUuid(id) || form.get('confirmDelete') !== '1') return { error: 'Marca la casilla para confirmar la eliminación.' };
@@ -183,15 +196,17 @@ export async function importAction(_prev: ImportState, form: FormData): Promise<
 }
 
 export async function saveProfileAction(_prev: ActionState, form: FormData): Promise<ActionState> {
-  const raw = form.get('displayName');
-  const name = typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : '';
-  if (name.length > 80 || /[\u0000-\u001f\u007f<>]/.test(name)) return { error: 'Nombre inválido (máximo 80 caracteres).' };
+  const parsed = parseProfileForm((k) => form.get(k));
+  if (!parsed.ok) return { error: parsed.error };
   const { supabase, user } = await session();
   if (!user) return { error: errorText('not_authenticated') };
-  // profiles is user-owned under RLS (user_id must equal the session user).
-  const { error } = await supabase.from('profiles').upsert({ user_id: user.id, display_name: name || null, updated_at: new Date().toISOString() });
-  if (error) return { error: errorText(null) };
-  return done('Guardado.');
+  const p = parsed.value;
+  // profiles is user-owned under RLS (user_id must equal the session user). Names are presentation only.
+  const { error } = await supabase.from('profiles').upsert({
+    user_id: user.id, given_names: p.givenNames, family_names: p.familyNames, display_name: p.displayName, updated_at: new Date().toISOString(),
+  });
+  if (error) return { error: 'No pudimos guardar tus datos. Intenta de nuevo.' };
+  return done(p.displayName ? `Listo, ${p.displayName}.` : 'Guardado.');
 }
 
 export async function rotateAddressAction(_prev: ActionState, _form: FormData): Promise<ActionState> {

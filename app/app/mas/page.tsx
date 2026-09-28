@@ -1,33 +1,33 @@
 import Link from 'next/link';
-import { createSupabaseServerClient } from '../../../lib/supabase/server';
-import { logout } from '../../auth/actions';
-import { MORE_ITEMS } from '../../../components/ui/nav-items';
+import { PRIMARY, SETUP } from '../../../components/ui/nav-items';
 import { Icon } from '../../../components/ui/icon';
-import { ThemeControl } from '../../../components/ui/theme-control';
 
 export const metadata = { title: 'Más' };
 
-export default async function More() {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+function Group({ title, items }: { title: string; items: typeof PRIMARY }) {
+  return (
+    <section className="group" aria-label={title}>
+      <h2 className="group-title">{title}</h2>
+      <div className="rows">
+        {items.map((i) => (
+          <Link key={i.href} href={i.href} className="setting link-row">
+            <span className="actions" style={{ gap: 12 }}><Icon name={i.icon} /><strong style={{ fontWeight: 500 }}>{i.label}</strong></span>
+            <Icon name="chevron" size={18} />
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Mobile home for everything that is not a daily task. Two groups, not a flat list of ten equal rows. */
+export default function More() {
   return (
     <main className="stack narrow-md">
       <h1>Más</h1>
-      <ul className="list">
-        {MORE_ITEMS.map((i) => (
-          <li key={i.href}><Link href={i.href} className="tx-row" style={{ display: 'flex', gap: 12, width: '100%', alignItems: 'center' }}>
-            <Icon name={i.icon} /><span style={{ flex: 1 }}>{i.label}</span><Icon name="chevron" size={18} />
-          </Link></li>
-        ))}
-        <li><Link href="/app/importar" className="tx-row" style={{ display: 'flex', gap: 12, width: '100%', alignItems: 'center' }}>
-          <Icon name="mail" /><span style={{ flex: 1 }}>Importar mensaje del banco</span><Icon name="chevron" size={18} />
-        </Link></li>
-      </ul>
-      <ThemeControl />
-      <div className="stack-sm">
-        <small className="muted">{user?.email}</small>
-        <form action={logout}><button type="submit" className="secondary wide">Cerrar sesión</button></form>
-      </div>
+      <Link href="/app/importar" className="button quiet wide"><Icon name="mail" size={18} />Pegar un mensaje del banco</Link>
+      <Group title="Tu dinero" items={PRIMARY.slice(3)} />
+      <Group title="Configuración" items={SETUP} />
     </main>
   );
 }

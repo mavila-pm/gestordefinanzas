@@ -4,7 +4,7 @@
  * 2026-09-25 and a merchant '=HYPERLINK(...)'; B has "E2E SECRET B". Assumes the Lima date is 2026-09-27..30.
  * Run all suites: scripts/e2e.sh (seed: tests/e2e/seed.sql).
  */
-import { BASE, login, probe, runSuite } from './lib.ts';
+import { act, BASE, login, probe, runSuite } from './lib.ts';
 
 const A = probe('s78a');
 
@@ -17,14 +17,21 @@ await runSuite('analysis-dashboard', async ({ browser, page, check }) => {
 
   // Settings: display name used by milestones.
   await page.goto(`${BASE}/app/ajustes`);
-  await page.fill('input[name=displayName]', 'Mauro E2E');
-  await page.click('form[aria-label="Perfil"] button[type=submit]');
-  await page.locator('form[aria-label="Perfil"] [role=status]').waitFor();
+  check('no name yet: neutral profile summary (never the email)', ((await page.getByTestId('profile-name').textContent()) ?? '') === 'Aún no nos dijiste tu nombre');
+  await page.getByRole('button', { name: 'Editar perfil' }).click();
+  await page.fill('input[name=givenNames]', 'Mauro Antonio');
+  await page.fill('input[name=familyNames]', 'Ávila Pérez');
+  check('preferred name pre-filled with the first given name', (await page.inputValue('input[name=displayName]')) === 'Mauro');
+  await act(page, () => page.click('form[aria-label="Perfil"] button[type=submit]'));
+  await page.reload();
+  check('profile shows "Mauro Ávila"; full names kept', ((await page.getByTestId('profile-name').textContent()) ?? '') === 'Mauro Ávila'
+    && (await page.inputValue('input[name=givenNames]')) === 'Mauro Antonio' && (await page.inputValue('input[name=familyNames]')) === 'Ávila Pérez');
 
   // ── Dashboard (TASK-008) ───────────────────────────────────────────────────────────────────────────────
   await page.goto(`${BASE}/app`);
   const milestone = (await page.getByTestId('milestone').textContent().catch(() => null)) ?? '';
   check('milestone for the closed month (consistency, with name)', milestone === 'Llevas tres meses consecutivos cerrando con saldo positivo, Mauro. En agosto ahorraste S/ 1,000.00.', milestone);
+  check('dashboard greets by the preferred name only', ((await page.locator('main h1').first().textContent()) ?? '') === 'Tu mes, Mauro');
   const health = (await page.getByTestId('data-health').textContent()) ?? '';
   check('data health PARTIAL with reasons (pending + no automatic source)', health.includes('Datos parciales') && health.includes('1 movimiento(s) por revisar') && health.includes('fuentes automáticas'), health);
   const alerts = await page.locator('[data-testid=alerts] li').evaluateAll((els) => els.map((e) => e.getAttribute('data-alert')));

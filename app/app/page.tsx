@@ -7,11 +7,15 @@ import { buildAlerts } from '../../src/engine/alerts';
 import { dataHealth } from '../../src/engine/data-health';
 import { closedMonthMilestone, mainInsight } from '../../src/engine/insights';
 import { budgetStatus } from '../../src/engine/budgets';
-import { loadBudgets, loadCommitmentData } from '../../lib/queries';
+import { loadBudgets, loadCommitmentData, loadProfile } from '../../lib/queries';
+import { preferredName } from '../../src/domain/profile';
 import { monthCommitments, totalsByCurrency } from '../../src/engine/commitments';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../src/web/auth-input';
 import { TxRow } from '../../components/tx-row';
+import { ActionForm } from '../../components/action-form';
+import { ProfileFields } from '../../components/profile-fields';
+import { saveProfileAction } from './actions';
 import { Icon } from '../../components/ui/icon';
 import { limaDayLabel, monthLabel } from '../../src/web/labels';
 
@@ -36,7 +40,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     supabase.from('transactions').select('created_at').in('status', ['review_required', 'possible_duplicate']).order('created_at').limit(1),
     supabase.from('financial_events').select('id', { count: 'exact', head: true }).eq('outcome', 'unresolved').gte('created_at', since30),
     supabase.from('transaction_sources').select('id', { count: 'exact', head: true }).in('channel', ['email', 'sms']).gte('received_at', since30),
-    supabase.from('profiles').select('display_name').maybeSingle(),
+    loadProfile(supabase),
     loadBudgets(supabase),
     loadCommitmentData(supabase),
     supabase.from('transactions').select('id', { count: 'exact', head: true }),
@@ -61,7 +65,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const alerts = buildAlerts({ txs: all, pendingCount, oldestPendingDays, unresolvedEvents30d, now, currency: 'PEN', budgets: month === currentMonth ? budgetsNow : [], commitments: month === currentMonth ? commitments : [] });
   const insight = mainInsight(all, month, 'PEN');
   // Milestones are event-driven: only the month that just closed, shown while viewing the current month.
-  const firstName = (profileRes.data?.display_name as string | null | undefined)?.split(' ')[0] ?? null;
+  const firstName = preferredName(profileRes);
   const milestone = month === currentMonth
     ? closedMonthMilestone(all, previousMonth(currentMonth), 'PEN', { firstName, dataHealthOk: health.level !== 'ACTION_REQUIRED', budgets })
     : null;
@@ -74,14 +78,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const topCategory = categories[0]?.[1] ?? 0;
   const firstTime = (everRes.count ?? 0) === 0;
 
-  if (firstTime) return <Welcome />;
+  if (firstTime) return <Welcome name={firstName} />;
 
   return (
     <main className="stack">
       {deleted === '1' && <p role="status" className="notice positive">Movimiento eliminado.</p>}
       <header className="row">
         <div className="page-head">
-          <h1>{month === currentMonth ? 'Tu mes' : monthLabel(month)}</h1>
+          <h1>{month === currentMonth ? (firstName ? `Tu mes, ${firstName}` : 'Tu mes') : monthLabel(month)}</h1>
           <p>{month === currentMonth ? monthLabel(month) : 'Mes cerrado'} · Soles</p>
         </div>
         <nav className="month-nav" aria-label="Cambiar de mes">
@@ -179,13 +183,22 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 }
 
 /** First visit: how movements arrive, what Velsuno checks, and one way to start. No bank credentials, ever. */
-function Welcome() {
+function Welcome({ name }: { name: string | null }) {
   return (
     <main className="stack narrow-md" data-testid="welcome">
       <div className="page-head">
-        <h1>Empecemos por lo esencial</h1>
+        <h1>{name ? `Hola, ${name}. Empecemos por lo esencial` : 'Empecemos por lo esencial'}</h1>
         <p>Velsuno ordena tus movimientos y te dice qué pasa con tu dinero. Nunca te pedirá la clave de tu banco.</p>
       </div>
+      {!name && (
+        <section className="card stack-sm" aria-label="Tus datos">
+          <h2>¿Cómo te llamamos?</h2>
+          <ActionForm action={saveProfileAction} label="Perfil">
+            <ProfileFields givenNames="" familyNames="" displayName="" />
+            <button type="submit" style={{ justifySelf: 'start' }}>Guardar</button>
+          </ActionForm>
+        </section>
+      )}
       <ol className="plain stack-sm" style={{ gap: 12 }}>
         <li className="card stack-sm">
           <h2>Registra un movimiento</h2>
