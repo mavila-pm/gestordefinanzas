@@ -140,6 +140,23 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(a.actions![0]).toMatchObject({ type: 'act', act: 'link_income', fields: { incomeId: 'i1', transactionId: 't1', period: '2026-09' } });
     expect(answer({ k: 'got_paid' }, view)!.pending).toBe('balance');
   });
+  it('what-if questions are simulated by the engine (nothing written) and answered in one line', () => {
+    expect(detectIntent('¿qué pasa si pago S/ 1,000 a la tarjeta?')).toEqual({ k: 'what_pay_debt', amountMinor: 100000, target: 'tarjeta' });
+    expect(detectIntent('¿y si mi sueldo se retrasa 5 días?')).toEqual({ k: 'what_delay', days: 5 });
+    expect(detectIntent('Retraso de 7 días')).toEqual({ k: 'what_delay', days: 7 });
+    expect(detectIntent('y si me pagan tarde? se demora el sueldo')).toEqual({ k: 'what_delay', days: null });
+    expect(detectIntent('¿y si la luz sube a S/ 200?')).toEqual({ k: 'what_bill', name: 'luz', amountMinor: 20000 });
+    expect(detectIntent('¿puedo gastar S/ 500?')).toMatchObject({ k: 'can_spend' });
+    const input = { currency: 'PEN' as const, today: '2026-09-28', base: { kind: 'balance' as const, amountMinor: 500000, asOf: '2026-09-28', stale: false },
+      obligations: [], settledObligations: new Map(), incomes: [{ id: 'i', name: 'Sueldo', currency: 'PEN' as const, amountMinor: 400000, amountStatus: 'confirmed' as const, frequency: 'monthly' as const, dayOfMonth: 15, dayMax: null, secondDay: null, anchorDate: null }],
+      settledIncomes: new Map(), essentialsMonthlyMinor: 0, cushionMinor: 0 };
+    const v2 = { ...view, inputs: { PEN: input }, debtLinks: [{ id: 'd', name: 'Tarjeta BCP', currency: 'PEN' as const, balanceMinor: 300000, annualRateBp: 6000, obligationId: null }] };
+    const a = answer({ k: 'what_pay_debt', amountMinor: 100000, target: 'tarjeta' }, v2)!;
+    expect(a.text).toBe('Si pagas S/ 1,000 a Tarjeta BCP: te quedan S/ 4,000 libres (antes S/ 5,000).');
+    expect(a.rows).toEqual([{ label: 'Deuda después', value: 'S/ 2,000' }, { label: 'Interés que evitas', value: '~S/ 50 al mes' }]);
+    expect(answer({ k: 'what_delay', days: null }, v2)!.text).toBe('¿Cuántos días se retrasaría?');
+    expect(answer({ k: 'what_pay_debt', amountMinor: 100000, target: 'deuda' }, { ...v2, debtLinks: [] })!.text).toBe('No tengo deudas registradas.');
+  });
   it('asks for the missing data instead of guessing (§66)', () => {
     const noBase = { ...view, plans: [{ ...plan, base: null, freeMinor: null, missing: [{ code: 'balance' as const, text: 'Indica cuánto tienes hoy en tu cuenta.' }] }] };
     const a = answer({ k: 'can_spend', amountMinor: 1000, currency: 'PEN' }, noBase)!;

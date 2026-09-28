@@ -9,7 +9,7 @@ import { sanitizeUserText } from '../src/ai/sanitize';
 import { isSmallTalk } from '../src/ai/interpreter';
 import { infer, STOP_TEXT } from './ai';
 import { loadMessages, readImages } from './onboarding';
-import { loadPlanningData, planFor } from './planning';
+import { loadPlanningData, planFor, planInputFor } from './planning';
 
 /**
  * "Preguntar" (§19-§22, §69): the assistant reads the structured financial state (planning engine), never the
@@ -32,6 +32,8 @@ async function view(supabase: SupabaseClient): Promise<View> {
     reviewCount: review.count ?? 0,
     suggestions: d.suggestions,
     incomeMatches: d.incomeMatches,
+    inputs: Object.fromEntries(currencies.map((c) => [c, planInputFor(d, c)])),
+    debtLinks: d.debts.map((x) => ({ ...x, obligationId: d.obligationRows.find((o) => o.active && o.kind === 'card' && o.currency === x.currency && fold(o.name) === fold(x.name))?.id ?? null })),
   };
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ExpectedIncome, Obligation } from '../src/engine/planning';
 import {
-  essentialSpendByMonth, essentialsSuggestion, observedAmountsForUnknown, suggestIncomeMatches, timeline,
+  essentialSpendByMonth, essentialsSuggestion, isSuppressed, observedAmountsForUnknown, suggestIncomeMatches, timeline,
 } from '../src/engine/observed';
 import { validPatches, visionWrites } from '../src/ai/apply';
 
@@ -132,5 +132,25 @@ describe('camera in Preguntar: confirmed photo facts update what exists, never d
       { t: 'balance', amountMinor: 320000, currency: 'PEN' },
     ])).toEqual([{ t: 'balance', amountMinor: 320000, currency: 'PEN' }]);
     expect(validPatches('nope')).toEqual([]);
+  });
+});
+
+describe('decisions on suggestions', () => {
+  const today = '2026-10-07';
+  it('"Ahora no" hides until the date; "Descartar" hides that value, a materially new value may come back', () => {
+    const later = [{ kind: 'essentials' as const, subject: 'PEN', valueMinor: 45000, decision: 'later' as const, until: '2026-10-21' }];
+    expect(isSuppressed(later, 'essentials', 'PEN', 45000, today)).toBe(true);
+    expect(isSuppressed(later, 'essentials', 'PEN', 45000, '2026-10-21')).toBe(false);
+    const gone = [{ kind: 'essentials' as const, subject: 'PEN', valueMinor: 45000, decision: 'dismissed' as const, until: null }];
+    expect(isSuppressed(gone, 'essentials', 'PEN', 46000, today)).toBe(true);
+    expect(isSuppressed(gone, 'essentials', 'PEN', 60000, today)).toBe(false);
+    expect(isSuppressed(gone, 'income_match', 'PEN', 45000, today)).toBe(false);
+  });
+  it('a deposit that fits two expected incomes equally is flagged ambiguous (the person picks)', () => {
+    const a = inc({ id: 'a', name: 'Sueldo', amountMinor: 300000 });
+    const b = inc({ id: 'b', name: 'Freelance', amountMinor: 300000 });
+    const [m] = suggestIncomeMatches([a, b], [dep('t1', '2026-10-05', 300000)], none, new Set());
+    expect(m).toMatchObject({ ambiguous: true, confidence: 'medium' });
+    expect(suggestIncomeMatches([a], [dep('t1', '2026-10-05', 300000)], none, new Set())[0]?.ambiguous).toBeUndefined();
   });
 });

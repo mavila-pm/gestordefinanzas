@@ -13,6 +13,8 @@ export interface IncomeCandidate { id: string; occurredOn: string; amountMinor: 
 export interface IncomeMatch {
   incomeId: string; name: string; period: string; expectedDate: string; transactionId: string; receivedMinor: number; currency: Currency;
   expectedMinor: number | null; confidence: 'high' | 'medium';
+  /** Another expected income fits this deposit equally well: the person must pick (never auto-resolved). */
+  ambiguous?: boolean;
 }
 
 /** Days around the expected date (or window) a real deposit may land and still be "that" income. PROPUESTO. */
@@ -34,6 +36,7 @@ export function suggestIncomeMatches(
   for (const t of byDate) {
     if (usedTx.has(t.id)) continue;
     let best: { m: IncomeMatch; distance: number } | null = null;
+    let tie = false;
     for (const i of incomes) {
       if (i.currency !== t.currency) continue;
       const occs = incomeOccurrencesBetween(i, addDays(t.occurredOn, -40), addDays(t.occurredOn, 40));
@@ -52,9 +55,11 @@ export function suggestIncomeMatches(
           incomeId: i.id, name: i.name, period: o.period, expectedDate: o.date, transactionId: t.id, receivedMinor: t.amountMinor, currency: t.currency,
           expectedMinor: expected, confidence: expected !== null && distance <= 2 ? 'high' : 'medium',
         };
-        if (!best || distance < best.distance) best = { m, distance };
+        if (!best || distance < best.distance) { best = { m, distance }; tie = false; }
+        else if (distance === best.distance && best.m.incomeId !== i.id) tie = true;
       }
     }
+    if (best && tie) best.m = { ...best.m, confidence: 'medium', ambiguous: true };
     if (best) { out.push(best.m); usedTx.add(t.id); usedOcc.add(`${best.m.incomeId}|${best.m.period}`); }
   }
   return out;
@@ -167,4 +172,22 @@ export function timeline(
   const rank = (k: TimelineItem['kind']) => (k === 'income' ? 0 : 1);
   items.sort((a, b) => a.date!.localeCompare(b.date!) || rank(a.kind) - rank(b.kind));
   return [...items, ...undated];
+}
+
+// ── The person's decisions on suggestions ("Ahora no" / "Descartar") ─────────────────────────────────────
+export type SuggestionKind = 'essentials' | 'observed_amount' | 'income_match' | 'variation' | 'payment_match';
+export interface Decision { kind: SuggestionKind; subject: string; valueMinor: number | null; decision: 'later' | 'dismissed'; until: string | null }
+/** "Ahora no" waits this many days. PROPUESTO. */
+export const SNOOZE_DAYS = 14;
+
+/**
+ * A snoozed suggestion stays hidden until its date. A dismissed one stays hidden for that value; if the observed
+ * value moves materially (> 10 % and > S/ 30) it may be suggested again, because it is new evidence.
+ */
+export function isSuppressed(decisions: readonly Decision[], kind: SuggestionKind, subject: string, valueMinor: number | null, today: string): boolean {
+  const d = decisions.find((x) => x.kind === kind && x.subject === subject);
+  if (!d) return false;
+  if (d.decision === 'later') return d.until !== null && d.until > today;
+  if (d.valueMinor === null || valueMinor === null) return true;
+  return Math.abs(valueMinor - d.valueMinor) <= Math.max(3000, Math.round(d.valueMinor * 0.1));
 }

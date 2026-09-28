@@ -160,6 +160,8 @@ export interface PlanInput {
   settledIncomes: ReadonlyMap<string, ReadonlySet<string>>;
   essentialsMonthlyMinor: number | null;
   cushionMinor: number;
+  /** What-if only: the next income arrives this many days later than expected (scenarios.ts). */
+  incomeDelayDays?: number;
 }
 
 export interface Plan {
@@ -188,7 +190,9 @@ export function buildPlan(input: PlanInput): Plan {
   if (!input.base) missing.push({ code: 'balance', text: 'Indica cuánto tienes hoy en tu cuenta.' });
   else if (input.base.kind === 'balance' && input.base.stale) missing.push({ code: 'balance_stale', text: `Tu saldo es del ${fmtDay(input.base.asOf.slice(0, 10))}. Actualízalo para afinar el cálculo.` });
 
-  const next = nextIncome(input.incomes, currency, from, input.settledIncomes);
+  const expected = nextIncome(input.incomes, currency, from, input.settledIncomes);
+  const delay = input.incomeDelayDays ?? 0;
+  const next = expected && delay > 0 ? { ...expected, date: addDays(expected.date, delay), dateMax: expected.dateMax ? addDays(expected.dateMax, delay) : null } : expected;
   if (!next) missing.push({ code: 'next_income', text: 'Falta tu próximo ingreso: sin él no sabemos hasta cuándo alcanzar.' });
   // Uncertain income date: plan conservatively until the LAST possible day, and say so.
   const incomeDay = next ? (next.dateMax ?? next.date) : null;

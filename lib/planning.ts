@@ -5,9 +5,11 @@ import {
   buildPlan, detectVariations, limaToday, suggestMatches, type ExpectedIncome, type Obligation, type Plan, type PlanInput,
 } from '../src/engine/planning';
 import {
-  essentialSpendByMonth, essentialsSuggestion, observedAmountsForUnknown, suggestIncomeMatches, timeline,
+  essentialSpendByMonth, essentialsSuggestion, isSuppressed, observedAmountsForUnknown, suggestIncomeMatches, timeline,
+  type Decision,
   type EssentialsSuggestion, type IncomeMatch, type ObservedAmount, type TimelineItem,
 } from '../src/engine/observed';
+import { loadDecisions } from './learning';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../src/infrastructure/supabase/transaction-row';
 
 const limaDate = (iso: string) => new Date(Date.parse(iso) - 5 * 3600_000).toISOString().slice(0, 10);
@@ -30,6 +32,7 @@ export interface PlanningData {
   incomeMatches: IncomeMatch[];
   /** A payment whose amount was unknown now has a real linked amount (suggest, never replace silently). */
   observedAmounts: ObservedAmount[];
+  decisions: Decision[];
   transactionsById: Map<string, { amountMinor: number; occurredOn: string; merchant: string | null }>;
 }
 
@@ -37,7 +40,7 @@ export interface PlanningData {
 export async function loadPlanningData(supabase: SupabaseClient, now = new Date()): Promise<PlanningData> {
   const today = limaToday(now);
   const since = new Date(now.getTime() - 45 * 86_400_000).toISOString();
-  const [fx, debts, inc, settle, bal, set, txs] = await Promise.all([
+  const [fx, debts, inc, settle, bal, set, txs, decided] = await Promise.all([
     supabase.from('fixed_expenses').select('id,name,kind,currency,amount_minor,amount_status,frequency,anchor_month,due_day,due_day_max,target_day,notes,active,created_at'),
     supabase.from('debts').select('id,name,currency,balance_minor,annual_rate_bp,installment_minor,installments_total,installments_paid,due_day,active,created_at,last_payment_on'),
     supabase.from('expected_incomes').select('id,name,currency,amount_minor,amount_status,frequency,day_of_month,day_max,second_day,anchor_date').eq('active', true),
@@ -45,6 +48,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     supabase.from('balance_snapshots').select('currency,amount_minor,as_of').order('as_of', { ascending: false }).limit(20),
     supabase.from('planning_settings').select('currency,essentials_monthly_minor,cushion_minor'),
     supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed').gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(1000),
+    loadDecisions(supabase),
   ]);
 
   const obligationRows = (fx.data ?? []).map((r) => ({
@@ -108,15 +112,24 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     recentIncome: top ? { transactionId: top.id, amountMinor: top.amountMinor, currency: top.currency, date: limaDate(top.occurredAt), merchant: top.merchantRaw } : null,
     suggestions: suggestMatches(obligationRows.filter((o) => o.active), outflows, settledObligations, linked),
     variations: detectVariations(obligationRows.filter((o) => o.active), paid),
+    // "No es ese" / "Ahora no": the person's decisions hide a suggestion (never the data behind it).
     incomeMatches: suggestIncomeMatches(incomes, transactions.filter((t) => t.type === 'income')
-      .map((t) => ({ id: t.id, occurredOn: limaDate(t.occurredAt), amountMinor: t.amountMinor, currency: t.currency, merchant: t.merchantRaw })), settledIncomes, linked),
-    observedAmounts: observedAmountsForUnknown(obligationRows.filter((o) => o.active), paid),
+      .map((t) => ({ id: t.id, occurredOn: limaDate(t.occurredAt), amountMinor: t.amountMinor, currency: t.currency, merchant: t.merchantRaw })), settledIncomes, linked)
+      .filter((m) => !isSuppressed(decided, 'income_match', m.transactionId, null, today)),
+    observedAmounts: observedAmountsForUnknown(obligationRows.filter((o) => o.active), paid)
+      .filter((o) => !isSuppressed(decided, 'observed_amount', o.obligationId, o.observedMinor, today)),
+    decisions: decided,
     transactionsById: new Map(transactions.map((t) => [t.id, { amountMinor: t.amountMinor, occurredOn: limaDate(t.occurredAt), merchant: t.merchantRaw }])),
   };
 }
 
 /** Plan per currency from the declared balance ("Dinero libre"), or from an income that just arrived. */
 export function planFor(d: PlanningData, currency: Currency, base: 'balance' | { transactionId: string } = 'balance'): Plan {
+  return buildPlan(planInputFor(d, currency, base));
+}
+
+/** The exact inputs of a plan (what-if scenarios rebuild from a modified copy; nothing is written). */
+export function planInputFor(d: PlanningData, currency: Currency, base: 'balance' | { transactionId: string } = 'balance'): PlanInput {
   const s = d.settings[currency];
   let planBase: PlanInput['base'] = null;
   if (base === 'balance') {
@@ -126,7 +139,7 @@ export function planFor(d: PlanningData, currency: Currency, base: 'balance' | {
     const t = d.transactionsById.get(base.transactionId);
     planBase = t ? { kind: 'income', amountMinor: t.amountMinor, date: t.occurredOn } : null;
   }
-  return buildPlan({
+  return ({
     currency, today: d.today, base: planBase, obligations: d.obligations, settledObligations: d.settledObligations,
     incomes: d.incomes, settledIncomes: d.settledIncomes, essentialsMonthlyMinor: s?.essentialsMonthlyMinor ?? null, cushionMinor: s?.cushionMinor ?? 0,
   });
@@ -153,5 +166,6 @@ export async function loadEssentialsSuggestion(supabase: SupabaseClient, d: Plan
     occurredOn: limaDate(t.occurredAt), amountMinor: t.amountMinor, currency: t.currency, isExpense: financialEffect(t.type) === 'expense',
     category: t.category, allocations: t.allocations,
   }));
-  return essentialsSuggestion(estimate, essentialSpendByMonth(txs, 'PEN'), month);
+  const s = essentialsSuggestion(estimate, essentialSpendByMonth(txs, 'PEN'), month);
+  return s && !isSuppressed(d.decisions, 'essentials', 'PEN', s.observedMinor, d.today) ? s : null;
 }

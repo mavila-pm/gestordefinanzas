@@ -6,6 +6,8 @@
  * RLS + composite FKs enforce ownership; nothing here creates or changes transactions.
  */
 import { revalidatePath } from 'next/cache';
+import { decide, logLearning } from '../../../lib/learning';
+import { limaToday } from '../../../src/engine/planning';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSettingsForm } from '../../../src/web/planning-input';
 import { isUuid } from '../../../src/web/transaction-input';
@@ -148,7 +150,8 @@ export async function linkIncomeAction(_p: ActionState, form: FormData): Promise
   if (!tx || tx.type !== 'income' || tx.status !== 'confirmed') return { error: 'Ese movimiento no es un ingreso confirmado.' };
   const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, expected_income_id: incomeId, period, transaction_id: transactionId });
   if (error) return { error: error.code === '23505' ? 'Ese ingreso ya estaba registrado.' : SAVE_ERROR };
-  return done('Ingreso registrado. Planificamos hasta el siguiente.');
+  await logLearning(supabase, user.id, 'income', 'accepted', incomeId, { period, transactionId });
+  return done('Listo. Planificamos hasta el siguiente.');
 }
 
 /** "Tus básicos vienen siendo S/ 450": recomputed here (never trusted from the form), applied only on request. */
@@ -160,7 +163,9 @@ export async function acceptEssentialsAction(_p: ActionState, _form: FormData): 
   if (!s) return { error: 'Ya no hay una sugerencia vigente.' };
   const { error } = await supabase.from('planning_settings').update({ essentials_monthly_minor: s.observedMinor, updated_at: new Date().toISOString() })
     .eq('currency', 'PEN');
-  return error ? { error: SAVE_ERROR } : done('Básicos actualizados con lo observado.');
+  if (error) return { error: SAVE_ERROR };
+  await logLearning(supabase, user.id, 'essentials', 'accepted', null, { from: s.estimateMinor, to: s.observedMinor, months: s.months });
+  return done('Listo. Básicos actualizados.');
 }
 
 /** "Internet subió S/31": update the expected amount, or keep the previous reference. History is never rewritten. */
@@ -178,7 +183,9 @@ export async function resolveVariationAction(_p: ActionState, form: FormData): P
     if (error) return { error: SAVE_ERROR };
   }
   const { error } = await supabase.from('plan_settlements').update({ variance_ack: true }).eq('fixed_expense_id', obligationId).eq('period', period);
-  return error ? { error: SAVE_ERROR } : done(choice === 'update' ? 'Monto actualizado.' : 'Mantenemos el monto anterior.');
+  if (error) return { error: SAVE_ERROR };
+  await logLearning(supabase, user.id, 'obligation', choice === 'update' ? 'accepted' : 'dismissed', obligationId, { period, actual: choice === 'update' ? actual : null });
+  return done(choice === 'update' ? 'Monto actualizado.' : 'Listo.');
 }
 
 /** "Deshacer" a confirmed link (payment or income): the planned item is pending again; the movement is untouched. */
@@ -187,6 +194,24 @@ export async function unlinkSettlementAction(_p: ActionState, form: FormData): P
   if (!isUuid(id)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
-  const { data, error } = await supabase.from('plan_settlements').delete().eq('id', id).select('id');
-  return error || !data?.length ? { error: SAVE_ERROR } : done('Deshecho. Vuelve a figurar como pendiente.');
+  const { data, error } = await supabase.from('plan_settlements').delete().eq('id', id).select('id,period,fixed_expense_id,expected_income_id,transaction_id');
+  if (error || !data?.length) return { error: SAVE_ERROR };
+  const r = data[0]!;
+  await logLearning(supabase, user.id, 'settlement', 'invalidated', r.id, { period: r.period, obligationId: r.fixed_expense_id, incomeId: r.expected_income_id, transactionId: r.transaction_id });
+  return done('Deshecho. Vuelve a estar pendiente.');
+}
+
+/** "Ahora no" / "Descartar" / "No es ese" on a suggestion: hides it (the data behind it stays as it is). */
+export async function decideSuggestionAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const kind = form.get('kind');
+  const subject = form.get('subject');
+  const decision = form.get('decision');
+  const value = form.get('value');
+  const valueMinor = typeof value === 'string' && /^\d{1,12}$/.test(value) ? Number(value) : null;
+  if (!['essentials', 'observed_amount', 'income_match'].includes(String(kind)) || typeof subject !== 'string' || !/^[A-Za-z0-9:-]{1,120}$/.test(subject)
+    || (decision !== 'later' && decision !== 'dismissed')) return { error: SAVE_ERROR };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const ok = await decide(supabase, user.id, kind as 'essentials', subject, valueMinor, decision, limaToday());
+  return ok ? done(decision === 'later' ? 'Te lo recuerdo luego.' : 'Listo, no lo sugiero más.') : { error: SAVE_ERROR };
 }

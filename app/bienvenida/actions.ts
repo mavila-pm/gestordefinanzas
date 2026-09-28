@@ -8,6 +8,7 @@ import {
 } from '../../lib/onboarding';
 import type { ChatState } from '../../src/ai/conversation';
 import { emptyDraft } from '../../src/ai/types';
+import { logLearning } from '../../lib/learning';
 import type { ActionState } from '../app/actions';
 
 const SKIP = new Set(['Después', 'No sé', 'No tengo más', 'Quincenal']);
@@ -58,7 +59,8 @@ export async function forgetOnboardingAction(_p: ActionState, _form: FormData): 
   if (!user) return { error: 'Inicia sesión de nuevo.' };
   const { error: e1 } = await supabase.from('conversation_messages').delete().eq('thread', 'onboarding');
   const { error: e2 } = await supabase.from('onboarding_states').update({ facts: emptyDraft(), summary: null }).eq('user_id', user.id);
-  if (e1 || e2) return { error: 'No pudimos borrarla. Intenta de nuevo.' };
+  if (e1 || e2) return { error: 'No se borró. Intenta de nuevo.' };
+  await logLearning(supabase, user.id, 'onboarding', 'deleted');
   revalidatePath('/app', 'layout');
   return { message: 'Conversación borrada.' };
 }

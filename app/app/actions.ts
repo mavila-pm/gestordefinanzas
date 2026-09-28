@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { logLearning } from '../../lib/learning';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
@@ -144,9 +145,10 @@ export async function deleteRuleAction(_prev: ActionState, form: FormData): Prom
   if (!isUuid(id)) return { error: errorText('invalid_request') };
   const { supabase, user } = await session();
   if (!user) return { error: errorText('not_authenticated') };
-  const { data, error } = await supabase.from('merchant_rules').delete().eq('id', id).select('id');
+  const { data, error } = await supabase.from('merchant_rules').delete().eq('id', id).select('id,contains');
   if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
-  return done('Regla eliminada. Los movimientos ya registrados no cambian.');
+  await logLearning(supabase, user.id, 'rule', 'deleted', id, { contains: data[0]!.contains });
+  return done('Olvidado. Tus movimientos no cambian.');
 }
 
 /** Change the category Velsuno remembers for a merchant (RLS + policy check: own rule, global or own category). */
@@ -157,7 +159,8 @@ export async function changeRuleAction(_prev: ActionState, form: FormData): Prom
   const { supabase, user } = await session();
   if (!user) return { error: errorText('not_authenticated') };
   const { data, error } = await supabase.from('merchant_rules').update({ category_id: categoryId }).eq('id', id).select('id');
-  if (error || !data?.length) return { error: 'No pudimos guardar el cambio. Intenta de nuevo.' };
+  if (error || !data?.length) return { error: 'No se guardó. Intenta de nuevo.' };
+  await logLearning(supabase, user.id, 'rule', 'corrected', id, { categoryId });
   return done('Listo. Se usará en los próximos movimientos.');
 }
 

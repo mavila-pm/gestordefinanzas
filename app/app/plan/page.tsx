@@ -10,7 +10,7 @@ import type { Plan, PlanLine } from '../../../src/engine/planning';
 import { shortDate } from '../../../src/web/dates';
 import { isUuid } from '../../../src/web/transaction-input';
 import {
-  acceptEssentialsAction, linkIncomeAction, markObligationPaidAction, patchObligationAction, recordBalanceAction, resolveVariationAction, saveIncomeAction, saveSettingsAction,
+  acceptEssentialsAction, decideSuggestionAction, linkIncomeAction, markObligationPaidAction, patchObligationAction, recordBalanceAction, resolveVariationAction, saveIncomeAction, saveSettingsAction,
 } from './actions';
 
 export const metadata = { title: 'Dinero libre' };
@@ -18,6 +18,17 @@ const sym = (c: Currency) => (c === 'PEN' ? 'S/' : 'US$');
 
 function Money({ v, c }: { v: number | null; c: Currency }) {
   return v === null ? <span className="muted">por confirmar</span> : <>{v < 0 ? '−' : ''}{formatMoney({ amountMinor: Math.abs(v), currency: c })}</>;
+}
+
+/** "Ahora no" / "Descartar" / "No es ese": hides the suggestion only; nothing else changes. */
+function Decide({ kind, subject, value, decision, label }: { kind: string; subject: string; value?: number; decision: 'later' | 'dismissed'; label: string }) {
+  return (
+    <ActionForm action={decideSuggestionAction} className="inline" label={`${label} ${subject}`}>
+      <input type="hidden" name="kind" value={kind} /><input type="hidden" name="subject" value={subject} />
+      <input type="hidden" name="decision" value={decision} />{value !== undefined && <input type="hidden" name="value" value={value} />}
+      <button type="submit" className="link small-link">{label}</button>
+    </ActionForm>
+  );
 }
 
 function LineRow({ l, c }: { l: PlanLine; c: Currency }) {
@@ -186,13 +197,16 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           {d.incomeMatches.slice(0, 3).map((m) => (
             <div key={m.transactionId} className="source row">
               <span className="setting-text"><span>Entraron <Money v={m.receivedMinor} c={m.currency} /> el {shortDate(d.transactionsById.get(m.transactionId)?.occurredOn ?? m.expectedDate)}</span>
-                <small className="muted">Parece tu {m.name.toLowerCase()} del {shortDate(m.expectedDate)}{m.expectedMinor !== null && m.expectedMinor !== m.receivedMinor ? ` (esperabas ${formatMoney({ amountMinor: m.expectedMinor, currency: m.currency })})` : ''}.</small></span>
-              <ActionForm action={linkIncomeAction} className="inline" label={`Confirmar ingreso ${m.name}`}>
-                <input type="hidden" name="incomeId" value={m.incomeId} />
-                <input type="hidden" name="transactionId" value={m.transactionId} />
-                <input type="hidden" name="period" value={m.period} />
-                <button type="submit" className="quiet">Sí, es ese</button>
-              </ActionForm>
+                <small className="muted">{m.ambiguous ? `¿Es tu ${m.name.toLowerCase()}? Puede ser otro ingreso.` : `Parece tu ${m.name.toLowerCase()} del ${shortDate(m.expectedDate)}.`}{m.expectedMinor !== null && m.expectedMinor !== m.receivedMinor ? ` Esperabas ${formatMoney({ amountMinor: m.expectedMinor, currency: m.currency })}.` : ''}</small></span>
+              <div className="actions">
+                <ActionForm action={linkIncomeAction} className="inline" label={`Confirmar ingreso ${m.name}`}>
+                  <input type="hidden" name="incomeId" value={m.incomeId} />
+                  <input type="hidden" name="transactionId" value={m.transactionId} />
+                  <input type="hidden" name="period" value={m.period} />
+                  <button type="submit" className="quiet">Sí, es ese</button>
+                </ActionForm>
+                <Decide kind="income_match" subject={m.transactionId} decision="dismissed" label="No es ese" />
+              </div>
             </div>
           ))}
         </section>
@@ -203,15 +217,15 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           {d.observedAmounts.map((v) => (
             <div key={v.obligationId} className="source">
               <strong>{v.name}: pagaste <Money v={v.observedMinor} c={v.currency} /></strong>
-              <small className="muted">No sabías el monto. ¿Lo usamos para planificar?</small>
+              <small className="muted">¿Lo usamos para planificar?</small>
               <div className="actions">
-                {(['update', 'keep'] as const).map((choice) => (
-                  <ActionForm key={choice} action={resolveVariationAction} className="inline" label={choice === 'update' ? `Usar monto observado de ${v.name}` : `Mantener sin monto ${v.name}`}>
-                    <input type="hidden" name="obligationId" value={v.obligationId} /><input type="hidden" name="period" value={v.period} />
-                    <input type="hidden" name="actual" value={v.observedMinor} /><input type="hidden" name="choice" value={choice} />
-                    <button type="submit" className={choice === 'update' ? 'quiet' : 'link small-link'}>{choice === 'update' ? `Usar ${formatMoney({ amountMinor: v.observedMinor, currency: v.currency })}` : 'Todavía no'}</button>
-                  </ActionForm>
-                ))}
+                <ActionForm action={resolveVariationAction} className="inline" label={`Usar monto observado de ${v.name}`}>
+                  <input type="hidden" name="obligationId" value={v.obligationId} /><input type="hidden" name="period" value={v.period} />
+                  <input type="hidden" name="actual" value={v.observedMinor} /><input type="hidden" name="choice" value="update" />
+                  <button type="submit" className="quiet">Usar {formatMoney({ amountMinor: v.observedMinor, currency: v.currency })}</button>
+                </ActionForm>
+                <Decide kind="observed_amount" subject={v.obligationId} value={v.observedMinor} decision="later" label="Ahora no" />
+                <Decide kind="observed_amount" subject={v.obligationId} value={v.observedMinor} decision="dismissed" label="Descartar" />
               </div>
             </div>
           ))}
@@ -221,11 +235,13 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       {essentials && (
         <section className="source" aria-label="Básicos observados" data-testid="essentials-suggestion">
           <strong>Tus básicos vienen siendo <Money v={essentials.observedMinor} c="PEN" /> al mes</strong>
-          <small className="muted">Estimaste <Money v={essentials.estimateMinor} c="PEN" />. Promedio de alimentación y transporte en {essentials.months.length} meses completos.</small>
+          <small className="muted">Estimaste <Money v={essentials.estimateMinor} c="PEN" />. Es lo que gastaste en comida y transporte ({essentials.months.length} meses).</small>
           <div className="actions">
             <ActionForm action={acceptEssentialsAction} className="inline" label="Usar básicos observados">
               <button type="submit" className="quiet">Usar {formatMoney({ amountMinor: essentials.observedMinor, currency: 'PEN' })}</button>
             </ActionForm>
+            <Decide kind="essentials" subject="PEN" value={essentials.observedMinor} decision="later" label="Ahora no" />
+            <Decide kind="essentials" subject="PEN" value={essentials.observedMinor} decision="dismissed" label="Descartar" />
           </div>
         </section>
       )}
