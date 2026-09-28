@@ -118,13 +118,14 @@ await runSuite('review-manual', async ({ page, check }) => {
   const account = (await sb.from('accounts').select('id').eq('alias', 'E2E Ahorros').single()).data?.id;
   const corr = (await sb.from('audit_events').select('action,changes').eq('transaction_id', reviewTx)).data ?? [];
   const ch = corr.find((a) => a.action === 'correct')?.changes as Record<string, { from: unknown; to: unknown }> | undefined;
-  check('audit: exactly one correction event', corr.length === 1 && !!ch, JSON.stringify(corr));
+  const link = corr.find((a) => a.action === 'card_link')?.changes as Record<string, { from: unknown; to: unknown }> | undefined;
+  check('audit: one card link (on card registration, TASK-014) + exactly one correction event', corr.length === 2 && !!ch && !!link, JSON.stringify(corr));
   check('audit: amount 10000 -> 9550', sameJson(ch?.amount_minor, { from: 10000, to: 9550 }), JSON.stringify(ch?.amount_minor));
   check('audit: category Otros -> Alimentación', ch?.category_id?.from === catId('Otros') && ch?.category_id?.to === catId('Alimentación'), JSON.stringify(ch?.category_id));
-  check('audit: card null -> registered card', ch?.card_id?.from === null && ch?.card_id?.to === card, JSON.stringify(ch?.card_id));
+  check('audit: card null -> registered card (linked when the card was registered)', link?.card_id?.from === null && link?.card_id?.to === card, JSON.stringify(link));
   check('audit: account null -> E2E Ahorros', ch?.account_id?.from === null && ch?.account_id?.to === account, JSON.stringify(ch?.account_id));
   check('audit: status review_required -> confirmed', sameJson(ch?.status, { from: 'review_required', to: 'confirmed' }), JSON.stringify(ch?.status));
-  check('audit: no untouched fields recorded', Object.keys(ch ?? {}).sort().join(',') === 'account_id,amount_minor,card_id,category_id,status', Object.keys(ch ?? {}).join(','));
+  check('audit: no untouched fields recorded', Object.keys(ch ?? {}).sort().join(',') === 'account_id,amount_minor,category_id,status', Object.keys(ch ?? {}).join(','));
   const dupId = (await sb.from('transactions').select('id,status').eq('merchant_raw', 'E2E DUP A').single()).data;
   check('ignored duplicate kept (not deleted), status ignored', dupId?.status === 'ignored', JSON.stringify(dupId));
   const ign = (await sb.from('audit_events').select('action,changes').eq('transaction_id', dupId?.id ?? '')).data;

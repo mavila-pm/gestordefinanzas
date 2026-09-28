@@ -72,3 +72,8 @@ in every user table (only the PO's 2 real accounts remain).
 ## Regression on the new E2E infrastructure — 2026-09-28
 `scripts/e2e.sh` + `tests/e2e/lib.ts` (no fixed sleeps) + `seed.sql`: 13 + 46 + 27 + 26 + 18 = **130/130**.
 Cleanup: probe_users 0, orphan_rows 0 (only the PO's 2 real accounts remain).
+
+## Regression after TASK-014..018 — 2026-09-28
+13 + 46 + 30 + 28 + 22 = **139/139** (9 new checks: card auto-link, recurring Free/Plus, amount search + injection,
+sync history). The review-manual audit assertions now expect the `card_link` event created when the card is
+registered (behavior change of TASK-014, same strictness). Cleanup 0|0.

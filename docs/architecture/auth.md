@@ -8,6 +8,7 @@
   The service role key is not used by the web app and must never be.
 - Server actions (`app/auth/actions.ts`): login, signup, logout, password reset request, password update.
   Messages never reveal whether an email is registered. Password 8–72 chars (bcrypt limit).
+- A `type=recovery` link always lands on `/reset-password`, whatever `next` or the cookie say (TASK-015).
 - Email links land on `/auth/confirm`, which accepts `token_hash`+`type` (works across devices) or `code` (PKCE,
   same browser only). `next` is restricted to same-origin paths (open-redirect guard, unit-tested).
 - `emailRedirectTo` / `redirectTo` are EXACTLY `<site>/auth/confirm` (`authCallbackUrl()`), with no query string:

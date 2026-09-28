@@ -16,16 +16,20 @@ Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e
 | TASK-011 Fixed expenses, debts, monthly commitments | **VERIFIED** | Migration 000010; unit + DB tests; E2E 18/18 | — |
 | TASK-012 Plans, trial, server-side entitlements | **VERIFIED** (limits shown, not enforced by PO decision) | Migration 000011; unit + DB tests; E2E 18/18 | Billing provider, price (PO); decide when to enforce limits |
 | TASK-013 Dedupe after user corrections | **VERIFIED** | Migration 000012; DB test fails on the old query, passes now | — |
+| INFRA E2E optimization (orchestrator, shared helpers, idempotent seed) | **VERIFIED** | `scripts/e2e.sh`; regression 130/130 before the new features | Optional `E2E_DB_URL` (DB password = secret, PO) would let the script seed/clean by itself |
+| TASK-014 Automatic card link (ingestion + card registration) | **VERIFIED** | Migration 000013; DB tests incl. A/B + privileged path (mutation-checked); E2E | — |
+| TASK-015 Recovery links always end on the password form | **VERIFIED** (code) | unit tests; `token_hash` handling already in `/auth/confirm` | PO: paste the `token_hash` templates in Supabase Auth (manual setting, `docs/architecture/auth.md`) |
+| TASK-016 Recurring spending suggestions (Plus) | **VERIFIED** | unit tests; E2E Free teaser / Plus detection / accept as fixed expense | Thresholds (3 months, ±15 %, ±6 days) are PROPUESTOS |
+| TASK-017 Search by amount | **VERIFIED** | unit tests; E2E incl. filter-injection attempt | — |
+| TASK-018 Sync history (plain language) | **VERIFIED** | unit tests; E2E | — |
 
 ## Backlog (known debt)
 | Item | Origin | Note |
 |---|---|---|
 | Custom SMTP | TASK-003, §78/§86 | Built-in SMTP hourly cap; required before public launch |
-| Email templates with `token_hash` | TASK-003 | Today links work only in the browser that started the flow |
+| Email templates with `token_hash` | TASK-003/015 | Code ready; PO pastes the templates in Supabase Auth (manual). Until then links work only in the browser that started the flow |
 | Direct-edit policy for cards/accounts/categories/budgets/debts | ADR-0003 | Client-writable under RLS (own rows, validated); functions optional |
-| Auto-link card_id on ingestion | TASK-006 | Registered card is recognized (type) but not linked; review shows "sin asociar" |
 | User-owned categories in rules/budgets | TASK-005/010 | Rules and budgets use the global catalog; no UI for custom categories |
-| Recurring transaction detection, search by amount | §52 | Not started |
 | Leaked password protection (Auth) | Supabase advisor | PO setting (may require paid plan) |
 | Plan limits enforcement | §81, PO | Computed and shown; not enforced during beta |
 

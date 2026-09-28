@@ -27,6 +27,7 @@
 | 20260928000010_commitments.sql | commitments | 2026-09-27 |
 | 20260928000011_plans_entitlements.sql | plans_entitlements | 2026-09-27 |
 | 20260928000012_reported_values.sql | reported_values | 2026-09-27 |
+| 20260928000013_card_auto_link.sql | card_auto_link | 2026-09-28 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
