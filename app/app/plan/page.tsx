@@ -8,10 +8,12 @@ import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import type { Plan, PlanLine } from '../../../src/engine/planning';
 import { extraDebtPayment } from '../../../src/engine/scenarios';
+import { addDays } from '../../../src/engine/planning';
+import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
 import { shortDate } from '../../../src/web/dates';
 import { isUuid } from '../../../src/web/transaction-input';
 import {
-  acceptEssentialsAction, decideSuggestionAction, linkIncomeAction, markObligationPaidAction, patchObligationAction, recordBalanceAction, resolveVariationAction, saveIncomeAction, saveSettingsAction,
+  acceptEssentialsAction, decideSuggestionAction, linkIncomeAction, removeIncomeAction, markObligationPaidAction, patchObligationAction, recordBalanceAction, resolveVariationAction, saveIncomeAction, saveSettingsAction,
 } from './actions';
 
 export const metadata = { title: 'Dinero libre' };
@@ -309,6 +311,21 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           <div className="setting"><span className="setting-text"><strong>Ingresos</strong><small className="muted">
             {d.incomes.length ? d.incomes.map((i) => `${i.name}${i.dayOfMonth ? ` · día ${i.dayOfMonth}${i.dayMax ? `–${i.dayMax}` : ''}` : ''}`).join(' · ') : 'Sin indicar'}</small></span>
             <IncomeSheet c="PEN" /></div>
+          {d.incomes.map((i) => (
+            <div key={i.id} className="setting" data-testid="income-row">
+              <span className="setting-text"><span>{i.name}</span>
+                <small className="muted">{lifecycleNote(i, d.today) ?? (i.amountMinor === null ? 'Monto por confirmar' : `${i.amountStatus === 'estimated' ? '≈ ' : ''}${formatMoney({ amountMinor: i.amountMinor, currency: i.currency })}`)}</small></span>
+              <Sheet label={<Icon name="more" />} triggerClassName="icon" triggerLabel={`Opciones de ${i.name}`} title={i.name} subtitle="Solo cambia lo que planificamos desde hoy.">
+                <div className="sheet-body stack">
+                  <Lifecycle kind="income" id={i.id} name={i.name} pausedUntil={i.pausedUntil ?? null} endedOn={i.endedOn ?? null} today={d.today} defaultUntil={addDays(d.today, 30)} />
+                  <ActionForm action={removeIncomeAction} className="inline" label={`Quitar ${i.name}`} closeOnSuccess>
+                    <input type="hidden" name="id" value={i.id} />
+                    <button type="submit" className="link" style={{ color: 'var(--semantic-error)' }}>Quitar</button>
+                  </ActionForm>
+                </div>
+              </Sheet>
+            </div>
+          ))}
           <div className="setting"><span className="setting-text"><strong>Básicos y colchón</strong><small className="muted">
             {d.settings.PEN?.essentialsMonthlyMinor != null ? `${formatMoney({ amountMinor: d.settings.PEN.essentialsMonthlyMinor, currency: 'PEN' })} al mes` : 'Sin indicar'}
             {d.settings.PEN?.cushionMinor ? ` · colchón ${formatMoney({ amountMinor: d.settings.PEN.cushionMinor, currency: 'PEN' })}` : ''}</small></span>

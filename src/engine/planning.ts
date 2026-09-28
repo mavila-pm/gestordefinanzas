@@ -27,6 +27,10 @@ export interface Obligation {
   targetDay: number | null;
   /** Lima date it was created: occurrences before it are not the person's to cover here. */
   since: string;
+  /** Paused: occurrences dated before this day are not planned (history untouched). */
+  pausedUntil?: string | null;
+  /** Ended: no occurrences after this day (past ones and their settlements stay). */
+  endedOn?: string | null;
 }
 
 export interface ExpectedIncome {
@@ -40,6 +44,8 @@ export interface ExpectedIncome {
   dayMax: number | null;
   secondDay: number | null;
   anchorDate: string | null;
+  pausedUntil?: string | null;
+  endedOn?: string | null;
 }
 
 export interface Occurrence {
@@ -98,7 +104,14 @@ export function occurrencesBetween(o: Obligation, from: string, to: string): Occ
       amountMinor: o.amountStatus === 'unknown' ? null : o.amountMinor, amountStatus: o.amountStatus,
     });
   }
-  return out;
+  return out.filter((x) => inLifecycle(x.dueDate ?? `${x.period}-01`, o));
+}
+
+/** Paused / ended recurrences (ADR-0010): a date is planned only inside the item's active life. */
+function inLifecycle(date: string, r: { pausedUntil?: string | null; endedOn?: string | null }): boolean {
+  if (r.pausedUntil && date < r.pausedUntil) return false;
+  if (r.endedOn && date > r.endedOn) return false;
+  return true;
 }
 
 /** The next occurrence not yet settled (paid), from `today`; used after a payment: "la próxima queda preparada". */
@@ -129,7 +142,7 @@ export function incomeOccurrencesBetween(i: ExpectedIncome, from: string, to: st
     while (d > from && addDays(d, -step) >= from) d = addDays(d, -step);
     for (; d <= to; d = addDays(d, step)) out.push({ ...base, period: d, date: d, dateMax: null });
   }
-  return out.filter((x) => (x.dateMax ?? x.date) >= from && x.date <= to);
+  return out.filter((x) => (x.dateMax ?? x.date) >= from && x.date <= to && inLifecycle(x.date, i));
 }
 
 /**

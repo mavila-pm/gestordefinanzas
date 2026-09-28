@@ -3,6 +3,7 @@ import type { Currency } from '../domain/money';
 /** Recurring obligation template (fixed_expenses). Unknown amount/day stay null — never 0 (ADR-0005). */
 export interface FixedExpense {
   id: string; name: string; currency: Currency; amountMinor: number | null; dueDay: number | null; active: boolean;
+  pausedUntil?: string | null; endedOn?: string | null;
   frequency?: 'monthly' | 'bimonthly' | 'quarterly' | 'yearly'; anchorMonth?: number | null;
 }
 export interface Debt {
@@ -26,7 +27,8 @@ export function dueDateIn(month: string, day: number): string {
 export function monthCommitments(month: string, today: string, fixed: readonly FixedExpense[], debts: readonly Debt[]): Commitment[] {
   const days = (date: string) => Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
   const items: Omit<Commitment, 'daysUntil'>[] = [
-    ...fixed.filter((f) => f.active && f.dueDay !== null && occursIn(f, month))
+    ...fixed.filter((f) => f.active && f.dueDay !== null && occursIn(f, month)
+      && !(f.pausedUntil && dueDateIn(month, f.dueDay) < f.pausedUntil) && !(f.endedOn && dueDateIn(month, f.dueDay) > f.endedOn))
       .map((f) => ({ kind: 'fixed' as const, id: f.id, name: f.name, currency: f.currency, amountMinor: f.amountMinor, dueDate: dueDateIn(month, f.dueDay!) })),
     ...debts.filter((d) => d.active && d.dueDay && d.installmentMinor && d.balanceMinor > 0
       && (d.installmentsTotal === null || d.installmentsPaid < d.installmentsTotal))

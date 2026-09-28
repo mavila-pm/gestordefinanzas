@@ -102,12 +102,13 @@ export async function loadBudgets(supabase: SupabaseClient): Promise<BudgetRow[]
 
 export async function loadCommitmentData(supabase: SupabaseClient) {
   const [f, d] = await Promise.all([
-    supabase.from('fixed_expenses').select('id,name,currency,amount_minor,due_day,active,frequency,anchor_month').order('due_day'),
+    supabase.from('fixed_expenses').select('id,name,currency,amount_minor,due_day,active,frequency,anchor_month,paused_until,ended_on').order('due_day'),
     supabase.from('debts').select('id,name,lender,currency,principal_minor,balance_minor,annual_rate_bp,installment_minor,installments_total,installments_paid,due_day,active').order('created_at'),
   ]);
   return {
     fixed: (f.data ?? []).map((r) => ({ id: r.id, name: r.name, currency: r.currency, amountMinor: r.amount_minor === null ? null : Number(r.amount_minor),
-      dueDay: r.due_day as number | null, active: r.active, frequency: r.frequency, anchorMonth: r.anchor_month as number | null })),
+      dueDay: r.due_day as number | null, active: r.active, frequency: r.frequency, anchorMonth: r.anchor_month as number | null,
+      pausedUntil: r.paused_until as string | null, endedOn: r.ended_on as string | null })),
     debts: (d.data ?? []).map((r) => ({
       id: r.id, name: r.name, lender: r.lender as string | null, currency: r.currency, principalMinor: Number(r.principal_minor), balanceMinor: Number(r.balance_minor),
       annualRateBp: r.annual_rate_bp as number | null, installmentMinor: r.installment_minor === null ? null : Number(r.installment_minor),

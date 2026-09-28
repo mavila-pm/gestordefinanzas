@@ -91,6 +91,20 @@ await runSuite('cashflow', async ({ page, check }) => {
 
   // A/B through the API with A's session.
   const sb = await apiAs(A);
+  // Recurrence lifecycle (ADR-0010): pause → the row says so and Dinero libre stops reserving it; resume restores it.
+  await page.goto(`${BASE}/app/compromisos`);
+  await page.getByRole('button', { name: 'Editar Celular' }).click();
+  await act(page, () => page.locator('dialog[open] form[aria-label="Pausar Celular"] button[type=submit]').click());
+  const pausedRow = (await page.getByTestId('obligation-list').locator('li[data-name="Celular"] > .setting-text').textContent()) ?? '';
+  check('pause: the payment shows "Pausado hasta", history untouched', pausedRow.includes('Pausado hasta'), pausedRow);
+  const celular = (await sb.from('fixed_expenses').select('id,paused_until,amount_minor').eq('name', 'Celular').single()).data;
+  const trail = (await sb.from('learning_events').select('entity,action').eq('entity_id', celular?.id ?? '')).data ?? [];
+  check('pause is stored as a date and logged; the amount is not changed', !!celular?.paused_until && Number(celular.amount_minor) === 10000 && trail.some((t) => t.action === 'snoozed'), JSON.stringify({ celular, trail }));
+  await page.getByRole('button', { name: 'Editar Celular' }).click();
+  await act(page, () => page.locator('dialog[open] form[aria-label="Reanudar Celular"] button[type=submit]').click());
+  const resumed = (await sb.from('fixed_expenses').select('paused_until').eq('name', 'Celular').single()).data;
+  check('resume clears the pause', resumed?.paused_until === null, JSON.stringify(resumed));
+
   const bRead = await sb.from('fixed_expenses').select('id').eq('id', B_TX.obligation);
   check('API: A cannot read B\'s obligations', !bRead.error && (bRead.data ?? []).length === 0, JSON.stringify(bRead));
   const bUpd = await sb.from('fixed_expenses').update({ amount_minor: 1 }).eq('id', B_TX.obligation).select('id');

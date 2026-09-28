@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { monthCommitments } from '../src/engine/commitments';
 import {
   buildPlan, compareDebtStrategies, detectVariations, nextIncome, nextOccurrence, occurrencesBetween, reminderIntents,
   simulatePurchase, suggestMatches, type ExpectedIncome, type Obligation, type PlanInput,
@@ -164,5 +165,31 @@ describe('what-if, variations, matching, debts, reminders', () => {
     const car = r.filter((x) => x.obligationId === 'car');
     expect(car).toEqual([{ obligationId: 'car', name: 'Carro', on: '2026-10-05', kind: 'main' }]);
     expect(reminderIntents(buildPlan(demo()), '2026-10-07').filter((x) => x.obligationId === 'car' && x.kind === 'second')).toHaveLength(1);
+  });
+});
+
+describe('recurrence lifecycle (pause / end) never rewrites history (ADR-0010)', () => {
+  it('paused: occurrences before the date are not planned; they come back after it', () => {
+    const car = ob({ id: 'car', name: 'Carro', dueDay: 9, pausedUntil: '2026-11-01' });
+    expect(occurrencesBetween(car, '2026-10-01', '2026-12-31').map((x) => x.period)).toEqual(['2026-11', '2026-12']);
+  });
+  it('ended: nothing after the end date; the month it ended in still counts if due before it', () => {
+    const net = ob({ id: 'net', name: 'Internet', dueDay: 13, endedOn: '2026-10-20' });
+    expect(occurrencesBetween(net, '2026-10-01', '2026-12-31').map((x) => x.period)).toEqual(['2026-10']);
+  });
+  it('the plan reflects it: a paused payment is not reserved; a paused income moves the horizon to the next one', () => {
+    const base = buildPlan(demo());
+    const paused = buildPlan(demo({ obligations: demo().obligations.map((o) => (o.id === 'car' ? { ...o, pausedUntil: '2026-11-01' } : o)) }));
+    expect(base.lines.some((l) => l.obligationId === 'car')).toBe(true);
+    expect(paused.lines.some((l) => l.obligationId === 'car')).toBe(false);
+    expect(paused.freeMinor! - base.freeMinor!).toBe(95000);
+    const incomePaused = buildPlan(demo({ incomes: [{ ...salary, pausedUntil: '2026-10-20' }] }));
+    expect(incomePaused.nextIncome?.date).toBe('2026-11-15');
+  });
+  it('monthly commitments respect pause and end', () => {
+    const f = { id: 'a', name: 'Gym', currency: 'PEN' as const, amountMinor: 9900, dueDay: 5, active: true };
+    expect(monthCommitments('2026-10', '2026-10-01', [{ ...f, pausedUntil: '2026-11-01' }], [])).toEqual([]);
+    expect(monthCommitments('2026-10', '2026-10-01', [{ ...f, endedOn: '2026-09-30' }], [])).toEqual([]);
+    expect(monthCommitments('2026-10', '2026-10-01', [f], [])).toHaveLength(1);
   });
 });

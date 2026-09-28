@@ -7,7 +7,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { decide, logLearning } from '../../../lib/learning';
-import { limaToday } from '../../../src/engine/planning';
+import { addDays, limaToday } from '../../../src/engine/planning';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSettingsForm } from '../../../src/web/planning-input';
 import { isUuid } from '../../../src/web/transaction-input';
@@ -45,10 +45,18 @@ export async function saveObligationAction(_p: ActionState, form: FormData): Pro
     category_id: v.categoryId, updated_at: new Date().toISOString(),
   };
   const id = form.get('id');
-  const { error } = isUuid(id)
-    ? await supabase.from('fixed_expenses').update(row).eq('id', id)
-    : await supabase.from('fixed_expenses').insert(row);
-  return error ? { error: SAVE_ERROR } : done(isUuid(id) ? 'Pago actualizado.' : 'Pago agregado.');
+  if (isUuid(id)) {
+    // Editing changes the plan from now on; past settlements keep their real amounts. The change is logged.
+    const { data: before } = await supabase.from('fixed_expenses').select('amount_minor,amount_status,due_day,due_day_max').eq('id', id).maybeSingle();
+    const { error } = await supabase.from('fixed_expenses').update(row).eq('id', id);
+    if (error) return { error: SAVE_ERROR };
+    if (before && (Number(before.amount_minor ?? -1) !== (v.amountMinor ?? -1) || before.due_day !== v.dueDay || before.amount_status !== v.amountStatus)) {
+      await logLearning(supabase, user.id, 'obligation', 'corrected', id, { before, after: { amount_minor: v.amountMinor, amount_status: v.amountStatus, due_day: v.dueDay, due_day_max: v.dueDayMax } });
+    }
+    return done('Pago actualizado.');
+  }
+  const { error } = await supabase.from('fixed_expenses').insert(row);
+  return error ? { error: SAVE_ERROR } : done('Pago agregado.');
 }
 
 /** Resolve one missing piece in context ("Falta el monto de Internet") without the full form. */
@@ -219,4 +227,26 @@ export async function decideSuggestionAction(_p: ActionState, form: FormData): P
   if (!user) return { error: SAVE_ERROR };
   const ok = await decide(supabase, user.id, kind as 'essentials', subject, valueMinor, decision, limaToday());
   return ok ? done(decision === 'later' ? 'Te lo recuerdo luego.' : 'Listo, no lo sugiero más.') : { error: SAVE_ERROR };
+}
+
+/**
+ * Recurrence lifecycle (ADR-0010) for a fixed payment or an expected income: pause until a date, resume, or end
+ * from today. History (settlements, movements) is never rewritten; only future planning changes.
+ */
+export async function recurrenceAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const kind = form.get('kind');
+  const op = form.get('op');
+  const until = form.get('until');
+  if (!isUuid(id) || (kind !== 'obligation' && kind !== 'income') || !['pause', 'resume', 'end'].includes(String(op))) return { error: SAVE_ERROR };
+  const today = limaToday();
+  if (op === 'pause' && (typeof until !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(until) || until <= today || until > addDays(today, 366))) return { error: 'Elige una fecha futura (máx. 1 año).' };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const patch = op === 'pause' ? { paused_until: until } : op === 'resume' ? { paused_until: null, ended_on: null } : { ended_on: today, paused_until: null };
+  const table = kind === 'obligation' ? 'fixed_expenses' : 'expected_incomes';
+  const { data, error } = await supabase.from(table).update(patch).eq('id', id).select('id');
+  if (error || !data?.length) return { error: SAVE_ERROR };
+  await logLearning(supabase, user.id, kind, op === 'pause' ? 'snoozed' : op === 'resume' ? 'restored' : 'invalidated', id, patch);
+  return done(op === 'pause' ? 'Pausado.' : op === 'resume' ? 'Reanudado.' : 'Terminado. Tu historial se queda.');
 }

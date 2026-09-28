@@ -10,6 +10,8 @@ import { monthLabel } from '../../../src/web/labels';
 import { formatLimaDateTime } from '../../../src/web/transaction-input';
 import { deactivateCommitmentAction, debtPaymentAction, saveDebtAction, saveFixedExpenseAction } from '../actions';
 import { removeObligationAction, saveObligationAction } from '../plan/actions';
+import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
+import { addDays } from '../../../src/engine/planning';
 import { ObligationFields } from '../../../components/obligation-fields';
 import { loadPlanningData } from '../../../lib/planning';
 import { compareDebtStrategies } from '../../../src/engine/planning';
@@ -20,7 +22,15 @@ const CUR = <><option value="PEN">Soles (S/)</option><option value="USD">Dólare
 
 export default async function Commitments() {
   const supabase = await createSupabaseServerClient();
-  const [{ fixed, debts }, , { entitlements }, plan] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase), loadEntitlements(supabase), loadPlanningData(supabase)]);
+  const [{ fixed, debts }, , { entitlements }, plan, hist] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase), loadEntitlements(supabase), loadPlanningData(supabase),
+    supabase.from('plan_settlements').select('fixed_expense_id,period,tx:transactions(amount_minor)').not('fixed_expense_id', 'is', null).order('period', { ascending: false }).limit(300)]);
+  // Real history per payment (what was actually paid, by month): editing the plan never rewrites it.
+  const history = new Map<string, Array<{ period: string; amountMinor: number | null }>>();
+  for (const h of (hist.data ?? []) as unknown as Array<{ fixed_expense_id: string; period: string; tx: { amount_minor: number } | null }>) {
+    const list = history.get(h.fixed_expense_id) ?? [];
+    if (list.length < 6) list.push({ period: h.period, amountMinor: h.tx ? Number(h.tx.amount_minor) : null });
+    history.set(h.fixed_expense_id, list);
+  }
   const rows = new Map(plan.obligationRows.map((o) => [o.id, o]));
   const paidThisMonth = (id: string) => plan.settledObligations.get(id)?.has(limaMonth()) ?? false;
   const strategies = compareDebtStrategies(plan.debts.filter((x) => x.currency === 'PEN'));
@@ -159,9 +169,11 @@ export default async function Commitments() {
               const r = rows.get(f.id);
               const when = !r ? '' : r.dueDay === null ? 'Fecha por confirmar'
                 : `${r.frequency === 'monthly' ? 'Cada mes' : r.frequency === 'yearly' ? 'Cada año' : r.frequency === 'quarterly' ? 'Cada 3 meses' : 'Cada 2 meses'} · ${r.dueDayMax ? `vence el ${r.dueDay}–${r.dueDayMax} aprox.` : `vence el ${r.dueDay}`}${r.targetDay ? ` · pagas el ${r.targetDay}` : ''}`;
+              const state = r ? lifecycleNote(r, plan.today) : null;
+              const past = history.get(f.id) ?? [];
               return (
-                <li key={f.id}>
-                  <span className="setting-text"><span>{f.name}</span><small className="muted">{when}</small></span>
+                <li key={f.id} data-name={f.name} data-state={state ? 'stopped' : 'active'}>
+                  <span className="setting-text"><span>{f.name}</span><small className="muted">{state ?? when}</small></span>
                   <span className="actions" style={{ gap: 4 }}>
                     <span className="amount">{f.amountMinor === null ? <span className="muted">Por confirmar</span> : <>{r?.amountStatus === 'estimated' ? '≈ ' : ''}{formatMoney({ amountMinor: f.amountMinor, currency: f.currency })}</>}</span>
                     <Sheet label={<Icon name="more" />} triggerClassName="icon" triggerLabel={`Editar ${f.name}`} title={f.name}>
@@ -173,6 +185,15 @@ export default async function Commitments() {
                             dueDay: r?.dueDay ?? null, dueDayMax: r?.dueDayMax ?? null, targetDay: r?.targetDay ?? null }} />
                           <button type="submit" className="wide">Guardar</button>
                         </ActionForm>
+                        <small className="muted">Los cambios aplican desde ahora. Lo ya pagado no cambia.</small>
+                        <Lifecycle kind="obligation" id={f.id} name={f.name} pausedUntil={r?.pausedUntil ?? null} endedOn={r?.endedOn ?? null} today={plan.today} defaultUntil={addDays(plan.today, 30)} />
+                        {past.length > 0 && (
+                          <details><summary>Historial</summary>
+                            <ul className="list" data-testid="obligation-history">{past.map((h) => (
+                              <li key={h.period}><span>{h.period}</span><span className="amount">{h.amountMinor === null ? 'Omitido' : formatMoney({ amountMinor: h.amountMinor, currency: f.currency })}</span></li>
+                            ))}</ul>
+                          </details>
+                        )}
                         <ActionForm action={removeObligationAction} className="inline" label={`Quitar ${f.name}`} closeOnSuccess>
                           <input type="hidden" name="id" value={f.id} />
                           <button type="submit" className="link" style={{ color: 'var(--semantic-error)' }}>Quitar este pago</button>

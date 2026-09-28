@@ -41,9 +41,9 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
   const today = limaToday(now);
   const since = new Date(now.getTime() - 45 * 86_400_000).toISOString();
   const [fx, debts, inc, settle, bal, set, txs, decided] = await Promise.all([
-    supabase.from('fixed_expenses').select('id,name,kind,currency,amount_minor,amount_status,frequency,anchor_month,due_day,due_day_max,target_day,notes,active,created_at'),
+    supabase.from('fixed_expenses').select('id,name,kind,currency,amount_minor,amount_status,frequency,anchor_month,due_day,due_day_max,target_day,notes,active,created_at,paused_until,ended_on'),
     supabase.from('debts').select('id,name,currency,balance_minor,annual_rate_bp,installment_minor,installments_total,installments_paid,due_day,active,created_at,last_payment_on'),
-    supabase.from('expected_incomes').select('id,name,currency,amount_minor,amount_status,frequency,day_of_month,day_max,second_day,anchor_date').eq('active', true),
+    supabase.from('expected_incomes').select('id,name,currency,amount_minor,amount_status,frequency,day_of_month,day_max,second_day,anchor_date,paused_until,ended_on').eq('active', true),
     supabase.from('plan_settlements').select('fixed_expense_id,expected_income_id,period,transaction_id,variance_ack,tx:transactions(amount_minor)').order('period', { ascending: false }).limit(500),
     supabase.from('balance_snapshots').select('currency,amount_minor,as_of').order('as_of', { ascending: false }).limit(20),
     supabase.from('planning_settings').select('currency,essentials_monthly_minor,cushion_minor,allow_zero_for_debt'),
@@ -56,6 +56,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     amountMinor: r.amount_minor === null ? null : Number(r.amount_minor), amountStatus: r.amount_status, frequency: r.frequency,
     anchorMonth: r.anchor_month as number | null, dueDay: r.due_day as number | null, dueDayMax: r.due_day_max as number | null,
     targetDay: r.target_day as number | null, since: limaDate(r.created_at as string), active: r.active as boolean, notes: r.notes as string | null,
+    pausedUntil: r.paused_until as string | null, endedOn: r.ended_on as string | null,
   }));
   const debtRows = debts.data ?? [];
   const debtObligations: Obligation[] = debtRows
@@ -99,6 +100,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
   const incomes: ExpectedIncome[] = (inc.data ?? []).map((i) => ({
     id: i.id, name: i.name, currency: i.currency, amountMinor: i.amount_minor === null ? null : Number(i.amount_minor), amountStatus: i.amount_status,
     frequency: i.frequency, dayOfMonth: i.day_of_month, dayMax: i.day_max, secondDay: i.second_day, anchorDate: i.anchor_date,
+    pausedUntil: i.paused_until, endedOn: i.ended_on,
   }));
   const incomeTx = transactions.filter((t) => t.type === 'income' && Date.parse(t.occurredAt) >= now.getTime() - 10 * 86_400_000);
   const top = incomeTx.sort((a, b) => b.amountMinor - a.amountMinor)[0];

@@ -2,7 +2,7 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20260928000020`.
+migrations applied through `20260928000021`.
 
 ## Checkpoint (2026-09-28)
 Last full regression: unit 271 · DB 94 · E2E 231/231 on clean seeds · perf probe 8/8 (tap feedback < 40 ms) · cleanup 0|0.
@@ -23,6 +23,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Conversational onboarding, Preguntar, camera, AI entitlements (023, ADR-0006) | VERIFIED with fixture provider | Real provider NOT VERIFIED (needs key) |
 | Observed vs planned: income links, observed amounts, timeline, camera in Preguntar, undo/forget (024, ADR-0007) | VERIFIED | — |
 | Decisions + learning trail, what-if, payoff comparison, preference, question by impact, tap performance (025, ADR-0008) | VERIFIED | Tap feel on a real phone (PO) |
+| Recurrence lifecycle: pause / resume / end, edit history, per-income controls (026, ADR-0010) | VERIFIED | Deterministic E2E for income linking still pending |
 
 ## Blockers / decisions (external)
 - AI provider (DeepSeek and/or Gemini) + server key → then `scripts/ai-bench.ts` against the local baseline (synthetic data only).
@@ -30,7 +31,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 - Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); plan limits enforcement.
 
 ## Next work (no external decision needed)
-1. Recurrences end-to-end: pause / resume / cancel / history for fixed expenses and incomes; deterministic E2E for income linking.
+1. Deterministic E2E for income linking (seed a deposit on the expected day) + ambiguous-match UI check.
 2. Scenarios + payoff comparison visible in Dinero libre / Próximos pagos (engine done; today only via Preguntar).
 3. Camera: retry + failure states UX; copy pass on screens not touched since TASK-021.
 
