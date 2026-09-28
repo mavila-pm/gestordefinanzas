@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 type Choice = 'system' | 'light' | 'dark';
 const COOKIE = 'vs-theme';
-const LABEL: Record<Choice, string> = { system: 'Como el sistema', light: 'Claro', dark: 'Oscuro' };
+const LABEL: Record<Choice, string> = { system: 'Automático', light: 'Claro', dark: 'Oscuro' };
 
 function apply(choice: Choice) {
   const dark = choice === 'dark' || (choice === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -13,7 +13,7 @@ function apply(choice: Choice) {
 }
 
 /** Light / dark / system. Persisted in a first-party cookie so the server renders the right theme (no flash). */
-export function ThemeControl() {
+export function ThemeControl({ hideLegend }: { hideLegend?: boolean }) {
   const [choice, setChoice] = useState<Choice>('system');
   useEffect(() => {
     const m = /(?:^|; )vs-theme=(light|dark)/.exec(document.cookie);
@@ -21,7 +21,7 @@ export function ThemeControl() {
   }, []);
   return (
     <fieldset className="bare segmented" aria-label="Apariencia">
-      <legend className="label">Apariencia</legend>
+      <legend className={hideLegend ? 'sr-only' : 'label'}>Apariencia</legend>
       <div className="segments" role="radiogroup">
         {(Object.keys(LABEL) as Choice[]).map((c) => (
           <label key={c} className="segment">

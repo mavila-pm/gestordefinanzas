@@ -25,7 +25,7 @@ describe('main insight (§40)', () => {
       tx({ amountMinor: 40000, category: 'Transporte' }),
     ];
     expect(mainInsight(txs, '2026-09', 'PEN')).toEqual({ estimated: false,
-      text: 'Alimentación aumentó S/ 310.00 y explica el 61% del incremento de tus gastos frente a 2026-08.' });
+      text: 'Alimentación aumentó S/ 310.00 y explica el 61% del incremento de tus gastos frente a agosto.' });
   });
   it('is marked estimated with pending movements; nothing without a previous month', () => {
     const txs = [tx({ occurredAt: '2026-08-10T12:00:00-05:00', amountMinor: 100 }), tx({ amountMinor: 500 }), tx({ amountMinor: 1, status: 'review_required' })];

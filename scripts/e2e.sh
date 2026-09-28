@@ -84,7 +84,7 @@ for s in "${SUITES[@]}"; do
   line="$(grep -E "^$s: [0-9]+/[0-9]+ passed" <<<"$out" || echo "$s: crashed")"
   echo "$line"
   if [[ "$line" =~ ([0-9]+)/([0-9]+) ]]; then pass=$((pass + BASH_REMATCH[1])); total=$((total + BASH_REMATCH[2])); fi
-  if [[ $ok == 0 ]]; then failed+=("$s"); grep -E "^(FAIL|ERROR|  )" <<<"$out" || tail -15 <<<"$out"; fi
+  if [[ $ok == 0 ]]; then failed+=("$s"); grep -E "^(FAIL|ERROR|ISSUE|  )" <<<"$out" || tail -15 <<<"$out"; fi
 done
 echo "E2E TOTAL ${pass}/${total}${failed[*]:+  FAILED: ${failed[*]}}"
 if ((${#failed[@]})); then echo "--- server log (last 15) ---"; tail -15 "$LOG"; exit 1; fi

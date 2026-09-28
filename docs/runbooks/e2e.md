@@ -83,3 +83,9 @@ registered (behavior change of TASK-014, same strictness). Cleanup 0|0.
 320/375/390/430/768/1024/1280/1440 (saved for 320, 375, 1280), light and dark, 0 horizontal overflow. Test updates
 caused by the redesign (same assertions): saved notice after "Guardar y confirmar", delete behind a disclosure,
 detail meta testid. Cleanup 0|0.
+
+## Regression after the UX pass (TASK-021) — 2026-09-28
+13 + 46 + 30 + 32 + 23 + 18 = **163/163**, plus `visual`: 114 screenshots (all authenticated routes, 8 widths, light/dark),
+0 horizontal overflow, 0 UX audit issues (console errors/hydration, duplicate ids, unlabeled fields, touch targets < 40px on
+mobile). Lesson: a route-level `loading.tsx` made streamed pages answer 200 before `notFound()` (another user's movement
+must be 404) — removed. Cleanup 0|0.

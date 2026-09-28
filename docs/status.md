@@ -24,6 +24,7 @@ Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e
 | TASK-018 Sync history (plain language) | **VERIFIED** | unit tests; E2E | — |
 | TASK-019 Velsuno design system, shell, access, welcome, dashboard, movements, detail, review | **VERIFIED** (functional + visual) | E2E regression; `visual` 54 screenshots, 8 breakpoints, light/dark, 0 horizontal overflow | PO visual walkthrough (checklist); other screens inherit tokens but keep the previous layout |
 | TASK-020 Dividir gasto (splits) | **VERIFIED** | Migrations 000014-15; DB tests incl. A/B, privileges, stale edit, guard (mutation-checked); unit; E2E 18/18 | — |
+| TASK-021 Product UX pass: profile names, Ajustes, Análisis, Presupuestos, Próximos pagos, Cuentas, Lo que recuerda, Conexiones, Tu plan, Más | **VERIFIED** | Migration 000016; unit (profile); E2E 163/163; visual 114 screenshots + UX audit (console/hydration, duplicate ids, labels, 44px targets) 0 issues | PO walkthrough on a real phone |
 
 ## Backlog (known debt)
 | Item | Origin | Note |

@@ -16,12 +16,39 @@ const root = '/opt/pw-browsers';
 const dir = existsSync(root) ? readdirSync(root).find((d) => /^chromium-\d+$/.test(d)) : undefined;
 const browser = await chromium.launch({ executablePath: dir ? `${root}/${dir}/chrome-linux/chrome` : undefined });
 const overflow: string[] = [];
+const issues: string[] = [];
 let shots = 0;
+
+/** Cheap UX audit of the rendered screen: duplicate ids, unlabeled fields, visible touch targets under 44px (mobile). */
+async function audit(page: Page, name: string, width: number) {
+  const found = await page.evaluate((mobile) => {
+    const out: string[] = [];
+    const ids = [...document.querySelectorAll('[id]')].map((e) => e.id);
+    const dup = ids.filter((id, i) => ids.indexOf(id) !== i);
+    if (dup.length) out.push(`duplicate id ${[...new Set(dup)].join(',')}`);
+    for (const el of document.querySelectorAll('input:not([type=hidden]), select, textarea')) {
+      const e = el as HTMLInputElement;
+      const labelled = e.labels?.length || e.getAttribute('aria-label') || e.getAttribute('aria-labelledby');
+      if (!labelled) out.push(`unlabeled ${e.name || e.tagName}`);
+    }
+    if (mobile) {
+      for (const el of document.querySelectorAll('button, a.button, [role=button], input[type=radio], input[type=checkbox]')) {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        if (r.width === 0 || r.height === 0 || (el as HTMLElement).closest('dialog:not([open])')) continue;
+        const target = el.matches('input') ? (el.closest('label') ?? el).getBoundingClientRect() : r;
+        if (target.height < 40) out.push(`small target "${(el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 24)}" ${Math.round(target.height)}px`);
+      }
+    }
+    return out;
+  }, width < 768);
+  for (const f of found) issues.push(`${name}@${width}: ${f}`);
+}
 
 async function shoot(page: Page, name: string, width: number, theme: string, save: boolean) {
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const wide = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   if (wide > 0) overflow.push(`${name}@${width}/${theme} (+${wide}px)`);
+  if (theme === 'light' && (width === 375 || width === 1280)) await audit(page, name, width);
   if (save) { await page.screenshot({ path: `${OUT}/${name}-${width}-${theme}.png`, fullPage: width < 768 }); shots++; }
 }
 
@@ -30,13 +57,18 @@ for (const theme of ['light', 'dark'] as const) {
     const ctx = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 900 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
     await ctx.addCookies([{ name: 'vs-theme', value: theme, url: BASE }]);
     const page = await ctx.newPage();
+    page.on('console', (m) => { if (m.type() === 'error' || /hydrat/i.test(m.text())) issues.push(`console@${width}/${theme}: ${m.text().slice(0, 140)}`); });
+    page.on('pageerror', (e) => issues.push(`pageerror@${width}/${theme}: ${e.message.slice(0, 140)}`));
     const save = FULL.has(width) || width === 320;
     for (const path of ['/login', '/signup', '/forgot-password']) {
       await page.goto(`${BASE}${path}`);
       await shoot(page, path.slice(1), width, theme, save && path === '/login');
     }
     await login(page, probe('s78a'));
-    for (const [name, path] of [['dashboard', '/app?month=2026-09'], ['movements', '/app/movimientos?month=2026-09'], ['review', '/app/revisar'], ['more', '/app/mas']] as const) {
+    for (const [name, path] of [['dashboard', '/app?month=2026-09'], ['movements', '/app/movimientos?month=2026-09'], ['review', '/app/revisar'], ['more', '/app/mas'],
+      ['analysis', '/app/analisis?month=2026-09'], ['budgets', '/app/presupuestos'], ['payments', '/app/compromisos'], ['accounts', '/app/tarjetas'],
+      ['rules', '/app/reglas'], ['connections', '/app/conexiones'], ['plan', '/app/cuenta'], ['settings', '/app/ajustes'], ['new', '/app/movimientos/nuevo'],
+      ['import', '/app/importar']] as const) {
       await page.goto(`${BASE}${path}`);
       await shoot(page, name, width, theme, save);
     }
@@ -63,5 +95,8 @@ for (const theme of ['light', 'dark'] as const) {
   }
 }
 await browser.close();
-console.log(`visual: ${overflow.length ? 0 : 1}/1 passed (${shots} screenshots in ${OUT}; horizontal overflow: ${overflow.length ? overflow.join(', ') : 'none'})`);
-process.exit(overflow.length ? 1 : 0);
+const unique = [...new Set(issues)];
+for (const i of unique) console.log(`ISSUE  ${i}`);
+const ok = overflow.length === 0 && unique.length === 0;
+console.log(`visual: ${ok ? 1 : 0}/1 passed (${shots} screenshots in ${OUT}; horizontal overflow: ${overflow.length ? overflow.join(', ') : 'none'}; ux issues: ${unique.length})`);
+process.exit(ok ? 0 : 1);

@@ -43,7 +43,7 @@ export default async function Settings() {
 
       <section className="group" aria-labelledby="g-look">
         <h2 id="g-look" className="group-title">Apariencia</h2>
-        <div className="rows"><div className="setting"><ThemeControl /></div></div>
+        <div className="rows"><div className="setting"><ThemeControl hideLegend /></div></div>
       </section>
 
       <section className="group" aria-labelledby="g-data">

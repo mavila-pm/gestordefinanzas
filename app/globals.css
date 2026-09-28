@@ -49,7 +49,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; min-height: 20px; hei
 input[aria-invalid="true"] { border-color: var(--semantic-error); }
 fieldset.bare { border: 0; padding: 0; margin: 0; min-width: 0; } fieldset.bare > * + * { margin-top: var(--space-16); }
 form.inline fieldset.bare > * + * { margin-top: 0; }
-.check { display: flex; gap: var(--space-12); align-items: flex-start; } .check input { width: 20px; margin-top: 2px; flex: none; }
+.check { display: flex; gap: var(--space-12); align-items: center; min-height: 44px; } .check input { width: 20px; margin-top: 2px; flex: none; }
 
 button, a.button {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-8); min-height: 48px; padding: 12px 20px;
@@ -290,3 +290,8 @@ a.link-row > svg { color: var(--text-muted); flex: none; }
 .muted-source strong { color: var(--text-secondary); }
 .tag.positive-tag { background: var(--status-positive-bg); color: var(--semantic-success); }
 code { font-size: 14px; overflow-wrap: anywhere; }
+.source.row { flex-wrap: nowrap; align-items: center; }
+.source.row .setting-text { flex: 1; }
+.source.row .setting-text small { white-space: normal; }
+.source.row > .button, .source.row > .tag { flex: none; }
+

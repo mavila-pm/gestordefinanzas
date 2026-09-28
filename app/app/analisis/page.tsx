@@ -13,11 +13,11 @@ const TREND_MONTHS = 6;
 const shortMonth = (m: string) => monthLabel(m).split(' ')[0]!.toLowerCase();
 
 /** "S/ 310.00 más que en agosto" — words, not only colour or arrows. */
-function Delta({ minor, currency, vs, goodWhenDown }: { minor: number; currency: Currency; vs: string; goodWhenDown?: boolean }) {
-  if (minor === 0) return <span className="muted">igual que en {vs}</span>;
+function Delta({ minor, currency, vs, goodWhenDown }: { minor: number; currency: Currency; vs?: string; goodWhenDown?: boolean }) {
+  if (minor === 0) return <span className="muted">{vs ? `igual que en ${vs}` : 'igual'}</span>;
   const up = minor > 0;
   const good = goodWhenDown ? !up : up;
-  return <span className={good ? 'ok' : 'warn'}>{formatMoney({ amountMinor: Math.abs(minor), currency })} {up ? 'más' : 'menos'} que en {vs}</span>;
+  return <span className={good ? 'ok' : 'warn'}>{formatMoney({ amountMinor: Math.abs(minor), currency })} {up ? 'más' : 'menos'}{vs ? ` que en ${vs}` : ''}</span>;
 }
 
 export default async function Analysis({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
@@ -79,7 +79,7 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
                 <ul className="list" data-testid={`categories-${currency}`}>
                   {changed.map((c) => (
                     <li key={c.category}>
-                      <span className="setting-text"><span>{c.category}</span><small className="muted">antes {m(c.previousMinor)} · <Delta minor={c.deltaMinor} currency={currency} vs={vs} goodWhenDown /></small></span>
+                      <span className="setting-text"><span>{c.category}</span><small className="muted"><Delta minor={c.deltaMinor} currency={currency} goodWhenDown /> · antes {m(c.previousMinor)}</small></span>
                       <span className="amount">{m(c.currentMinor)}</span>
                     </li>
                   ))}

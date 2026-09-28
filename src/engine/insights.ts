@@ -18,11 +18,11 @@ export function mainInsight(txs: readonly Transaction[], month: string, currency
     const driver = cmp.categories.filter((c) => c.deltaMinor > 0).sort((a, b) => b.deltaMinor - a.deltaMinor)[0];
     if (!driver) return null;
     const share = Math.round((driver.deltaMinor / cmp.expensesDeltaMinor) * 100);
-    return { estimated, text: `${driver.category} aumentó ${m(driver.deltaMinor)} y explica el ${Math.min(share, 100)}% del incremento de tus gastos frente a ${cmp.previous.month}.` };
+    return { estimated, text: `${driver.category} aumentó ${m(driver.deltaMinor)} y explica el ${Math.min(share, 100)}% del incremento de tus gastos frente a ${monthName(cmp.previous.month)}.` };
   }
   if (cmp.expensesDeltaMinor < 0) {
     const driver = cmp.categories.filter((c) => c.deltaMinor < 0).sort((a, b) => a.deltaMinor - b.deltaMinor)[0];
-    return { estimated, text: `Gastaste ${m(cmp.expensesDeltaMinor)} menos que en ${cmp.previous.month}${driver ? `; la mayor baja fue ${driver.category} (${m(driver.deltaMinor)})` : ''}.` };
+    return { estimated, text: `Gastaste ${m(cmp.expensesDeltaMinor)} menos que en ${monthName(cmp.previous.month)}${driver ? `; la mayor baja fue ${driver.category} (${m(driver.deltaMinor)})` : ''}.` };
   }
   return null;
 }
