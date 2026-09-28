@@ -2,12 +2,15 @@
 
 Requires network access from the environment to `jeloegnvaxlfqjntbbyy.supabase.co`.
 
-1. `.env.local` with the public values (`.env.example`). Build and start: `npm run build && npx next start -p 3000`.
-2. Create two confirmed probe users (`e2e-a@…`, `e2e-b@…` on a non-deliverable test domain) and seed
-   transactions via the Supabase SQL tool (A: S/100 card purchase "E2E RESTAURANTE A", S/100 card payment,
-   S/200 ATM withdrawal; B: "E2E SECRET B").
-3. `E2E_A_EMAIL=… E2E_B_EMAIL=… E2E_PASSWORD=… node --experimental-strip-types tests/e2e/auth-dashboard.e2e.ts`
-4. Delete the probe users (cascade removes their rows) and confirm 0 remain.
+1. `.env.local` with the public values (`.env.example`).
+2. Seed: `E2E_PASSWORD=<random> scripts/e2e.sh render-seed` and run the output with the Supabase SQL tool
+   (or set `E2E_DB_URL` and the script seeds/cleans via psql). `tests/e2e/seed.sql` is idempotent (deletes every
+   `e2e-%@gestordefinanzas.invalid` user first) and creates one A/B pair per suite, so suites never share data.
+   The password is never committed (`__E2E_PASSWORD__` placeholder).
+3. `E2E_PASSWORD=<same> scripts/e2e.sh [suite…]`: stops its previous server (PID file, own process group), refuses a
+   foreign process on the port, builds only if sources changed, waits for `/login` = 200, runs the suites, prints one
+   line per suite + failures with a one-step diagnosis (URL, alerts, page excerpt, server log) and always stops the server.
+4. Cleanup: `tests/e2e/cleanup.sql` with the SQL tool → must return `probe_users = 0` and `orphan_rows = 0`.
 
 No email is sent to the probe domain: the tests use existing (confirmed) and unknown addresses only,
 avoiding bounces that could get the project's email sending restricted.
@@ -65,3 +68,7 @@ All suites against the real project, fresh probe users per suite (seeded via SQL
 `planning-account` 18/18 → **130/130**. Test fixes during the run (not app defects): server actions re-render in
 place, so assertions now wait for the text to change instead of a fixed sleep. Post-check: 0 probe users and 0 rows
 in every user table (only the PO's 2 real accounts remain).
+
+## Regression on the new E2E infrastructure — 2026-09-28
+`scripts/e2e.sh` + `tests/e2e/lib.ts` (no fixed sleeps) + `seed.sql`: 13 + 46 + 27 + 26 + 18 = **130/130**.
+Cleanup: probe_users 0, orphan_rows 0 (only the PO's 2 real accounts remain).

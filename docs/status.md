@@ -45,3 +45,17 @@ Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e
 - [ ] TASK-009: generate your private address in Conexiones (not usable until provider/domain).
 - [ ] TASK-010/011: create a budget, a fixed expense and a debt; register a debt payment.
 - [ ] TASK-012: Cuenta shows Free; start the Plus trial and check the end date.
+
+## Compact report format (phase close)
+```
+FASE <n> · <fecha> · rama <x> · commits <a..b>
+| TASK | Qué | Estado | Evidencia |
+TESTS      unit n/n · DB n/n · build OK · E2E n/n (suites)
+DB         migraciones aplicadas + verificación (1 línea)
+SEGURIDAD  cambios relevantes (≤5)
+BLOQUEOS / DECISIONES  numeradas, con impacto
+RIESGOS    ≤3
+NOT VERIFIED  qué y por qué
+CHECKLIST MANUAL  → sección de arriba
+TOKEN AUDIT  total · presupuesto · desvío · causa principal
+```

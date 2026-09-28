@@ -10,6 +10,7 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - `npm run check` — typecheck + unit tests (run before every push)
 - `npm run dev` / `npm run build` — Next.js app (needs `.env.local`, see `.env.example`; public values only)
 - `npm run test:db` — throwaway PostgreSQL: migrations + RLS + Postgres repository tests (run when touching SQL or persistence)
+- `scripts/e2e.sh [suite…]` — E2E on the real project: server lifecycle (PID, health check, trap stop) + suites (`docs/runbooks/e2e.md`)
 
 ## Permanent rules
 - SOURCE -> NORMALIZED EVENT -> FINANCIAL ENGINE. No bank/provider-specific code outside `src/ingestion/adapters/`.
@@ -27,8 +28,20 @@ Product Owner: Mauro. Deviations from the spec need a Change Request (Anexo A) b
 - Supabase: operate ONLY on project ref `jeloegnvaxlfqjntbbyy` (gestordefinanzas). Never touch other projects in the account.
 - Report states honestly: IMPLEMENTED / VERIFIED (reproducible evidence) / APPROVED.
 
+## Test ladder (never skip a level that applies)
+- N0 while coding: `npx vitest run <affected test>`; typecheck when shared types change.
+- N1 every TASK close: `npm run check` + `npm run test:db` (full: they hold the RLS, A/B, privilege, dedupe and financial-rule guards).
+- N2 TASK touching UI/app: `npm run build`.
+- N3 block close (2-4 TASKs) or migration applied to the real project: compact SQL verification, advisors once, E2E of the touched suites.
+- N4 phase close, or change to shared write paths / dedupe / auth: full E2E regression (`scripts/e2e.sh`, must stay 130+/130+).
+- E2E protocol: seed with `tests/e2e/seed.sql` (idempotent, one A/B pair per suite, render with `scripts/e2e.sh render-seed`),
+  run via `scripts/e2e.sh`, finish with `tests/e2e/cleanup.sql` (must return 0|0). Waits on state only (`act`/`nav`/`changed`
+  in `tests/e2e/lib.ts`), never fixed sleeps; selectors scoped to the form.
+- Migrations: write once, apply that same text, verify with one compact query; don't re-read what was just written.
+- Edits: minimal anchored edits; read files by range/grep, not whole; filter command output (`grep`/`tail`).
+
 ## Docs index
-- `docs/architecture/structure.md` — repo layout
+- `docs/architecture/structure.md` — repo layout + code/test/migration map
 - `docs/architecture/ingestion.md` — pipeline and parser coverage
 - `docs/architecture/bcp-evidence.md` — observed vs assumed BCP facts
 - `tests/fixtures/bcp/samples/README.md` — adding real anonymized samples
