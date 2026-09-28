@@ -61,8 +61,9 @@ async function prune(supabase: SupabaseClient) {
 export async function assistantTurn(supabase: SupabaseClient, userId: string, raw: string): Promise<void> {
   const { text } = sanitizeUserText(raw);
   if (!text) return;
-  const history = await loadMessages(supabase, 'assistant', 8);
-  await say(supabase, userId, 'user', text);
+  // One parallel step instead of three sequential round trips: the engine view doesn't depend on the thread.
+  const [loaded, v] = await Promise.all([loadMessages(supabase, 'assistant', 8), view(supabase), say(supabase, userId, 'user', text)]);
+  const history = loaded.at(-1)?.role === 'user' && loaded.at(-1)?.body === text ? loaded.slice(0, -1) : loaded;
   const last = [...history].reverse().find((m) => m.role === 'velsuno');
 
   // A bare amount answers the pending question (e.g. "¿Cuánto tienes ahora?" → "3,200"): deterministic write.
@@ -77,7 +78,6 @@ export async function assistantTurn(supabase: SupabaseClient, userId: string, ra
   }
   if (isSmallTalk(text)) { await say(supabase, userId, 'velsuno', '¿Algo más en lo que te ayude?'); return; }
 
-  const v = await view(supabase);
   const a = answer(detectIntent(text), v);
   if (a) { await say(supabase, userId, 'velsuno', a.text, toCard(a)); await prune(supabase); return; }
 

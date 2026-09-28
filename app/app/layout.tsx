@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createSupabaseServerClient } from '../../lib/supabase/server';
+import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { logout } from '../auth/actions';
 import { BottomNav, SidebarNav } from '../../components/ui/app-nav';
 import { Icon } from '../../components/ui/icon';
@@ -9,7 +9,7 @@ import { Logo } from '../../components/ui/logo';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Defense in depth: proxy.ts already redirects, but every protected render re-validates the user.
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   if (!user) redirect('/login');
   const [{ count }, onboarding] = await Promise.all([
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),

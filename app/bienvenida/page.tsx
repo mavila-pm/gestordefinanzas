@@ -4,7 +4,7 @@ import { Chat } from '../../components/chat';
 import { Logo } from '../../components/ui/logo';
 import { aiAvailability } from '../../src/ai/config';
 import { onboardingConversation, onboardingResume, startOnboarding } from '../../lib/onboarding';
-import { createSupabaseServerClient } from '../../lib/supabase/server';
+import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { leaveOnboarding, onboardingAction } from './actions';
 
 export const metadata: Metadata = { title: 'Bienvenida · Velsuno' };
@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: 'Bienvenida · Velsuno' };
 /** First access (ADR-0006): a full-screen conversation instead of an empty dashboard or a long form. */
 export default async function Bienvenida() {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   if (!user) redirect('/login');
   const state = await startOnboarding(supabase, user.id);
   if (state.status === 'completed') redirect('/app');

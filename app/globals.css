@@ -335,3 +335,19 @@ code { font-size: 14px; overflow-wrap: anywhere; }
 .onboarding-body { display: grid; padding: 0 var(--space-16); min-height: 0; }
 .assistant-page { display: grid; min-height: calc(100dvh - 160px); }
 @media (prefers-reduced-motion: reduce) { .typing > span { animation: none; opacity: .6; } }
+
+/* ── Interaction feedback (tap → something visible at once) ───────────────────────────────────────────── */
+.bottom-nav a:active, .nav-list a:active, a.chip:active, .chip:active, a.link-row:active, a.section-link:active { background: var(--bg-secondary); }
+.bottom-nav a:has(.nav-pending) svg, .nav-list a:has(.nav-pending) { background: var(--plus-bg); }
+.bottom-nav a:has(.nav-pending) svg { border-radius: var(--radius-pill); box-shadow: 0 0 0 5px var(--plus-bg); }
+.nav-pending { position: absolute; inset: auto 30% 2px; height: 2px; border-radius: 2px; background: var(--text-primary); animation: busy 900ms var(--ease-standard) infinite; }
+.nav-list a { position: relative; }
+/* A form waiting for the server keeps its look (no grey "dead" button, same width) and pulses. */
+form[aria-busy=true] button[type=submit]:disabled { background: var(--action-pressed); color: var(--action-fg); cursor: progress; animation: busy 900ms var(--ease-standard) infinite; }
+form[aria-busy=true] button.quiet[type=submit]:disabled { background: var(--bg-secondary); color: var(--text-primary); }
+form[aria-busy=true] button.link[type=submit]:disabled { background: none; color: var(--text-primary); }
+@keyframes busy { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+/* Route change: the frame stays, content area shows placeholders right away. */
+.route-loading { display: grid; gap: var(--space-16); }
+.route-loading .sk { border-radius: var(--radius-control); background: var(--bg-secondary); animation: busy 1200ms var(--ease-standard) infinite; }
+@media (prefers-reduced-motion: reduce) { .nav-pending, .route-loading .sk, form[aria-busy=true] button[type=submit]:disabled { animation: none; } }

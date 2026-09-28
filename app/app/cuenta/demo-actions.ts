@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { resetDemoOnboarding } from '../../../lib/onboarding';
-import { createSupabaseServerClient } from '../../../lib/supabase/server';
+import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import type { ActionState } from '../actions';
 
 /** Demo/QA only (§76-§78): allowlisted accounts. The database refuses everyone else (set_demo_plan → not_demo). */
@@ -19,7 +19,7 @@ export async function setDemoPlanAction(_p: ActionState, form: FormData): Promis
 
 export async function resetDemoOnboardingAction(_p: ActionState): Promise<ActionState> {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   if (!user) redirect('/login');
   const r = await resetDemoOnboarding(supabase, user.id);
   if (!r.ok) return { error: 'Esta cuenta no tiene modo demo.' };
@@ -30,7 +30,7 @@ export async function resetDemoOnboardingAction(_p: ActionState): Promise<Action
 /** Anyone: reopen the conversational setup later ("Ahora no" never loses progress). */
 export async function resumeOnboardingAction() {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   if (!user) redirect('/login');
   const { onboardingResume } = await import('../../../lib/onboarding');
   await onboardingResume(supabase, user.id);

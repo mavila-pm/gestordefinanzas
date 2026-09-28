@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { createSupabaseServerClient } from '../../lib/supabase/server';
+import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
 import { parseAmountToMinor } from '../../src/domain/money';
 import { SPLIT_ERROR_TEXT } from '../../src/domain/allocations';
@@ -27,7 +27,7 @@ export interface ActionState {
  */
 async function session() {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   return { supabase, user };
 }
 

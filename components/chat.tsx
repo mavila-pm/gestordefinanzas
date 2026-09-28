@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { startTransition, useActionState, useEffect, useRef, useState } from 'react';
+import { startTransition, useActionState, useEffect, useOptimistic, useRef, useState } from 'react';
 import type { ChatMessage, ChatState, MessageCard } from '../src/ai/conversation';
 import { Icon } from './ui/icon';
 
@@ -90,35 +90,51 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
   const input = useRef<HTMLTextAreaElement>(null);
   const file = useRef<HTMLInputElement>(null);
   const lastSent = useRef<FormData | null>(null);
+  // What the person sent shows at once (it is only their own words, never a financial result); the server's
+  // stored conversation replaces it when the answer arrives.
+  const [messages, addSent] = useOptimistic(state.messages, (cur, m: ChatMessage) => [...cur, m]);
+  const [reading, setReading] = useState(false);
 
-  useEffect(() => { list.current?.lastElementChild?.scrollIntoView({ block: 'end' }); }, [state.messages, pending]);
+  useEffect(() => { list.current?.lastElementChild?.scrollIntoView({ block: 'end' }); }, [messages, pending]);
+  const wasPending = useRef(false);
+  useEffect(() => { if (wasPending.current && !pending) setReading(false); wasPending.current = pending; }, [pending]);
 
-  const submit = (fd: FormData) => { lastSent.current = fd; startTransition(() => formAction(fd)); };
-  const sendText = (t: string) => { const v = t.trim(); if (!v || pending) return; const fd = new FormData(); fd.set('text', v); setText(''); submit(fd); };
-  const sendReply = (r: string) => { if (pending) return; const fd = new FormData(); fd.set('reply', r); submit(fd); };
+  const submit = (fd: FormData, echo?: string) => {
+    lastSent.current = fd;
+    startTransition(() => {
+      if (echo) addSent({ id: `sent-${Date.now()}`, role: 'user', body: echo, card: null });
+      formAction(fd);
+    });
+  };
+  const sendText = (t: string) => { const v = t.trim(); if (!v || pending) return; const fd = new FormData(); fd.set('text', v); setText(''); submit(fd, v); };
+  const sendReply = (r: string) => { if (pending) return; const fd = new FormData(); fd.set('reply', r); submit(fd, r); };
   const sendOp = (op: string) => { if (pending) return; const fd = new FormData(); fd.set('op', op); submit(fd); };
   const onFiles = async (files: FileList | null) => {
     if (!files?.length || pending) return;
+    setReading(true); // visible at once, while the photos are downscaled in the browser
+    const count = Math.min(files.length, 3);
     const fd = new FormData();
     for (const f of [...files].slice(0, 3)) fd.append('images', await shrink(f), 'foto.jpg');
     if (file.current) file.current.value = '';
-    submit(fd);
+    submit(fd, count === 1 ? 'Foto enviada' : `${count} fotos enviadas`);
   };
   // The newest card with something to tap stays live even if plain text came after it (never strand "Empezar").
   const hasActions = (c: MessageCard | null) => !!c && !!(c.replies?.length || c.actions?.length || c.acts?.length || c.links?.length);
-  const lastVelsuno = [...state.messages].reverse().find((m) => m.role === 'velsuno' && hasActions(m.card))?.id;
+  const lastVelsuno = [...messages].reverse().find((m) => m.role === 'velsuno' && hasActions(m.card))?.id;
 
   return (
     <div className="chat" aria-label={props.label}>
       <ol className="chat-list" ref={list} aria-live="polite">
-        {state.messages.map((m) => (
+        {messages.map((m) => (
           <li key={m.id} className={`msg ${m.role}`} data-testid={m.role === 'velsuno' ? 'velsuno-msg' : 'user-msg'}>
             <p>{m.body}</p>
             {m.card && <Card card={props.camera ? m.card : { ...m.card, actions: m.card.actions?.filter((a) => a.kind !== 'camera') }} live={m.id === lastVelsuno && !pending} onOp={sendOp} onReply={sendReply}
               onCamera={() => file.current?.click()} onCorrect={() => { setHint('Dime qué cambio, por ejemplo: "el carro es 900"'); input.current?.focus(); }} />}
           </li>
         ))}
-        {pending && <li className="msg velsuno typing" aria-label="Velsuno está escribiendo"><span /><span /><span /></li>}
+        {(pending || reading) && (reading
+          ? <li className="msg velsuno" role="status"><p className="muted">Leyendo…</p></li>
+          : <li className="msg velsuno typing" aria-label="Velsuno está escribiendo"><span /><span /><span /></li>)}
       </ol>
       {state.error && (
         <p role="alert" className="chat-error">{state.error}{' '}

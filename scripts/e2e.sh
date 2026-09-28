@@ -83,6 +83,7 @@ for s in "${SUITES[@]}"; do
   out="$(node --experimental-strip-types --no-warnings "$file" 2>&1)" && ok=1 || ok=0
   line="$(grep -E "^$s: [0-9]+/[0-9]+ passed" <<<"$out" || echo "$s: crashed")"
   echo "$line"
+  grep -E "^PERF " <<<"$out" || true   # latency rows of the perf probe
   if [[ "$line" =~ ([0-9]+)/([0-9]+) ]]; then pass=$((pass + BASH_REMATCH[1])); total=$((total + BASH_REMATCH[2])); fi
   if [[ $ok == 0 ]]; then failed+=("$s"); grep -E "^(FAIL|ERROR|ISSUE|  )" <<<"$out" || tail -15 <<<"$out"; fi
 done

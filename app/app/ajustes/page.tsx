@@ -5,7 +5,7 @@ import { Icon } from '../../../components/ui/icon';
 import { Sheet } from '../../../components/ui/sheet';
 import { ThemeControl } from '../../../components/ui/theme-control';
 import { loadProfile } from '../../../lib/queries';
-import { createSupabaseServerClient } from '../../../lib/supabase/server';
+import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { shortFullName } from '../../../src/domain/profile';
 import { logout } from '../../auth/actions';
 import { saveProfileAction } from '../actions';
@@ -14,7 +14,7 @@ export const metadata = { title: 'Ajustes' };
 
 export default async function Settings() {
   const supabase = await createSupabaseServerClient();
-  const [profile, { data: { user } }] = await Promise.all([loadProfile(supabase), supabase.auth.getUser()]);
+  const [profile, user] = await Promise.all([loadProfile(supabase), authUser(supabase)]);
   const name = shortFullName(profile);
   return (
     <main className="stack narrow-md">

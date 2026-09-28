@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createSupabaseServerClient } from '../../../lib/supabase/server';
+import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';
 import { transactionsToCsv } from '../../../src/web/export-csv';
@@ -10,7 +10,7 @@ const MAX_ROWS = 5000;
 /** CSV export of the signed-in user's movements (RLS-scoped), with the same filters as the list. */
 export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   if (!user) return new NextResponse('No autenticado', { status: 401 });
   const f = parseMovementFilters(Object.fromEntries(request.nextUrl.searchParams), limaMonth());
   const select = f.source === 'all' ? TRANSACTION_SELECT : `${TRANSACTION_SELECT},src_filter:transaction_sources!inner(channel)`;

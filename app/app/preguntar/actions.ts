@@ -4,12 +4,12 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { assistantAct, assistantImages, assistantTurn, assistantVision, clearAssistant } from '../../../lib/assistant';
 import { loadMessages } from '../../../lib/onboarding';
-import { createSupabaseServerClient } from '../../../lib/supabase/server';
+import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import type { ChatState } from '../../../src/ai/conversation';
 
 export async function assistantAction(_prev: ChatState, form: FormData): Promise<ChatState> {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   if (!user) redirect('/login');
   try {
     const op = form.get('op');

@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createSupabaseServerClient } from '../../lib/supabase/server';
+import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import {
   onboardingConversation, onboardingFinish, onboardingImages, onboardingLeave, onboardingSkip, onboardingSummary, onboardingText, onboardingVision,
 } from '../../lib/onboarding';
@@ -15,7 +15,7 @@ const SKIP = new Set(['Después', 'No sé', 'No tengo más', 'Quincenal']);
 /** One entry point for the onboarding conversation: text, a quick reply, a tap (op) or photos. */
 export async function onboardingAction(_prev: ChatState, form: FormData): Promise<ChatState> {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   if (!user) redirect('/login');
   try {
     const op = form.get('op');
@@ -42,7 +42,7 @@ export async function onboardingAction(_prev: ChatState, form: FormData): Promis
 
 export async function leaveOnboarding() {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   if (!user) redirect('/login');
   await onboardingLeave(supabase, user.id);
   redirect('/app');
@@ -54,7 +54,7 @@ export async function leaveOnboarding() {
  */
 export async function forgetOnboardingAction(_p: ActionState, _form: FormData): Promise<ActionState> {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   if (!user) return { error: 'Inicia sesión de nuevo.' };
   const { error: e1 } = await supabase.from('conversation_messages').delete().eq('thread', 'onboarding');
   const { error: e2 } = await supabase.from('onboarding_states').update({ facts: emptyDraft(), summary: null }).eq('user_id', user.id);

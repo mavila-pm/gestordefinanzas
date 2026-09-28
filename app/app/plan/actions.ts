@@ -6,7 +6,7 @@
  * RLS + composite FKs enforce ownership; nothing here creates or changes transactions.
  */
 import { revalidatePath } from 'next/cache';
-import { createSupabaseServerClient } from '../../../lib/supabase/server';
+import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSettingsForm } from '../../../src/web/planning-input';
 import { isUuid } from '../../../src/web/transaction-input';
 import type { ActionState } from '../actions';
@@ -14,7 +14,7 @@ import type { ActionState } from '../actions';
 const SAVE_ERROR = 'No pudimos guardar el cambio. Intenta de nuevo.';
 async function session() {
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await authUser(supabase);
   return { supabase, user };
 }
 function done(message: string): ActionState {
