@@ -58,3 +58,10 @@ recovery store the post-link destination in the `gf_auth_next` cookie). Supabase
 `redirect_to=http://localhost:3000/auth/confirm` (no query string) for `/signup` and `/recover`.
 Test fix: logout now waits for the `/login` URL (server-action redirect is a client-side navigation, so
 `networkidle` could time out). Probe users deleted; 0 left.
+
+## Full regression — 2026-09-28 (autonomous phase, TASK-003..013)
+All suites against the real project, fresh probe users per suite (seeded via SQL, `.invalid` domain, no emails sent):
+`auth-dashboard` 13/13 · `review-manual` 46/46 · `import-learning` 27/27 · `analysis-dashboard` 26/26 ·
+`planning-account` 18/18 → **130/130**. Test fixes during the run (not app defects): server actions re-render in
+place, so assertions now wait for the text to change instead of a fixed sleep. Post-check: 0 probe users and 0 rows
+in every user table (only the PO's 2 real accounts remain).

@@ -1,37 +1,47 @@
 # Task status log
 
-States: IMPLEMENTED (code exists) / VERIFIED (reproducible evidence) / APPROVED (Product Owner).
+States: IMPLEMENTED (code exists) / VERIFIED (reproducible evidence) / PARTIALLY VERIFIED / BLOCKED / NOT VERIFIED / APPROVED.
+Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e.md`.
 
 | Task | State | Evidence | Pending |
 |---|---|---|---|
-| TASK-003 — Auth + RLS dashboard on real Supabase | **VERIFIED** · manual **PARTIAL** · NOT APPROVED | E2E 13/13 (after migration 000004); PO manual via Preview 2026-09-27: signup PASS, confirmation email PASS, Vercel callback PASS, authenticated /app PASS, logout PASS, later login PASS | Recovery + password change: PENDING (Supabase built-in SMTP hourly cap). Anti-enumeration on 429 fixed for recovery and signup. |
-| TASK-004 — Review queue, manual entry, secure writes | **APPROVED** (PO, 2026-09-27) | Migration `20260927215130_secure_transaction_writes` applied and checked complete; E2E 46/46 on the real project; `npm run test:db` 39/39; unit tests | PO manual browser walkthrough (below). |
-| TASK-005 | Not started — design options under PO review | — | PO decision between route A and route B |
+| TASK-003 Auth + RLS dashboard | **VERIFIED** · manual PARTIAL · NOT APPROVED | E2E 13/13 (latest regression 2026-09-28); PO manual via Preview: signup, confirmation email, Vercel callback, /app, logout, login PASS | Manual recovery + password change (Supabase built-in SMTP hourly cap). Anti-enumeration on 429 for recovery and signup: fixed + tested |
+| TASK-004 Review queue, manual entry, secure writes | **APPROVED** (PO) | E2E 46/46 (re-run 2026-09-28) | PO browser walkthrough (checklist) |
+| TASK-005 Own accounts, learning from corrections, manual deletion | **VERIFIED** | Migration 000005; DB tests; E2E 27/27 (with TASK-006) | — |
+| TASK-006 Import pasted bank notifications (real pipeline) | **VERIFIED** (import path) | Migrations 000006-7; unit + DB tests; E2E 27/27. Parsers remain SYNTHETIC_UNVERIFIED | Real BCP samples to verify templates |
+| TASK-007 Movements (filters/search), analysis, CSV export | **VERIFIED** | unit tests; E2E 26/26 (with TASK-008) | — |
+| TASK-008 Milestones, main insight, alerts, data health, settings | **VERIFIED** | unit tests; E2E 26/26 | — |
+| TASK-009 Email Bridge foundation (address, signed webhook, replay) | **PARTIALLY VERIFIED** · real integration **BLOCKED** | Migration 000008; unit + DB tests (local pipeline end-to-end); E2E: UI + 503 when unconfigured | PO: inbound provider, domain, server secrets (`docs/architecture/email-bridge.md`) |
+| TASK-010 Budgets per category | **VERIFIED** | Migration 000009; unit + DB tests; E2E 18/18 (with 011/012) | — |
+| TASK-011 Fixed expenses, debts, monthly commitments | **VERIFIED** | Migration 000010; unit + DB tests; E2E 18/18 | — |
+| TASK-012 Plans, trial, server-side entitlements | **VERIFIED** (limits shown, not enforced by PO decision) | Migration 000011; unit + DB tests; E2E 18/18 | Billing provider, price (PO); decide when to enforce limits |
+| TASK-013 Dedupe after user corrections | **VERIFIED** | Migration 000012; DB test fails on the old query, passes now | — |
 
-## Open items
-- **TASK-003 manual email validation** — signup/confirmation and recovery/password change with a real inbox through
-  the Vercel Preview (`docs/runbooks/vercel-preview.md`). Blocks TASK-003 APPROVED.
-- **TASK-004 manual validation** — PO reviews in a browser the "Por revisar" queue, a correction and a manual entry
-  once a Preview exists. Does not reopen the approval unless a defect is found.
-- **Regression after migration 000004** — DONE 2026-09-27: `tests/e2e/auth-dashboard.e2e.ts` 13/13 on the real project.
-
-## Backlog (known debt, not scheduled)
+## Backlog (known debt)
 | Item | Origin | Note |
 |---|---|---|
-| Accounts creation/management UI | TASK-004 | Account linking works only for existing accounts |
-| Fingerprint / dedupe after a correction | TASK-004 | Fingerprint keeps the original event; a corrected amount may stop a late SMS from matching |
-| History display when currency changes | TASK-004 | Both amounts are shown in the current currency |
-| Direct-edit policy for cards/accounts/categories | TASK-004, ADR-0003 | Still client-writable under RLS (own rows); decide whether to move behind functions |
-| Movement deletion vs "Ignorar" | TASK-004, spec §10 | Deletion not offered; "Ignorar" excludes without destroying |
-| Custom SMTP | TASK-003, spec §78/§86 | Built-in SMTP hourly cap blocks real testing and is not for production |
+| Custom SMTP | TASK-003, §78/§86 | Built-in SMTP hourly cap; required before public launch |
+| Email templates with `token_hash` | TASK-003 | Today links work only in the browser that started the flow |
+| Direct-edit policy for cards/accounts/categories/budgets/debts | ADR-0003 | Client-writable under RLS (own rows, validated); functions optional |
+| Auto-link card_id on ingestion | TASK-006 | Registered card is recognized (type) but not linked; review shows "sin asociar" |
+| User-owned categories in rules/budgets | TASK-005/010 | Rules and budgets use the global catalog; no UI for custom categories |
+| Recurring transaction detection, search by amount | §52 | Not started |
+| Leaked password protection (Auth) | Supabase advisor | PO setting (may require paid plan) |
+| Plan limits enforcement | §81, PO | Computed and shown; not enforced during beta |
 
-## External blockers
-- 2026-09-27: Vercel access was temporarily locked by 2FA — **resolved**. The PO created the Vercel project
-  `gestordefinanzas` (Git: `mavila-pm/gestordefinanzas`) with the two public `NEXT_PUBLIC_SUPABASE_*` variables scoped
-  to Preview. The first `main` deployment failed because `main` does not contain the Next.js app yet (expected; no
-  merge to `main` until approved). Next: Preview deployment of `claude/beautiful-keller-ikxlrj` for the TASK-003
-  manual email test.
+## External blockers / decisions
+- Email Bridge real: inbound provider, domain + MX, server env `INBOUND_EMAIL_SECRET`, `DATABASE_URL`, `INGEST_EMAIL_DOMAIN`.
+- Billing: provider, price and periodicity (§78). Trial 14 days is PROPUESTO (§77) and configurable (`plan_config`).
+- Gmail OAuth, Android SMS app: not started (post-beta per §53).
 
-## FINAL MANUAL ACCEPTANCE CHECKLIST (accumulated; run once the product is substantially complete)
+## FINAL MANUAL ACCEPTANCE CHECKLIST (run on the Preview when ready)
 - [ ] TASK-003: password recovery email → `/reset-password` → change password → login with the new one; old one rejected.
-- [ ] TASK-004: "Por revisar" queue, a correction, a manual entry, card registration (browser, Preview).
+- [ ] TASK-004: "Por revisar" queue, correct a movement, manual entry, register a card.
+- [ ] TASK-005: register an own account (with 4 digits) and a card; correct a category with "Recordar"; see it in Reglas.
+- [ ] TASK-006: paste a REAL BCP SMS/email (Importar); check type, amount, card, merchant; paste it again (no duplicate).
+      Share an anonymized copy if a field is wrong (it improves the parsers).
+- [ ] TASK-007: Movimientos filters/search; Análisis month vs previous; export CSV and open it in Excel.
+- [ ] TASK-008: set your name in Ajustes; dashboard health/alerts/insight read naturally.
+- [ ] TASK-009: generate your private address in Conexiones (not usable until provider/domain).
+- [ ] TASK-010/011: create a budget, a fixed expense and a debt; register a debt payment.
+- [ ] TASK-012: Cuenta shows Free; start the Plus trial and check the end date.
