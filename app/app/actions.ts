@@ -96,16 +96,18 @@ export async function createCardAction(_prev: ActionState, form: FormData): Prom
   if (!user) return { error: errorText('not_authenticated') };
   const c = parsed.value;
   // Cards are user-owned rows protected by RLS (user_id must equal the session user).
-  const { error } = await supabase.from('cards').insert({
+  const { data: card, error } = await supabase.from('cards').insert({
     user_id: user.id, alias: c.alias, institution_code: c.institution, kind: c.kind, currency: c.currency, last4: c.last4,
-  });
-  if (error) return { error: errorText(error.code === '23505' ? 'duplicate_card' : null) };
+  }).select('id').single();
+  if (error || !card) return { error: errorText(error?.code === '23505' ? 'duplicate_card' : null) };
+  // Past unlinked movements with these digits are linked in the database (only when this card is unambiguous; audited).
+  const { data: linked } = await supabase.rpc('link_card_history', { p_card_id: card.id });
   const back = form.get('back');
   if (typeof back === 'string' && isUuid(back)) {
     revalidatePath('/app', 'layout');
     redirect(`/app/movimientos/${back}`);
   }
-  return done('Tarjeta registrada.');
+  return done(typeof linked === 'number' && linked > 0 ? `Tarjeta registrada. ${linked} movimiento(s) asociados.` : 'Tarjeta registrada.');
 }
 
 export async function createAccountAction(_prev: ActionState, form: FormData): Promise<ActionState> {

@@ -80,6 +80,19 @@ describe('card kind resolution', () => {
     expect((await repo.listTransactions('u1'))[0]).toMatchObject({ type: 'expense', status: 'review_required' });
   });
 
+  it('same digits on a credit and a debit card -> not guessed, review_required', async () => {
+    await ingestRawEvent(op(), { ...CTX, cards: [{ last4: '4821', kind: 'credit' }, { last4: '4821', kind: 'debit' }] }, repo);
+    expect((await repo.listTransactions('u1'))[0]).toMatchObject({ type: 'expense', status: 'review_required' });
+  });
+
+  it('a card of another bank does not match; two credit cards with the same digits still mean a card purchase', async () => {
+    await ingestRawEvent(op(), { ...CTX, cards: [{ last4: '4821', kind: 'credit', institution: 'BBVA' }] }, repo);
+    expect((await repo.listTransactions('u1'))[0]).toMatchObject({ type: 'expense', status: 'review_required' });
+    const repo2 = new InMemoryTransactionRepository();
+    await ingestRawEvent(op(), { ...CTX, cards: [{ last4: '4821', kind: 'credit', institution: 'BCP' }, { last4: '4821', kind: 'credit' }] }, repo2);
+    expect((await repo2.listTransactions('u1'))[0]).toMatchObject({ type: 'credit_card_purchase', status: 'confirmed' });
+  });
+
   it('operation kinds other than Consumo are not guessed', async () => {
     const raw = op();
     raw.body = raw.body.replace('Operación: Consumo', 'Operación: Disposición de efectivo');

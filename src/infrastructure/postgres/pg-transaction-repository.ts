@@ -111,9 +111,9 @@ export class PgTransactionRepository implements TransactionRepository {
     return this.inTx(async (c) => {
       const { rows } = await c.query<{ id: string }>(
         `insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, institution_code,
-           card_last4, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint, bank_operation_id,
+           card_last4, card_id, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint, bank_operation_id,
            original_transaction_id, duplicate_of_id)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         values ($1, $2, $3, $4, $5, $6, $7, $8, public.card_for_event($1, $7, $8), $9, $10,
            (select id from public.categories where user_id is null and name = $11), $12, $13, $14, $15, $16, $17)
          returning id`,
         [t.userId, t.occurredAt, t.type, t.direction, t.amountMinor, t.currency, t.institution, t.cardLast4,

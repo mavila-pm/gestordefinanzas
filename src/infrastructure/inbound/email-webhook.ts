@@ -102,7 +102,7 @@ export async function handleInboundEmail(
   if (!raw.ok) return finish('invalid_payload', userId);
 
   const [cards, accounts, rules] = await Promise.all([
-    deps.pool.query('select last4, kind, active from public.cards where user_id = $1', [userId]),
+    deps.pool.query('select last4, kind, active, institution_code from public.cards where user_id = $1', [userId]),
     deps.pool.query('select last4, active from public.accounts where user_id = $1', [userId]),
     deps.pool.query(`select r.contains, c.name as category_name from public.merchant_rules r
       left join public.categories c on c.id = r.category_id where r.user_id = $1`, [userId]),

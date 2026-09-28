@@ -4,7 +4,7 @@ import type { UserContext } from './ingest';
 
 /** Rows as read (under RLS) from cards, accounts and merchant_rules + categories. */
 export interface UserContextRows {
-  cards: ReadonlyArray<{ last4: string; kind: CardKind; active?: boolean | null }>;
+  cards: ReadonlyArray<{ last4: string; kind: CardKind; active?: boolean | null; institution_code?: string | null }>;
   accounts: ReadonlyArray<{ last4: string | null; active?: boolean | null }>;
   rules: ReadonlyArray<{ contains: string; category_name: string | null }>;
 }
@@ -15,7 +15,7 @@ export interface UserContextRows {
  * pointing to unknown categories are ignored rather than guessed.
  */
 export function buildUserContext(userId: string, rows: UserContextRows): UserContext {
-  const cards = rows.cards.filter((c) => c.active !== false && /^\d{4}$/.test(c.last4)).map((c) => ({ last4: c.last4, kind: c.kind }));
+  const cards = rows.cards.filter((c) => c.active !== false && /^\d{4}$/.test(c.last4)).map((c) => ({ last4: c.last4, kind: c.kind, ...(c.institution_code ? { institution: c.institution_code } : {}) }));
   const ownAccountLast4 = [...new Set(rows.accounts.filter((a) => a.active !== false && a.last4 && /^\d{4}$/.test(a.last4)).map((a) => a.last4!))];
   const merchantRules = rows.rules
     .filter((r) => CATEGORIES.includes(r.category_name as Category) && (normalizeMerchant(r.contains)?.length ?? 0) >= 3)

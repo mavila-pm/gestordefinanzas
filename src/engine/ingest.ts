@@ -13,6 +13,8 @@ export const WEAK_MATCH_WINDOW_MIN = 30;
 export interface UserCard {
   last4: string;
   kind: CardKind;
+  /** Bank of the card; absent = matches any bank. */
+  institution?: string;
 }
 
 export interface UserContext {
@@ -56,9 +58,12 @@ function resolveWithUserContext(e: NormalizedFinancialEvent, ctx: UserContext): 
     }
   }
   if (e.type === 'expense' && e.cardKind === null && e.cardLast4) {
-    const card = ctx.cards.find((c) => c.last4 === e.cardLast4);
-    if (card?.kind === 'credit') r.type = 'credit_card_purchase';
-    else if (!card) r.reasons.push('card_not_registered');
+    // Same rule as public.card_for_event: a card without institution matches any bank.
+    const matches = ctx.cards.filter((c) => c.last4 === e.cardLast4 && (!c.institution || c.institution === e.institution));
+    const kinds = new Set(matches.map((c) => c.kind));
+    if (!matches.length) r.reasons.push('card_not_registered');
+    else if (kinds.size > 1) r.reasons.push('card_ambiguous');
+    else if (kinds.has('credit')) r.type = 'credit_card_purchase';
   }
   return r;
 }

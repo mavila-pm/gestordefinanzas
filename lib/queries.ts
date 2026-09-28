@@ -77,7 +77,7 @@ export async function loadRules(supabase: SupabaseClient): Promise<RuleRow[]> {
 /** Ingestion context (cards, own accounts, learned rules) read under the user's session. */
 export async function loadUserContext(supabase: SupabaseClient, userId: string): Promise<UserContext> {
   const [cards, accounts, rules] = await Promise.all([
-    supabase.from('cards').select('last4,kind,active'),
+    supabase.from('cards').select('last4,kind,active,institution_code'),
     supabase.from('accounts').select('last4,active'),
     supabase.from('merchant_rules').select('contains,category:categories(name)'),
   ]);
