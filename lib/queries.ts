@@ -14,7 +14,8 @@ import { entitlementsFor, planConfigFrom, type SubscriptionRow } from '../src/do
 /** Read helpers for the signed-in user. They run with the user's session: RLS scopes every query. */
 
 export interface CategoryOption { id: string; name: string; own: boolean }
-export interface CardOption { id: string; alias: string; institution: string | null; kind: 'credit' | 'debit'; currency: string; last4: string; active: boolean }
+export interface CardOption { id: string; alias: string; institution: string | null; kind: 'credit' | 'debit'; currency: string; last4: string; active: boolean;
+  creditLimitMinor?: number | null; statementDay?: number | null; paymentDay?: number | null }
 export interface AccountOption { id: string; alias: string; institution: string | null; currency: string; last4: string | null; active: boolean }
 
 export interface Catalog {
@@ -26,12 +27,13 @@ export interface Catalog {
 export async function loadCatalog(supabase: SupabaseClient): Promise<Catalog> {
   const [cat, cards, accounts] = await Promise.all([
     supabase.from('categories').select('id,name,user_id').order('name'),
-    supabase.from('cards').select('id,alias,institution_code,kind,currency,last4,active').order('created_at'),
+    supabase.from('cards').select('id,alias,institution_code,kind,currency,last4,active,credit_limit_minor,statement_day,payment_day').order('created_at'),
     supabase.from('accounts').select('id,alias,institution_code,currency,last4,active').order('created_at'),
   ]);
   return {
     categories: (cat.data ?? []).map((c) => ({ id: c.id, name: c.name, own: c.user_id !== null })),
-    cards: (cards.data ?? []).map((c) => ({ id: c.id, alias: c.alias, institution: c.institution_code, kind: c.kind, currency: c.currency, last4: c.last4, active: c.active })),
+    cards: (cards.data ?? []).map((c) => ({ id: c.id, alias: c.alias, institution: c.institution_code, kind: c.kind, currency: c.currency, last4: c.last4, active: c.active,
+      creditLimitMinor: c.credit_limit_minor === null ? null : Number(c.credit_limit_minor), statementDay: c.statement_day, paymentDay: c.payment_day })),
     accounts: (accounts.data ?? []).map((a) => ({ id: a.id, alias: a.alias, institution: a.institution_code, currency: a.currency, last4: a.last4, active: a.active })),
   };
 }

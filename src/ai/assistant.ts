@@ -1,7 +1,7 @@
 import type { Currency } from '../domain/money';
 import type { IncomeMatch, TimelineItem } from '../engine/observed';
 import { compareDebtStrategies, simulatePurchase, type MatchSuggestion, type Plan, type PlanInput } from '../engine/planning';
-import { changeBill, delayIncome, extraDebtPayment, payDebt, type ScenarioResult } from '../engine/scenarios';
+import { cardCycle, changeBill, delayIncome, extraDebtPayment, payDebt, type ScenarioResult } from '../engine/scenarios';
 import type { AssistantAct } from './conversation';
 import { money } from './draft';
 import { findAmounts, fold } from './text';
@@ -71,7 +71,7 @@ export interface View {
   reviewCount: number;
   suggestions: MatchSuggestion[];
   incomeMatches?: IncomeMatch[];
-  cards?: Array<{ name: string; currency: Currency; creditLimitMinor: number | null }>;
+  cards?: Array<{ name: string; currency: Currency; creditLimitMinor: number | null; statementDay?: number | null; paymentDay?: number | null }>;
   recentIncome?: { amountMinor: number; currency: Currency; date: string } | null;
   timeline?: TimelineItem[];
   /** Plan inputs per currency, for what-if scenarios (simulated copies; nothing is written). */
@@ -228,9 +228,13 @@ export function answer(intent: Intent, v: View): Answer | null {
       if (!p || p.freeMinor === null) return { text: 'Para calcularlo me falta tu saldo de hoy y tu próximo ingreso.', actions: [PLAN_LINK], pending: !p?.base ? 'balance' : undefined };
       const real = Math.max(0, p.freeMinor);
       const bank = (v.cards ?? []).find((c) => c.currency === p.currency && c.creditLimitMinor);
+      const withDays = (v.cards ?? []).find((c) => c.currency === p.currency && c.statementDay && c.paymentDay);
+      const cycle = withDays ? cardCycle(v.today, withDays.statementDay!, withDays.paymentDay!) : null;
       return {
         text: `${bank ? `El banco te permite ${money(bank.creditLimitMinor!, p.currency)}. ` : ''}Para este ciclo, tu límite real es ${money(real, p.currency)}${p.status !== 'confirmed' ? ' (estimado)' : ''}.`,
-        rows: [{ label: 'Por qué', value: 'Lo que podrías pagar completo sin tocar tus pagos' }], actions: [PLAN_LINK],
+        rows: [{ label: 'Por qué', value: 'Lo que podrías pagar completo sin tocar tus pagos' },
+          ...(cycle ? [{ label: 'Lo facturado vence', value: `${dm(cycle.dueOfBilled)} (paga el total y no hay interés)` }, { label: 'Lo que compres hoy', value: `se paga el ${dm(cycle.dueOfToday)}` }] : [])],
+        actions: [PLAN_LINK],
       };
     }
     case 'organize': {

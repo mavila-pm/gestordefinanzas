@@ -28,6 +28,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Skip an occurrence ('No lo pago'), what-if panel (retraso / abono), payoff simulator by monthly amount (028) | VERIFIED | — |
 | Camera read idempotency: same photos on an open proposal reuse it (no second charge; SHA-256 key, never the image; re-validated) (029) | VERIFIED (fixture provider) | Real provider timeout/retry behavior NOT VERIFIED (needs key) |
 | Vels: floating bubble + panel on every /app screen, full page (route /app/preguntar), contextual openers, card operating limit, organize block, minimum vs total, 'le debo X' → pending debt (confirm), estimated basics (030, ADR-0011) | VERIFIED | 'Aplicar plan' needs a reservations model (PO); concurrent double submit of 'le debo X' can duplicate own row (low, needs a constraint) |
+| Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Billed vs post-cut amounts need statement data (camera/import) |
 
 ## Blockers / decisions (external)
 - AI provider (DeepSeek and/or Gemini) + server key → then `scripts/ai-bench.ts` against the local baseline (synthetic data only).
@@ -35,7 +36,6 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 - Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); plan limits enforcement.
 
 ## Next work (no external decision needed)
-1. Vels: cycle-exact card reasoning with `cards.statement_day/payment_day` (billed vs post-cut, interest risk).
-2. Copy pass on screens not touched since TASK-021; camera failure-state UX with a real provider (key).
+1. Copy pass on screens not touched since TASK-021; camera failure-state UX with a real provider (key).
 
 PO manual checklist: `docs/runbooks/acceptance-checklist.md`.

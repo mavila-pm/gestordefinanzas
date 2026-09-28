@@ -163,3 +163,15 @@ describe('review reasons (plain language, no internal terms)', () => {
     expect(parseIngestionCodes(null)).toEqual([]);
   });
 });
+
+describe('card cycle form (Vels)', () => {
+  it('days 1–31 and an optional bank limit; empty clears; junk is refused', async () => {
+    const { parseCardCycleForm } = await import('../src/web/transaction-input');
+    const f = (o: Record<string, string>) => parseCardCycleForm((k) => o[k] ?? null);
+    expect(f({ statementDay: '23', paymentDay: '19', limit: '10000' })).toEqual({ ok: true, value: { creditLimitMinor: 1000000, statementDay: 23, paymentDay: 19 } });
+    expect(f({})).toEqual({ ok: true, value: { creditLimitMinor: null, statementDay: null, paymentDay: null } });
+    expect(f({ statementDay: '32' }).ok).toBe(false);
+    expect(f({ paymentDay: '1e1' }).ok).toBe(false);
+    expect(f({ limit: 'mucho' }).ok).toBe(false);
+  });
+});

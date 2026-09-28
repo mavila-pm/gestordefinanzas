@@ -178,6 +178,8 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     const free = plan.freeMinor!;
     const lim = answer({ k: 'card_limit' }, { ...view, cards: [{ name: 'Visa', currency: 'PEN', creditLimitMinor: 2500000 }] })!;
     expect(lim.text).toBe(`El banco te permite S/ 25,000. Para este ciclo, tu límite real es S/ ${(free / 100).toLocaleString('en-US')}.`);
+    const cyc = answer({ k: 'card_limit' }, { ...view, cards: [{ name: 'Visa', currency: 'PEN', creditLimitMinor: null, statementDay: 23, paymentDay: 19 }] })!;
+    expect(cyc.rows!.map((r) => r.value)).toEqual(['Lo que podrías pagar completo sin tocar tus pagos', '19 oct (paga el total y no hay interés)', 'se paga el 19 nov']);
     const org = answer({ k: 'organize' }, view)!;
     expect(org.title).toMatch(/^Hasta el /);
     expect(org.rows!.at(-1)!.label).toBe('Libre');

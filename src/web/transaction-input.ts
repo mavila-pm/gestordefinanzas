@@ -370,3 +370,13 @@ export function parseSplitForm(raw: unknown): { ok: true; value: Array<{ categor
   }
   return { ok: true, value: out };
 }
+
+/** Card cycle (Vels, ADR-0011): bank limit and statement/payment days. All optional; empty clears the value. */
+export function parseCardCycleForm(get: Get): Parsed<{ creditLimitMinor: number | null; statementDay: number | null; paymentDay: number | null }> {
+  const day = (k: string) => { const v = str(get(k)); if (!v) return null; const n = Number(v); return /^\d{1,2}$/.test(v) && n >= 1 && n <= 31 ? n : undefined; };
+  const s = day('statementDay'); const p = day('paymentDay');
+  const limitRaw = str(get('limit'));
+  const limit = limitRaw ? parseAmountToMinor(limitRaw) : null;
+  if (s === undefined || p === undefined || limit === undefined || (limitRaw && limit === null)) return fail('invalid_request');
+  return { ok: true, value: { creditLimitMinor: limit, statementDay: s, paymentDay: p } };
+}

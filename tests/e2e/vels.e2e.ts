@@ -85,6 +85,21 @@ await runSuite('vels', async ({ page, check }) => {
   check('desktop: floating panel (not full screen), bottom-right', !!db && db.width <= 420 && db.x > 600, JSON.stringify(db));
   await page.getByRole('button', { name: 'Cerrar' }).last().click();
   check('close button closes the panel', !(await panel(page).isVisible()));
+  // Card cycle saved in the visual interface → Vels uses it (one core, two views).
+  await page.goto(`${BASE}/app/tarjetas`);
+  await page.getByRole('button', { name: 'Ciclo de Tarjeta BCP' }).click();
+  const cyc = page.locator('dialog[open] form[aria-label="Ciclo de Tarjeta BCP"]');
+  await cyc.locator('input[name=statementDay]').fill('23');
+  await cyc.locator('input[name=paymentDay]').fill('19');
+  await act(page, () => cyc.locator('button[type=submit]').click());
+  const saved = (await sb.from('cards').select('statement_day,payment_day,credit_limit_minor').single()).data;
+  check('card cycle saved on the person\'s card (limit kept)', saved?.statement_day === 23 && saved?.payment_day === 19 && Number(saved?.credit_limit_minor) === 1000000, JSON.stringify(saved));
+  await openVels(page);
+  await say(page, '¿Hasta cuánto puedo usar la tarjeta?');
+  const cy = await lastVels(page);
+  check('Vels reasons by cycle: when the billed amount is due and when today\'s purchase is paid', cy.includes('Lo facturado vence') && cy.includes('Lo que compres hoy') && cy.includes('se paga el'), cy);
+  await page.keyboard.press('Escape');
+
   await page.goto(`${BASE}/app/preguntar`);
   check('Vels page (existing route) says Vels and has no second bubble', ((await page.locator('h1').textContent()) ?? '') === 'Vels' && (await page.getByTestId('vels-fab').count()) === 0);
 });

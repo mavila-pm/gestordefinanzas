@@ -95,3 +95,14 @@ describe('stated preference: "no me importa quedarme en cero si pago deuda"', ()
     expect(extraDebtPayment(buildPlan(input({ base: null })), debts, true)).toBeNull();
   });
 });
+
+describe('card cycle (cut 23, pay 19 → a purchase today is paid next cycle)', () => {
+  it('before the cut: billed on this cut, paid the following 19th', async () => {
+    const { cardCycle } = await import('../src/engine/scenarios');
+    expect(cardCycle('2026-10-05', 23, 19)).toEqual({ lastCut: '2026-09-23', nextCut: '2026-10-23', dueOfBilled: '2026-10-19', dueOfToday: '2026-11-19' });
+    expect(cardCycle('2026-10-25', 23, 19)).toEqual({ lastCut: '2026-10-23', nextCut: '2026-11-23', dueOfBilled: '2026-11-19', dueOfToday: '2026-12-19' });
+    expect(cardCycle('2026-02-10', 31, 15)!.nextCut).toBe('2026-02-28'); // short month
+    expect(cardCycle('2026-10-05', 5, 25)).toEqual({ lastCut: '2026-09-05', nextCut: '2026-10-05', dueOfBilled: '2026-09-25', dueOfToday: '2026-10-25' });
+    expect(cardCycle('2026-10-05', 0, 19)).toBeNull();
+  });
+});

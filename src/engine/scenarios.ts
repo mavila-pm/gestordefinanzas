@@ -156,3 +156,33 @@ export function extraDebtPayment(plan: Pick<Plan, 'freeMinor' | 'until' | 'lines
   return { amountMinor: amount, target: target?.name ?? '', usesCushion: allowZero && amount > Math.max(0, plan.freeMinor), until: plan.until,
     interestSavedMinor: target?.annualRateBp != null ? Math.round((amount * target.annualRateBp) / 10000 / 12) : null };
 }
+
+// ── Card cycle: what you buy today, when you pay it (ADR-0011) ─────────────────────────────────────────────
+export interface CardCycle { lastCut: string; nextCut: string; dueOfBilled: string; dueOfToday: string }
+
+const iso = (y: number, m: number, d: number) => {
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate(); // m is 1-based here → day 0 of next month
+  return new Date(Date.UTC(y, m - 1, Math.min(d, last))).toISOString().slice(0, 10);
+};
+const shift = (y: number, m: number, k: number): [number, number] => { const t = new Date(Date.UTC(y, m - 1 + k, 1)); return [t.getUTCFullYear(), t.getUTCMonth() + 1]; };
+
+/**
+ * From the card's statement (cut) day and payment day: purchases up to the cut are billed on it and paid on the
+ * following payment day; purchases after the cut wait a whole cycle. Days above the month length use its last day.
+ */
+export function cardCycle(today: string, statementDay: number, paymentDay: number): CardCycle | null {
+  if (![statementDay, paymentDay].every((d) => Number.isInteger(d) && d >= 1 && d <= 31)) return null;
+  const [y, m] = [Number(today.slice(0, 4)), Number(today.slice(5, 7))];
+  const cutThis = iso(y, m, statementDay);
+  const [py, pm] = shift(y, m, -1); const [ny, nm] = shift(y, m, 1);
+  const lastCut = today <= cutThis ? iso(py, pm, statementDay) : cutThis;
+  const nextCut = today <= cutThis ? cutThis : iso(ny, nm, statementDay);
+  const dueAfter = (cut: string) => {
+    const [cy, cm] = [Number(cut.slice(0, 4)), Number(cut.slice(5, 7))];
+    const same = iso(cy, cm, paymentDay);
+    if (same > cut) return same;
+    const [xy, xm] = shift(cy, cm, 1);
+    return iso(xy, xm, paymentDay);
+  };
+  return { lastCut, nextCut, dueOfBilled: dueAfter(lastCut), dueOfToday: dueAfter(nextCut) };
+}

@@ -3,7 +3,7 @@ import { Icon } from '../../../components/ui/icon';
 import { Sheet } from '../../../components/ui/sheet';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { activeOnly, loadCatalog } from '../../../lib/queries';
-import { createAccountAction, createCardAction, deactivateAction } from '../actions';
+import { createAccountAction, createCardAction, deactivateAction, updateCardCycleAction } from '../actions';
 
 export const metadata = { title: 'Cuentas y tarjetas' };
 const BANKS = <><option value="BCP">BCP</option><option value="BBVA">BBVA</option><option value="INTERBANK">Interbank</option><option value="">Otro</option></>;
@@ -62,7 +62,26 @@ export default async function CardsAndAccounts() {
               return (
                 <li key={c.id}>
                   <span className="setting-text"><span>{c.alias} ****{c.last4}</span><small className="muted">{detail}</small></span>
-                  <Options id={c.id} kind="card" name={c.alias} detail={detail} />
+                  <span className="actions" style={{ gap: 4 }}>
+                    {c.kind === 'credit' && (
+                      <Sheet label="Ciclo" triggerClassName="link small-link" triggerLabel={`Ciclo de ${c.alias}`} title={c.alias} subtitle="Vels lo usa para decirte cuándo pagas lo que compras.">
+                        <div className="sheet-body">
+                          <ActionForm action={updateCardCycleAction} label={`Ciclo de ${c.alias}`} closeOnSuccess>
+                            <input type="hidden" name="id" value={c.id} />
+                            <div className="grid">
+                              <label className="stack-sm"><span>Día de corte</span><input name="statementDay" inputMode="numeric" maxLength={2} defaultValue={c.statementDay ?? ''} placeholder="23" /></label>
+                              <label className="stack-sm"><span>Día de pago</span><input name="paymentDay" inputMode="numeric" maxLength={2} defaultValue={c.paymentDay ?? ''} placeholder="19" /></label>
+                            </div>
+                            <label className="stack-sm"><span>Línea del banco</span><span className="money-input"><span className="cur" aria-hidden="true">{c.currency === 'USD' ? 'US$' : 'S/'}</span>
+                              <input name="limit" inputMode="decimal" defaultValue={c.creditLimitMinor ? (c.creditLimitMinor / 100).toFixed(2) : ''} placeholder="10000" /></span></label>
+                            <small className="muted">La línea no es tu presupuesto: Vels calcula cuánto puedes usar de verdad.</small>
+                            <button type="submit" className="wide">Guardar</button>
+                          </ActionForm>
+                        </div>
+                      </Sheet>
+                    )}
+                    <Options id={c.id} kind="card" name={c.alias} detail={detail} />
+                  </span>
                 </li>
               );
             })}

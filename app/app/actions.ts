@@ -13,7 +13,7 @@ import { loadUserContext } from '../../lib/queries';
 import { SupabaseImportRepository } from '../../src/infrastructure/supabase/import-repository';
 import { parseImportForm, importOutcomeText } from '../../src/web/import-input';
 import {
-  errorText, isUuid, parseAccountForm, parseCardForm, parseSplitForm, parseDebtForm, parseFixedExpenseForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
+  errorText, isUuid, parseAccountForm, parseCardCycleForm, parseCardForm, parseSplitForm, parseDebtForm, parseFixedExpenseForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
 } from '../../src/web/transaction-input';
 
 export interface ActionState {
@@ -333,4 +333,19 @@ export async function splitAction(_prev: ActionState, form: FormData): Promise<A
   }
   revalidatePath(`/app/movimientos/${id}`);
   return done(clear ? 'División eliminada.' : 'División guardada.');
+}
+
+/** Card cycle for Vels (ADR-0011): bank limit + statement/payment days on the person's own credit card (RLS). */
+export async function updateCardCycleAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const parsed = parseCardCycleForm((k) => form.get(k));
+  if (!isUuid(id) || !parsed.ok) return { error: 'Revisa los días (1 al 31) y el monto.' };
+  const supabase = await createSupabaseServerClient();
+  const user = await authUser(supabase);
+  if (!user) return { error: errorText('not_authenticated') };
+  const v = parsed.value;
+  const { data, error } = await supabase.from('cards').update({ credit_limit_minor: v.creditLimitMinor, statement_day: v.statementDay, payment_day: v.paymentDay })
+    .eq('id', id).eq('kind', 'credit').select('id');
+  if (error || !data?.length) return { error: 'No se guardó. Intenta de nuevo.' };
+  return done('Guardado.');
 }

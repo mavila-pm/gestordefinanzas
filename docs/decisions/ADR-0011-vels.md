@@ -20,7 +20,8 @@ debt, never a payment.
 
 **Card operating limit.** Bank limit ≠ user's budget. Operating limit (PROPUESTO) = today's free money until the next
 income (what can be paid in full without touching planned payments), labelled "estimado" when the plan is partial.
-Statement/payment days on `cards` are not yet used for cycle-exact reasoning.
+Card cycle (`cardCycle`): from `cards.statement_day/payment_day` (set in Tarjetas → Ciclo) Vels says when the billed
+balance is due (pay the total → no interest) and when a purchase made today is paid.
 
 **UX.** Floating 56 px button bottom-right (above the bottom nav on mobile, safe areas); native `<dialog>` (focus trap,
 Escape, backdrop click); opens before any fetch (measured < 100 ms) and loads messages + ≤3 openers after. Mobile:
@@ -32,4 +33,4 @@ Openers come from real state first (income received, card due soon, several paym
 invented date) and Vels says so.
 
 **Not done.** "Aplicar plan" (persisted reservations) needs a reservations model — pending product decision.
-Cycle-exact card reasoning (statement/payment days, billed vs post-cut) — next.
+Billed vs post-cut split needs statement amounts (camera/import).

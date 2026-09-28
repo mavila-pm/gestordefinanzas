@@ -24,7 +24,7 @@ async function view(supabase: SupabaseClient): Promise<View> {
   const [d, review, cards] = await Promise.all([
     loadPlanningData(supabase),
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
-    supabase.from('cards').select('alias,currency,credit_limit_minor').limit(20),
+    supabase.from('cards').select('alias,currency,credit_limit_minor,statement_day,payment_day').eq('active', true).limit(20),
   ]);
   const currencies = [...new Set<'PEN' | 'USD'>(['PEN', ...d.obligations.map((o) => o.currency), ...d.incomes.map((i) => i.currency), ...(Object.keys(d.balances) as Array<'PEN' | 'USD'>)])];
   return {
@@ -35,7 +35,7 @@ async function view(supabase: SupabaseClient): Promise<View> {
     reviewCount: review.count ?? 0,
     suggestions: d.suggestions,
     incomeMatches: d.incomeMatches,
-    cards: (cards.data ?? []).map((c) => ({ name: c.alias as string, currency: c.currency, creditLimitMinor: c.credit_limit_minor === null ? null : Number(c.credit_limit_minor) })),
+    cards: (cards.data ?? []).map((c) => ({ name: c.alias as string, currency: c.currency, creditLimitMinor: c.credit_limit_minor === null ? null : Number(c.credit_limit_minor), statementDay: c.statement_day, paymentDay: c.payment_day })),
     recentIncome: d.recentIncome,
     timeline: planTimeline(d, 14),
     inputs: Object.fromEntries(currencies.map((c) => [c, planInputFor(d, c)])),
