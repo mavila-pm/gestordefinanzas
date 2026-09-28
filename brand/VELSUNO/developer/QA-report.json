@@ -1,0 +1,21 @@
+{
+  "date": "2026-09-27",
+  "pdf_pages": 48,
+  "pdf_text_bounds": "PASS",
+  "png_dimensions": "PASS",
+  "transparent_logo": "PASS",
+  "svg_parse_count": 52,
+  "svg_real_vectors": "PASS",
+  "ui_screens": 13,
+  "gallery_relative_links": "PASS",
+  "contrast_pairs": 92,
+  "contrast_pass": 92,
+  "visual_review": "All 48 PDF pages and all 13 UI previews inspected in contact sheets; changed pages reviewed again.",
+  "limitations": [
+    "No legal naming clearance",
+    "No live product accessibility audit",
+    "No verified production bank integration implied",
+    "No native Figma document"
+  ],
+  "selected_visual": "02 / Apertura"
+}
