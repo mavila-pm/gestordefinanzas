@@ -16,6 +16,8 @@ export interface MessageCard {
   acts?: Array<{ label: string; act: AssistantAct; fields: Record<string, string> }>;
   /** Camera read in "Preguntar": the proposal waits here (server-side row) until the person confirms. */
   vision?: Patch[];
+  /** Idempotency fingerprint of the photos read (never the image itself); server-side only. */
+  readKey?: string;
   /** Assistant: a bare value in the next message answers this. */
   pending?: 'balance' | 'income_amount';
   stop?: boolean;

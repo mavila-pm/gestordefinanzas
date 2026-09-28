@@ -204,3 +204,15 @@ describe('onboarding → domain rows (§67), plan display (§48)', () => {
     expect(aiPlanFrom(null, null, now)).toBe('free');
   });
 });
+
+describe('camera read idempotency key', () => {
+  it('same bytes → same key; different or reordered photos → different key; never contains the bytes', async () => {
+    const { imageReadKey } = await import('../src/ai/image');
+    const a = new Uint8Array([0xff, 0xd8, 1, 2, 3]); const b = new Uint8Array([0x89, 0x50, 9, 9]);
+    const k = await imageReadKey([a, b]);
+    expect(k).toMatch(/^[0-9a-f]{64}$/);
+    expect(await imageReadKey([a, b])).toBe(k);
+    expect(await imageReadKey([b, a])).not.toBe(k);
+    expect(await imageReadKey([a])).not.toBe(k);
+  });
+});

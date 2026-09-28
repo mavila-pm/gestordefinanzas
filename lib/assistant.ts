@@ -136,12 +136,12 @@ export async function assistantAct(supabase: SupabaseClient, userId: string, act
  * before that. The image itself is never stored.
  */
 export async function assistantImages(supabase: SupabaseClient, userId: string, files: File[]): Promise<void> {
-  const read = await readImages(supabase, files, 'consulta posterior a la configuración', (b) => say(supabase, userId, 'user', b));
+  const read = await readImages(supabase, files, 'consulta posterior a la configuración', (b) => say(supabase, userId, 'user', b), 'assistant');
   if (!read.ok) { if ('text' in read) await say(supabase, userId, 'velsuno', read.text, read.stop ? { stop: true } : null); return; }
   const { proposal } = read;
   const doubtful = proposal.rows.some((row) => row.doubtful);
   await say(supabase, userId, 'velsuno', doubtful ? 'Encontré esto. Confirma los datos marcados:' : 'Encontré esto:', {
-    title: proposal.title, rows: proposal.rows, vision: proposal.patches,
+    title: proposal.title, rows: proposal.rows, vision: proposal.patches, readKey: read.readKey,
     actions: [{ kind: 'vision_confirm', label: 'Confirmar' }, { kind: 'vision_discard', label: 'Descartar' }],
   });
   await prune(supabase);

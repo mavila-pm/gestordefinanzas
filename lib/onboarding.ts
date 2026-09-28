@@ -1,9 +1,9 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { domainWrites } from '../src/ai/apply';
+import { domainWrites, validPatches } from '../src/ai/apply';
 import type { ChatMessage, MessageCard } from '../src/ai/conversation';
 import { canStart, compactState, hasFacts, mergePatches, nextQuestion, summarize, type Changed } from '../src/ai/draft';
-import { checkImage, IMAGE_ERROR_TEXT } from '../src/ai/image';
+import { checkImage, IMAGE_ERROR_TEXT, imageReadKey, READ_REUSE_MINUTES } from '../src/ai/image';
 import { interpret, isSmallTalk } from '../src/ai/interpreter';
 import { EXTRACT_SYSTEM, VISION_SYSTEM } from '../src/ai/prompts';
 import { sanitizeUserText } from '../src/ai/sanitize';
@@ -31,7 +31,7 @@ export async function loadOnboarding(supabase: SupabaseClient): Promise<Onboardi
 export async function loadMessages(supabase: SupabaseClient, thread: 'onboarding' | 'assistant', limit = 60): Promise<ChatMessage[]> {
   const { data } = await supabase.from('conversation_messages').select('id,role,body,card').eq('thread', thread).order('created_at', { ascending: false }).limit(limit);
   return (data ?? []).reverse().map((m) => {
-    const { vision: _proposal, ...card } = (m.card ?? {}) as MessageCard; // the pending proposal stays server-side
+    const { vision: _proposal, readKey: _key, ...card } = (m.card ?? {}) as MessageCard; // the pending proposal stays server-side
     return { id: m.id, role: m.role, body: m.body, card: m.card ? card : null };
   });
 }
@@ -129,27 +129,45 @@ export async function onboardingSummary(supabase: SupabaseClient, userId: string
   await say(supabase, userId, 'onboarding', 'velsuno', 'Esto es lo que tengo:', { summary: summarize(state.draft), actions: [{ kind: 'correct', label: 'Corregir' }, { kind: 'start', label: 'Empezar' }] });
 }
 
-export type ImageRead = { ok: true; proposal: VisionProposal } | { ok: false; text: string; stop?: boolean } | { ok: false; empty: true };
+export type ImageRead = { ok: true; proposal: VisionProposal; readKey: string; reused?: boolean } | { ok: false; text: string; stop?: boolean } | { ok: false; empty: true };
 
 /**
  * Camera read (§12-§18), shared by onboarding and "Preguntar": validate → temporary processing → structured facts.
  * The image is never stored (only in this request's memory); nothing is applied here.
  */
-export async function readImages(supabase: SupabaseClient, files: File[], context: string, echo: (body: string) => Promise<void>): Promise<ImageRead> {
+export async function readImages(supabase: SupabaseClient, files: File[], context: string, echo: (body: string) => Promise<void>,
+  thread: 'onboarding' | 'assistant' = 'onboarding'): Promise<ImageRead> {
+  const checked: Uint8Array[] = [];
   const images = [];
   for (const f of files.slice(0, 4)) {
     const check = checkImage(new Uint8Array(await f.arrayBuffer()));
     if (!check.ok) return { ok: false, text: IMAGE_ERROR_TEXT[check.error] };
+    checked.push(check.bytes);
     images.push({ mime: check.mime, base64: Buffer.from(check.bytes).toString('base64') });
   }
   if (!images.length) return { ok: false, empty: true };
   await echo(images.length === 1 ? 'Foto enviada' : `${images.length} fotos enviadas`);
+  // Same photos again soon (double tap, "Reintentar" after a slow answer): reuse the first read — no second charge.
+  const readKey = await imageReadKey(checked);
+  checked.length = 0;
+  const since = new Date(Date.now() - READ_REUSE_MINUTES * 60_000).toISOString();
+  // Only while that proposal is still the latest Velsuno message (unanswered): once confirmed or rejected, re-read.
+  const { data: prior } = await supabase.from('conversation_messages').select('card').eq('thread', thread).eq('role', 'velsuno')
+    .gte('created_at', since).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  const reused = (prior?.card as MessageCard | null)?.readKey === readKey ? prior!.card as MessageCard : null;
+  // Conversation rows are client-insertable (own rows): the stored proposal is re-validated like any untrusted input.
+  const reusedPatches = validPatches(reused?.vision);
+  if (reusedPatches.length && typeof reused?.title === 'string' && Array.isArray(reused.rows)) {
+    images.length = 0;
+    const rows = reused.rows.slice(0, 8).filter((r) => r && typeof r === 'object').map((r) => ({ label: String(r.label).slice(0, 40), value: String(r.value).slice(0, 60), doubtful: !!r.doubtful }));
+    return { ok: true, readKey, reused: true, proposal: { title: reused.title.slice(0, 80), rows, patches: reusedPatches } };
+  }
   const r = await infer(supabase, { operation: 'vision_extract', system: VISION_SYSTEM, json: true, images,
     messages: [{ role: 'user', content: `Extrae los datos. Contexto: ${context}` }] }, (t) => validateVision(t) !== null);
   images.length = 0; // discard the image data as soon as the read is done
   if (!r.ok) return { ok: false, text: STOP_TEXT[r.reason], stop: r.reason !== 'failed' };
   const proposal = proposalFrom(validateVision(r.text)!);
-  return proposal ? { ok: true, proposal } : { ok: false, text: 'No encontré datos claros en esa imagen. Puedes escribirlos o probar con otra captura.' };
+  return proposal ? { ok: true, readKey, proposal } : { ok: false, text: 'No encontré datos claros en esa imagen. Puedes escribirlos o probar con otra captura.' };
 }
 
 export async function onboardingImages(supabase: SupabaseClient, userId: string, files: File[]): Promise<void> {
@@ -161,7 +179,7 @@ export async function onboardingImages(supabase: SupabaseClient, userId: string,
   await save(supabase, userId, state.draft);
   const doubtful = proposal.rows.some((row) => row.doubtful);
   await say(supabase, userId, 'onboarding', 'velsuno', doubtful ? 'Encontré esto. Confirma los datos marcados:' : 'Encontré esto:',
-    { title: proposal.title, rows: proposal.rows, actions: [{ kind: 'vision_confirm', label: 'Confirmar' }, { kind: 'vision_discard', label: 'Corregir' }] });
+    { title: proposal.title, rows: proposal.rows, vision: proposal.patches, readKey: read.readKey, actions: [{ kind: 'vision_confirm', label: 'Confirmar' }, { kind: 'vision_discard', label: 'Corregir' }] });
 }
 
 export async function onboardingVision(supabase: SupabaseClient, userId: string, confirm: boolean): Promise<void> {

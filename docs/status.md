@@ -26,6 +26,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Recurrence lifecycle: pause / resume / end, edit history, per-income controls (026, ADR-0010) | VERIFIED | — |
 | Received ↔ expected income E2E: link moves horizon, dismiss keeps data, tie → choose, PEN/USD apart, no auto-link, idempotent, A/B (027) | VERIFIED | — |
 | Skip an occurrence ('No lo pago'), what-if panel (retraso / abono), payoff simulator by monthly amount (028) | VERIFIED | — |
+| Camera read idempotency: same photos on an open proposal reuse it (no second charge; SHA-256 key, never the image; re-validated) (029) | VERIFIED (fixture provider) | Real provider timeout/retry behavior NOT VERIFIED (needs key) |
 
 ## Blockers / decisions (external)
 - AI provider (DeepSeek and/or Gemini) + server key → then `scripts/ai-bench.ts` against the local baseline (synthetic data only).
@@ -33,6 +34,6 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 - Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); plan limits enforcement.
 
 ## Next work (no external decision needed)
-1. Camera: retry + failure states UX; copy pass on screens not touched since TASK-021.
+1. Copy pass on screens not touched since TASK-021; camera failure-state UX with a real provider (key).
 
 PO manual checklist: `docs/runbooks/acceptance-checklist.md`.

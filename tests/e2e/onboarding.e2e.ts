@@ -119,17 +119,22 @@ await runSuite('onboarding', async ({ page, check }) => {
   const cardPays = ((await api.from('fixed_expenses').select('name')).data ?? []).filter((o) => o.name === 'Tarjeta BCP');
   check('confirming updates the same card (no duplicate debt or payment)', ((await api.from('debts').select('id')).data?.length ?? 0) === debtsBefore && cardPays.length === 1, `${debtsBefore} ${cardPays.length}`);
   check('Preguntar camera confirmation answers briefly', (await lastVelsuno(page)).startsWith('Listo'), await lastVelsuno(page));
+  const monthReads = async () => (await usage()).find((r) => r.bucket.startsWith('m:'))?.camera_reads ?? 0;
+  await act(page, () => page.setInputFiles('input[type=file]', 'tests/fixtures/ai/vision/card-bcp-pen.png'));
+  const reads1 = await monthReads(); // a new read after the confirmed one is charged
+  await act(page, () => page.setInputFiles('input[type=file]', 'tests/fixtures/ai/vision/card-bcp-pen.png'));
+  check('same photo again while the proposal is open (retry / double tap): same proposal, no second camera read', (await lastVelsuno(page)).includes('Encontré esto') && (await monthReads()) === reads1, `${reads1} → ${await monthReads()}`);
 
   // Plan / usage view and demo controls.
   await page.goto(`${BASE}/app/cuenta`);
   const ai = (await page.getByTestId('ai-usage').textContent()) ?? '';
-  check('usage shown as a bar and camera count, never tokens', ai.includes('Conversación') && ai.includes('1 de 2') && !/token/i.test(ai), ai);
+  check('usage shown as a bar and camera count, never tokens', ai.includes('Conversación') && ai.includes('2 de 2') && !/token/i.test(ai), ai);
   const demo = page.getByTestId('demo-controls');
   await demo.locator('label.segment', { hasText: 'Plus' }).click();
   await act(page, () => demo.getByRole('button', { name: 'Aplicar' }).click());
   await page.reload();
   const ai2 = (await page.getByTestId('ai-usage').textContent()) ?? '';
-  check('demo simulates Plus limits (50 camera reads; the Preguntar read counts), labelled as simulation', ai2.includes('1 de 50') && ai2.includes('Simulación Plus'), ai2);
+  check('demo simulates Plus limits (50 camera reads; the Preguntar read counts), labelled as simulation', ai2.includes('2 de 50') && ai2.includes('Simulación Plus'), ai2);
   check('the real subscription is untouched', ((await api.from('subscriptions').select('plan')).data ?? []).length === 0);
 
   // Demo reset restores the first-time experience and removes ONLY what onboarding created.

@@ -96,3 +96,20 @@ export const IMAGE_ERROR_TEXT: Record<ImageError, string> = {
   too_small: 'La imagen es muy pequeña para leerla bien.',
   too_big_dimensions: 'La imagen es demasiado grande. Prueba con una captura de pantalla.',
 };
+
+/**
+ * Idempotency key of one camera read: SHA-256 over the already-stripped image bytes (order-sensitive). It is a
+ * one-way fingerprint — the image cannot be rebuilt from it — used only to avoid reading (and charging) the same
+ * photos twice after a double tap or "Reintentar". Web Crypto: works in Node and edge runtimes.
+ */
+export async function imageReadKey(images: readonly Uint8Array[]): Promise<string> {
+  const parts: Uint8Array[] = [];
+  for (const b of images) { parts.push(new TextEncoder().encode(`${b.length}:`)); parts.push(b); }
+  const all = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) { all.set(p, o); o += p.length; }
+  const digest = await crypto.subtle.digest('SHA-256', all);
+  return Array.from(new Uint8Array(digest), (x) => x.toString(16).padStart(2, '0')).join('');
+}
+/** A repeated read of the same photos within this window reuses the first proposal. PROPUESTO. */
+export const READ_REUSE_MINUTES = 10;
