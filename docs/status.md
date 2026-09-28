@@ -25,6 +25,7 @@ Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e
 | TASK-019 Velsuno design system, shell, access, welcome, dashboard, movements, detail, review | **VERIFIED** (functional + visual) | E2E regression; `visual` 54 screenshots, 8 breakpoints, light/dark, 0 horizontal overflow | PO visual walkthrough (checklist); other screens inherit tokens but keep the previous layout |
 | TASK-020 Dividir gasto (splits) | **VERIFIED** | Migrations 000014-15; DB tests incl. A/B, privileges, stale edit, guard (mutation-checked); unit; E2E 18/18 | — |
 | TASK-021 Product UX pass: profile names, Ajustes, Análisis, Presupuestos, Próximos pagos, Cuentas, Lo que recuerda, Conexiones, Tu plan, Más | **VERIFIED** | Migration 000016; unit (profile); E2E 163/163; visual 114 screenshots + UX audit (console/hydration, duplicate ids, labels, 44px targets) 0 issues | PO walkthrough on a real phone |
+| TASK-022 Cash-flow planning: próximos pagos, próximo ingreso, Dinero libre, distribución, ¿puedo gastar?, cambios de monto, estrategias de deuda | **VERIFIED** | ADR-0005; migration 000017; unit 23 + DB 4; E2E `cashflow` 24/24 (synthetic demo s11); visual incl. planning screens | Reminder delivery (email/push) needs a provider; income receipts are not auto-linked to expected incomes yet (horizon uses dates only) |
 
 ## Backlog (known debt)
 | Item | Origin | Note |
@@ -42,6 +43,7 @@ Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e
 - Gmail OAuth, Android SMS app: not started (post-beta per §53).
 
 ## FINAL MANUAL ACCEPTANCE CHECKLIST (run on the Preview when ready)
+- Dinero libre with your real data: saldo de hoy, próximo ingreso, tus pagos (monto/fecha dudosa), básicos y colchón; check that every number is explained.
 - Velsuno UI on a real phone (one hand): bottom navigation, Dividir gasto sheet, keyboard over the sheet, light/dark from Más.
 - [ ] TASK-003: password recovery email → `/reset-password` → change password → login with the new one; old one rejected.
 - [ ] TASK-004: "Por revisar" queue, correct a movement, manual entry, register a card.

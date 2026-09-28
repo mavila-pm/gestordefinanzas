@@ -89,3 +89,9 @@ detail meta testid. Cleanup 0|0.
 0 horizontal overflow, 0 UX audit issues (console errors/hydration, duplicate ids, unlabeled fields, touch targets < 40px on
 mobile). Lesson: a route-level `loading.tsx` made streamed pages answer 200 before `notFound()` (another user's movement
 must be 404) — removed. Cleanup 0|0.
+
+## Cash-flow planning (TASK-022) — 2026-09-28
+New suite `cashflow` (seed s11: synthetic demo — balance S/ 5,000, salary on the 15th, car 9–10 paying on the 7th,
+card, internet with unknown amount, phone, rent after the income, yearly insurance, electricity 129→160, unlinked car
+payment, a salary that just came in, two debts one without rate). Assertions are date-independent (arithmetic and
+honesty rules). Full regression: 163 + 24 = **187/187**; visual 132 screenshots, 0 overflow, 0 UX issues.

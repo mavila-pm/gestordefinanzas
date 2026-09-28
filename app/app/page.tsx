@@ -107,8 +107,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <div data-testid="data-health" className="stack-sm" style={{ gap: 6 }}>
           <span className={`state ${health.level.toLowerCase()}`}>{HEALTH_LABEL[health.level]}</span>
           <small style={{ opacity: .82 }}>
-            {pen.savingsLabel === 'confirmed' ? 'Ahorro confirmado: todos tus movimientos del mes están revisados.' : 'Ahorro estimado'}
-            {health.reasons.length > 0 && ` · ${health.reasons.join(' · ')}`}
+            {pen.savingsLabel === 'confirmed' ? 'Ahorro confirmado' : 'Ahorro estimado'}
+            {health.reasons.length > 0 && <>: {health.reasons.join('; ')}</>}
           </small>
         </div>
         <div className="split">
@@ -125,7 +125,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               <span className="setting-text">
                 <span className="muted small">{free.status === 'confirmed' ? 'Dinero libre' : 'Dinero libre estimado'}{free.nextIncome ? ` hasta el ${shortDate(free.nextIncome.date)}` : ''}</span>
                 <strong className="big">{free.freeMinor < 0 ? 'Faltan ' : ''}{money(free.freeMinor, 'PEN')}</strong>
-                <small className="muted">Ya descontamos {money(free.reservedMinor, 'PEN')} en próximos pagos.{free.missing.length ? ` Falta confirmar ${free.missing.length} dato${free.missing.length > 1 ? 's' : ''}.` : ''}</small>
+                <small className="muted">Ya descontamos {money(free.reservedMinor, 'PEN')} en próximos pagos.{free.missing.length ? ` ${free.missing.length === 1 ? 'Falta 1 dato' : `Faltan ${free.missing.length} datos`} por confirmar.` : ''}</small>
               </span>
               <Icon name="chevron" />
             </>
@@ -141,7 +141,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       {incomePlan && incomePlan.base && planning.recentIncome && (
         <p className="notice positive" data-testid="income-event">
           <span>Entraron <strong>{money(incomePlan.base.amountMinor, 'PEN')}</strong> el {shortDate(planning.recentIncome.date)}.
-            {incomePlan.until ? ` Hay ${money(incomePlan.reservedMinor, 'PEN')} por cubrir antes del próximo ingreso. ` : ' '}
+{' '}
             <Link href={`/app/plan?ingreso=${planning.recentIncome.transactionId}`}>Ver distribución</Link></span>
         </p>
       )}

@@ -70,7 +70,7 @@ describe('Dinero libre (safe-to-spend): today -> next income', () => {
     expect(p.nextIncome?.date).toBe('2026-10-15');
     expect(p.until).toBe('2026-10-14');
     const byLabel = Object.fromEntries(p.lines.map((l) => [l.label, l.amountMinor]));
-    expect(byLabel).toMatchObject({ Carro: 95000, Tarjeta: 50000, Internet: null, Celular: 10000, 'Gastos básicos': Math.round(80000 * 17 / 30), Colchón: 40000 });
+    expect(byLabel).toMatchObject({ Carro: 95000, Tarjeta: 50000, Internet: null, Celular: 10000, 'Gastos básicos': Math.round(80000 * 17 / 30 / 100) * 100, Colchón: 40000 });
     expect(byLabel).not.toHaveProperty('Alquiler'); // due 20 Oct: after the next income
     expect(p.lines.filter((l) => l.kind === 'essentials')).toHaveLength(1);
     expect(p.reservedMinor).toBe(p.lines.reduce((s, l) => s + (l.amountMinor ?? 0), 0));
@@ -106,7 +106,7 @@ describe('Dinero libre (safe-to-spend): today -> next income', () => {
     expect(p.lines.filter((l) => l.label === 'Préstamo')).toEqual([expect.objectContaining({ kind: 'debt', amountMinor: 30000, date: '2026-10-12' })]);
     const r = p.lines.find((l) => l.kind === 'reserve')!;
     expect(r.label).toBe('Para Seguro');
-    expect(r.amountMinor).toBe(Math.round(120000 * 17 / (12 * 30.4375)));
+    expect(r.amountMinor).toBe(Math.round(120000 * 17 / (12 * 30.4375) / 100) * 100);
   });
   it('PEN and USD are separate plans', () => {
     const p = buildPlan(demo({ obligations: [ob({ id: 'u', name: 'Netflix', currency: 'USD', amountMinor: 1500 })] }));

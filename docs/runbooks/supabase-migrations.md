@@ -31,6 +31,7 @@
 | 20260928000014_transaction_allocations.sql | transaction_allocations | 2026-09-28 |
 | 20260928000015_split_stale_errcode.sql | split_stale_errcode | 2026-09-28 |
 | 20260928000016_profile_names.sql | profile_names | 2026-09-28 |
+| 20260928000017_cashflow_planning.sql | cashflow_planning | 2026-09-28 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

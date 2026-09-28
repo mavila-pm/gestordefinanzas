@@ -176,6 +176,8 @@ export interface Plan {
   missing: Missing[];
 }
 
+/** Planned amounts are rounded to whole soles/dollars (never used for real movements). */
+const roundUnit = (minor: number) => Math.round(minor / 100) * 100;
 const ORDER: Record<LineKind, number> = { overdue: 0, payment: 1, essentials: 2, debt: 3, reserve: 4, cushion: 5 };
 const fmtDay = (d: string) => `${Number(d.slice(8, 10))}/${d.slice(5, 7)}`;
 
@@ -214,7 +216,7 @@ export function buildPlan(input: PlanInput): Plan {
       if (lastDay < lookback || (lastDay < from && x.dueDate! < o.since)) continue;
       if (lastDay < from) { lines.push(line(x, 'overdue', 'Ya venció y no vemos el pago')); continue; }
       if (!until || payOn! > until) continue; // after the next income: that income covers it
-      lines.push(line(x, o.source === 'debt' ? 'debt' : 'payment', x.dateStatus === 'window' ? `Por confirmar · ${fmtDay(x.dueDate!)}–${fmtDay(x.dueDateMax!)} aprox.` : null));
+      lines.push(line(x, o.source === 'debt' ? 'debt' : 'payment', x.dateStatus === 'window' ? `vence ${Number(x.dueDate!.slice(8))}–${Number(x.dueDateMax!.slice(8))} aprox.` : null));
       if (x.dateStatus === 'window') missing.push({ code: 'date', text: `Confirma si ${o.name} vence el ${Number(x.dueDate!.slice(8))} o el ${Number(x.dueDateMax!.slice(8))}.`, obligationId: o.id });
     }
     // Infrequent obligations due after the horizon: plan a proportional reserve (planned, not separated money).
@@ -222,7 +224,8 @@ export function buildPlan(input: PlanInput): Plan {
       const due = nextOccurrence(o, addDays(until, 1), paid);
       if (due?.dueDate && due.dueDate > until) {
         const months = STEP[o.frequency];
-        const share = Math.round((o.amountMinor * (daysBetween(from, until) + 1)) / (months * 30.4375));
+        // Rounded to whole units: a plan, not an invoice.
+        const share = roundUnit((o.amountMinor * (daysBetween(from, until) + 1)) / (months * 30.4375));
         if (share > 0) lines.push({ kind: 'reserve', label: `Para ${o.name}`, amountMinor: share, date: null, dateMax: null, note: `Vence en ${due.period}; separa de a pocos.`, obligationId: o.id });
       }
     }
@@ -234,7 +237,7 @@ export function buildPlan(input: PlanInput): Plan {
   if (until) {
     const days = daysBetween(from, until) + 1;
     if (input.essentialsMonthlyMinor === null) missing.push({ code: 'essentials', text: 'Indica cuánto necesitas al mes para lo básico (comida, transporte).' });
-    else if (input.essentialsMonthlyMinor > 0) lines.push({ kind: 'essentials', label: 'Gastos básicos', amountMinor: Math.round((input.essentialsMonthlyMinor * days) / 30), date: null, dateMax: null, note: `${days} días de lo que indicaste al mes` });
+    else if (input.essentialsMonthlyMinor > 0) lines.push({ kind: 'essentials', label: 'Gastos básicos', amountMinor: roundUnit((input.essentialsMonthlyMinor * days) / 30), date: null, dateMax: null, note: `${days} días de lo que indicaste al mes` });
   }
   if (input.cushionMinor > 0) lines.push({ kind: 'cushion', label: 'Colchón', amountMinor: input.cushionMinor, date: null, dateMax: null, note: 'Lo que prefieres no tocar' });
 

@@ -19,7 +19,7 @@ await runSuite('cashflow', async ({ page, check }) => {
 
   await page.goto(`${BASE}/app/plan`);
   const hero = (await page.getByTestId('free-PEN').textContent()) ?? '';
-  check('plan is labelled estimated and says what is missing', hero.includes('Dinero libre estimado') && /Falta(n)? confirmar/.test(hero), hero);
+  check('plan is labelled estimated and says what is missing', hero.includes('Dinero libre estimado') && /(Falta 1 dato|Faltan \d+ datos) por confirmar/.test(hero), hero);
   const bd = page.getByTestId('breakdown');
   await bd.locator('summary').click();
   const lines = await bd.locator('li').allTextContents();

@@ -28,7 +28,7 @@ function LineRow({ l, c }: { l: PlanLine; c: Currency }) {
         <span>{l.label}</span>
         <small className={l.kind === 'overdue' ? 'error' : 'muted'}>{[l.kind === 'overdue' ? 'Venció' : when ? `Pagar el ${when}` : null, l.note].filter(Boolean).join(' · ')}</small>
       </span>
-      <span className="amount">−<Money v={l.amountMinor} c={c} /></span>
+      <span className="amount">{l.amountMinor === null ? <span className="muted">por confirmar</span> : <>−<Money v={l.amountMinor} c={c} /></>}</span>
     </li>
   );
 }
@@ -60,7 +60,7 @@ function Headline({ p, testId }: { p: Plan; testId: string }) {
         {p.nextIncome ? `Hasta tu próximo ingreso, el ${shortDate(p.nextIncome.date)}${p.nextIncome.dateMax ? `–${shortDate(p.nextIncome.dateMax)}` : ''}. ` : ''}
         Ya descontamos <strong><Money v={p.reservedMinor} c={c} /></strong> en pagos y reservas.
       </small>
-      {p.status !== 'confirmed' && p.missing.length > 0 && <small style={{ opacity: .85 }}>{p.missing.length === 1 ? 'Falta confirmar 1 dato.' : `Faltan confirmar ${p.missing.length} datos.`}</small>}
+      {p.status !== 'confirmed' && p.missing.length > 0 && <small style={{ opacity: .85 }}>{p.missing.length === 1 ? 'Falta 1 dato por confirmar.' : `Faltan ${p.missing.length} datos por confirmar.`}</small>}
     </section>
   );
 }
