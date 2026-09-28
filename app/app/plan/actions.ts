@@ -250,3 +250,19 @@ export async function recurrenceAction(_p: ActionState, form: FormData): Promise
   await logLearning(supabase, user.id, kind, op === 'pause' ? 'snoozed' : op === 'resume' ? 'restored' : 'invalidated', id, patch);
   return done(op === 'pause' ? 'Pausado.' : op === 'resume' ? 'Reanudado.' : 'Terminado. Tu historial se queda.');
 }
+
+/**
+ * "Este mes no lo pago": the occurrence is skipped (status 'skipped', no movement). Skipped ≠ paid: nothing is
+ * counted as spent, the plan stops reserving it, and "Deshacer" in Lo que recuerda reopens it.
+ */
+export async function skipOccurrenceAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const obligationId = form.get('obligationId');
+  const period = form.get('period');
+  if (!isUuid(obligationId) || typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return { error: SAVE_ERROR };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, fixed_expense_id: obligationId, period, status: 'skipped' });
+  if (error) return { error: error.code === '23505' ? 'Ese mes ya estaba resuelto.' : SAVE_ERROR };
+  await logLearning(supabase, user.id, 'settlement', 'dismissed', obligationId, { period, status: 'skipped' });
+  return done('Listo. Este mes no cuenta.');
+}

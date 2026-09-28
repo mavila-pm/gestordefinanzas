@@ -105,6 +105,30 @@ await runSuite('cashflow', async ({ page, check }) => {
   const resumed = (await sb.from('fixed_expenses').select('paused_until').eq('name', 'Celular').single()).data;
   check('resume clears the pause', resumed?.paused_until === null, JSON.stringify(resumed));
 
+  // Skip one occurrence ("No lo pago el 5 oct"): skipped ≠ paid, no movement, undoable.
+  const tx0 = (await sb.from('transactions').select('id', { count: 'exact', head: true })).count;
+  await page.getByRole('button', { name: 'Editar Celular' }).click();
+  await act(page, () => page.locator('dialog[open] form[aria-label^="Omitir Celular"] button[type=submit]').click());
+  const skipped = (await sb.from('plan_settlements').select('status,transaction_id,period')).data ?? [];
+  check('skip: one "skipped" settlement without a movement; no transaction created', skipped.some((x) => x.status === 'skipped' && x.transaction_id === null)
+    && (await sb.from('transactions').select('id', { count: 'exact', head: true })).count === tx0, JSON.stringify(skipped));
+
+  // What-if (never writes): income delayed 7 days; S/ 1,000 to Visa.
+  await page.goto(`${BASE}/app/plan?si=retraso&dias=7`);
+  const w1 = (await page.getByTestId('what-if-result').textContent()) ?? '';
+  check('what-if delay: shows the new free money vs today, labelled as a simulation', /Te (quedarían|faltarían) S\/ [\d,.]+/.test(w1) && w1.includes('hoy S/') && w1.includes('no cambia nada'), w1);
+  const visa = (await sb.from('debts').select('id,balance_minor').eq('name', 'Visa').single()).data!;
+  await page.goto(`${BASE}/app/plan?si=abono&monto=1000&deuda=${visa.id}`);
+  const w2 = (await page.getByTestId('what-if-result').textContent()) ?? '';
+  check('what-if debt payment: debt after S/ 2,000 and interest avoided (rate known)', w2.includes('Deuda después: S/ 2,000.00') && w2.includes('de interés al mes'), w2);
+  const visaAfter = (await sb.from('debts').select('balance_minor').eq('id', visa.id).single()).data!;
+  check('what-if wrote nothing (debt balance unchanged)', Number(visaAfter.balance_minor) === Number(visa.balance_minor));
+
+  // Payoff comparison: one debt has no rate → no ranking, names the missing rate.
+  await page.goto(`${BASE}/app/compromisos?cuota=800`);
+  const po = (await page.getByTestId('payoff').textContent()) ?? '';
+  check('payoff with a missing rate: no ranking invented', po.includes('Falta la tasa de Préstamo familiar') && !po.includes('meses'), po);
+
   const bRead = await sb.from('fixed_expenses').select('id').eq('id', B_TX.obligation);
   check('API: A cannot read B\'s obligations', !bRead.error && (bRead.data ?? []).length === 0, JSON.stringify(bRead));
   const bUpd = await sb.from('fixed_expenses').update({ amount_minor: 1 }).eq('id', B_TX.obligation).select('id');

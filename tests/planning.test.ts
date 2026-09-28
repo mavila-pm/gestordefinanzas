@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { monthCommitments } from '../src/engine/commitments';
 import {
-  buildPlan, compareDebtStrategies, detectVariations, nextIncome, nextOccurrence, occurrencesBetween, reminderIntents,
+  buildPlan, compareDebtStrategies, detectVariations, nextIncome, nextOccurrence, occurrencesBetween, openOccurrence, reminderIntents,
   simulatePurchase, suggestMatches, type ExpectedIncome, type Obligation, type PlanInput,
 } from '../src/engine/planning';
 import { monthlySummary } from '../src/engine/monthly-summary';
@@ -191,5 +191,18 @@ describe('recurrence lifecycle (pause / end) never rewrites history (ADR-0010)',
     expect(monthCommitments('2026-10', '2026-10-01', [{ ...f, pausedUntil: '2026-11-01' }], [])).toEqual([]);
     expect(monthCommitments('2026-10', '2026-10-01', [{ ...f, endedOn: '2026-09-30' }], [])).toEqual([]);
     expect(monthCommitments('2026-10', '2026-10-01', [f], [])).toHaveLength(1);
+  });
+});
+
+describe('skipping an occurrence ("este mes no lo pago") — skipped ≠ paid', () => {
+  it('the open occurrence is the overdue one first; after skipping it the next one opens; the plan stops reserving it', () => {
+    const car = ob({ id: 'car', name: 'Carro', amountMinor: 95000, dueDay: 9, since: '2026-08-01' });
+    expect(openOccurrence(car, '2026-09-28', new Set())?.period).toBe('2026-09'); // overdue (9 sep)
+    expect(openOccurrence(car, '2026-09-28', new Set(['2026-09']))?.period).toBe('2026-10');
+    const input = demo({ obligations: [car], settledObligations: new Map() });
+    const before = buildPlan(input);
+    const after = buildPlan({ ...input, settledObligations: new Map([['car', new Set(['2026-09'])]]) });
+    expect(before.lines.some((l) => l.kind === 'overdue' && l.obligationId === 'car')).toBe(true);
+    expect(after.lines.some((l) => l.kind === 'overdue')).toBe(false);
   });
 });

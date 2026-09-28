@@ -9,18 +9,21 @@ import { limaMonth } from '../../../src/web/auth-input';
 import { monthLabel } from '../../../src/web/labels';
 import { formatLimaDateTime } from '../../../src/web/transaction-input';
 import { deactivateCommitmentAction, debtPaymentAction, saveDebtAction, saveFixedExpenseAction } from '../actions';
-import { removeObligationAction, saveObligationAction } from '../plan/actions';
+import { removeObligationAction, saveObligationAction, skipOccurrenceAction } from '../plan/actions';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
-import { addDays } from '../../../src/engine/planning';
+import { addDays, openOccurrence } from '../../../src/engine/planning';
 import { ObligationFields } from '../../../components/obligation-fields';
 import { loadPlanningData } from '../../../lib/planning';
 import { compareDebtStrategies } from '../../../src/engine/planning';
+import { comparePayoff } from '../../../src/engine/scenarios';
+import { parseAmountToMinor } from '../../../src/domain/money';
 import { shortDate } from '../../../src/web/dates';
 
 export const metadata = { title: 'Próximos pagos' };
 const CUR = <><option value="PEN">Soles (S/)</option><option value="USD">Dólares (US$)</option></>;
 
-export default async function Commitments() {
+export default async function Commitments({ searchParams }: { searchParams: Promise<{ cuota?: string }> }) {
+  const { cuota } = await searchParams;
   const supabase = await createSupabaseServerClient();
   const [{ fixed, debts }, , { entitlements }, plan, hist] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase), loadEntitlements(supabase), loadPlanningData(supabase),
     supabase.from('plan_settlements').select('fixed_expense_id,period,tx:transactions(amount_minor)').not('fixed_expense_id', 'is', null).order('period', { ascending: false }).limit(300)]);
@@ -34,6 +37,10 @@ export default async function Commitments() {
   const rows = new Map(plan.obligationRows.map((o) => [o.id, o]));
   const paidThisMonth = (id: string) => plan.settledObligations.get(id)?.has(limaMonth()) ?? false;
   const strategies = compareDebtStrategies(plan.debts.filter((x) => x.currency === 'PEN'));
+  // "¿En cuánto salgo de deudas?" — simulated for the monthly amount the person types (GET, nothing is written).
+  const budgetMinor = cuota ? parseAmountToMinor(cuota) : null;
+  const installments = new Map(debts.map((d) => [d.id, d.installmentMinor]));
+  const payoff = budgetMinor ? comparePayoff(plan.debts.filter((x) => x.currency === 'PEN').map((x) => ({ ...x, minimumMinor: installments.get(x.id) ?? null })), budgetMinor) : null;
   const month = limaMonth();
   // Plus feature: decided and computed on the server only (§84).
   const recurring = entitlements.features.recurringDetection ? await loadRecurring(supabase, month, fixed) : null;
@@ -148,13 +155,30 @@ export default async function Commitments() {
             })}
           </ul>
           {plan.debts.filter((x) => x.currency === 'PEN' && x.balanceMinor > 0).length > 1 && (
-            <details className="card" data-testid="debt-strategies">
+            <details className="card" data-testid="debt-strategies" open={!!payoff}>
               <summary>¿Qué deuda pagar primero?</summary>
               <div className="stack-sm" style={{ marginTop: 8 }}>
                 <p className="small"><strong>Avalancha</strong> · primero la de mayor tasa: pagas menos intereses.{' '}
                   {strategies.avalanche.available ? <>Orden: {strategies.avalanche.order.join(' → ')}.</> : <span className="muted">Falta la tasa de {strategies.avalanche.missingRate.join(', ')}.</span>}</p>
                 <p className="small"><strong>Bola de nieve</strong> · primero el saldo más pequeño: cierras deudas antes. Orden: {strategies.snowball.order.join(' → ')}.</p>
                 <p className="muted small">Ninguna es mejor para todos. Paga siempre las cuotas mínimas y cubre tus próximos pagos antes de adelantar.</p>
+                <form method="get" className="row" aria-label="Simular pago de deudas">
+                  <label className="stack-sm" style={{ flex: 1 }}><span>¿Cuánto puedes pagar al mes?</span>
+                    <span className="money-input"><span className="cur" aria-hidden="true">S/</span><input name="cuota" inputMode="decimal" defaultValue={cuota ?? ''} placeholder="600" /></span></label>
+                  <button type="submit" className="quiet">Simular</button>
+                </form>
+                {payoff && (
+                  <div data-testid="payoff">
+                    {payoff.note && <p className="small muted">{payoff.note}</p>}
+                    {payoff.available && (
+                      <ul className="list">{payoff.plans.map((p) => (
+                        <li key={p.strategy}><span className="setting-text"><span>{p.strategy === 'avalanche' ? 'Avalancha' : p.strategy === 'snowball' ? 'Bola de nieve' : 'Mixta'}</span><small className="muted">{p.why}</small></span>
+                          <span className="amount">{p.months === null ? 'No baja' : `${p.months} meses · ${formatMoney({ amountMinor: p.interestMinor!, currency: 'PEN' })} interés`}</span></li>
+                      ))}</ul>
+                    )}
+                    <small className="muted">Simulación: no cambia nada.</small>
+                  </div>
+                )}
               </div>
             </details>
           )}
@@ -171,6 +195,7 @@ export default async function Commitments() {
                 : `${r.frequency === 'monthly' ? 'Cada mes' : r.frequency === 'yearly' ? 'Cada año' : r.frequency === 'quarterly' ? 'Cada 3 meses' : 'Cada 2 meses'} · ${r.dueDayMax ? `vence el ${r.dueDay}–${r.dueDayMax} aprox.` : `vence el ${r.dueDay}`}${r.targetDay ? ` · pagas el ${r.targetDay}` : ''}`;
               const state = r ? lifecycleNote(r, plan.today) : null;
               const past = history.get(f.id) ?? [];
+              const open = r && !state ? openOccurrence(r, plan.today, plan.settledObligations.get(f.id) ?? new Set()) : null;
               return (
                 <li key={f.id} data-name={f.name} data-state={state ? 'stopped' : 'active'}>
                   <span className="setting-text"><span>{f.name}</span><small className="muted">{state ?? when}</small></span>
@@ -186,6 +211,12 @@ export default async function Commitments() {
                           <button type="submit" className="wide">Guardar</button>
                         </ActionForm>
                         <small className="muted">Los cambios aplican desde ahora. Lo ya pagado no cambia.</small>
+                        {open && (
+                          <ActionForm action={skipOccurrenceAction} className="inline" label={`Omitir ${f.name} ${open.period}`} closeOnSuccess>
+                            <input type="hidden" name="obligationId" value={f.id} /><input type="hidden" name="period" value={open.period} />
+                            <button type="submit" className="quiet">No lo pago {open.dueDate ? `el ${shortDate(open.dueDate)}` : 'este mes'}</button>
+                          </ActionForm>
+                        )}
                         <Lifecycle kind="obligation" id={f.id} name={f.name} pausedUntil={r?.pausedUntil ?? null} endedOn={r?.endedOn ?? null} today={plan.today} defaultUntil={addDays(plan.today, 30)} />
                         {past.length > 0 && (
                           <details><summary>Historial</summary>

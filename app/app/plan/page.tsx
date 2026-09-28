@@ -3,7 +3,9 @@ import { ActionForm } from '../../../components/action-form';
 import { PurchaseSimulator } from '../../../components/purchase-simulator';
 import { Icon } from '../../../components/ui/icon';
 import { Sheet } from '../../../components/ui/sheet';
-import { essentialsFor, loadEssentialRows, loadPlanningData, planFor, planTimeline } from '../../../lib/planning';
+import { essentialsFor, loadEssentialRows, loadPlanningData, planFor, planInputFor, planTimeline } from '../../../lib/planning';
+import { delayIncome, payDebt, type ScenarioResult } from '../../../src/engine/scenarios';
+import { parseAmountToMinor } from '../../../src/domain/money';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import type { Plan, PlanLine } from '../../../src/engine/planning';
@@ -79,8 +81,8 @@ function Headline({ p, testId }: { p: Plan; testId: string }) {
   );
 }
 
-export default async function PlanPage({ searchParams }: { searchParams: Promise<{ ingreso?: string }> }) {
-  const { ingreso } = await searchParams;
+export default async function PlanPage({ searchParams }: { searchParams: Promise<{ ingreso?: string; si?: string; dias?: string; monto?: string; deuda?: string }> }) {
+  const { ingreso, si, dias, monto, deuda } = await searchParams;
   const supabase = await createSupabaseServerClient();
   // One parallel round: the observed-essentials read no longer waits for the plan data.
   const [d, essentialRows] = await Promise.all([loadPlanningData(supabase), loadEssentialRows(supabase)]);
@@ -92,6 +94,16 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const obligationsById = new Map(d.obligationRows.map((o) => [o.id, o]));
   const essentials = essentialsFor(d, essentialRows);
   const upcoming = planTimeline(d).slice(0, 12);
+  // "¿Y si…?" (PEN): simulated from a copy of the plan inputs; nothing is written (ADR-0008).
+  const penDebts = d.debts.filter((x) => x.currency === 'PEN');
+  let scenario: ScenarioResult | null = null;
+  if (si === 'retraso' && dias && /^\d{1,2}$/.test(dias)) scenario = delayIncome(planInputFor(d, 'PEN'), Number(dias));
+  if (si === 'abono' && monto && deuda) {
+    const debt = penDebts.find((x) => x.id === deuda);
+    const minor = parseAmountToMinor(monto);
+    const link = debt ? d.obligationRows.find((o) => o.active && o.kind === 'card' && o.currency === 'PEN' && o.name.toLowerCase() === debt.name.toLowerCase())?.id ?? null : null;
+    if (debt && minor) scenario = payDebt(planInputFor(d, 'PEN'), { ...debt, obligationId: link }, minor);
+  }
 
   return (
     <main className="stack narrow-md">
@@ -155,6 +167,35 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
                 </p>
               ) : null;
             })()}
+            {c === 'PEN' && p.freeMinor !== null && (
+              <details className="card" data-testid="what-if" open={!!scenario}>
+                <summary>¿Y si…?</summary>
+                <div className="stack-sm" style={{ marginTop: 8 }}>
+                  <form method="get" className="row" aria-label="Simular retraso del ingreso">
+                    <input type="hidden" name="si" value="retraso" />
+                    <label className="stack-sm" style={{ flex: 1 }}><span>Mi ingreso se retrasa (días)</span><input name="dias" inputMode="numeric" defaultValue={si === 'retraso' ? dias : ''} placeholder="7" /></label>
+                    <button type="submit" className="quiet">Simular</button>
+                  </form>
+                  {penDebts.length > 0 && (
+                    <form method="get" className="row" aria-label="Simular abono a deuda">
+                      <input type="hidden" name="si" value="abono" />
+                      <label className="stack-sm"><span>Abono</span><span className="money-input"><span className="cur" aria-hidden="true">S/</span><input name="monto" inputMode="decimal" defaultValue={si === 'abono' ? monto : ''} placeholder="500" /></span></label>
+                      <label className="stack-sm" style={{ flex: 1 }}><span>A</span><select name="deuda" defaultValue={deuda}>{penDebts.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+                      <button type="submit" className="quiet">Simular</button>
+                    </form>
+                  )}
+                  {scenario && (
+                    <div data-testid="what-if-result" className="stack-sm">
+                      <p><strong>{scenario.freeAfterMinor === null ? 'Faltan datos para calcularlo.' : scenario.freeAfterMinor >= 0 ? <>Te quedarían <Money v={scenario.freeAfterMinor} c="PEN" /> libres</> : <>Te faltarían <Money v={-scenario.freeAfterMinor} c="PEN" /></>}</strong>
+                        {scenario.freeBeforeMinor !== null && <span className="muted"> (hoy <Money v={scenario.freeBeforeMinor} c="PEN" />{scenario.estimated ? ', estimado' : ''})</span>}</p>
+                      {scenario.uncovered.length > 0 && <p className="small error">No alcanzaría para: {scenario.uncovered.join(', ')}.</p>}
+                      {scenario.debt && <p className="small">Deuda después: <Money v={scenario.debt.balanceAfterMinor} c="PEN" />{scenario.debt.monthlyInterestSavedMinor ? ` · evitas ~${formatMoney({ amountMinor: scenario.debt.monthlyInterestSavedMinor, currency: 'PEN' })} de interés al mes` : ''}.</p>}
+                      <small className="muted">Simulación: no cambia nada.</small>
+                    </div>
+                  )}
+                </div>
+              </details>
+            )}
             {p.freeMinor !== null && <PurchaseSimulator freeMinor={p.freeMinor} currency={c} estimated={p.status !== 'confirmed'} />}
 
             {p.missing.filter((m) => m.code !== 'balance' && m.code !== 'next_income').length > 0 && (

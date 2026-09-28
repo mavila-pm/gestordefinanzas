@@ -114,6 +114,17 @@ function inLifecycle(date: string, r: { pausedUntil?: string | null; endedOn?: s
   return true;
 }
 
+/**
+ * The earliest occurrence still open (unpaid, not skipped) from one month back — the one "Omitir" applies to.
+ * Same look-back as the plan's overdue window; never before the item existed.
+ */
+export function openOccurrence(o: Obligation, today: string, settledPeriods: ReadonlySet<string>): Occurrence | null {
+  const lookback = addDays(today, -31);
+  return occurrencesBetween(o, lookback, addDays(today, 62))
+    .find((x) => !settledPeriods.has(x.period) && x.period >= monthKey(o.since)
+      && (x.dueDate === null || ((x.dueDateMax ?? x.dueDate) >= lookback && x.dueDate >= o.since))) ?? null;
+}
+
 /** The next occurrence not yet settled (paid), from `today`; used after a payment: "la próxima queda preparada". */
 export function nextOccurrence(o: Obligation, today: string, settledPeriods: ReadonlySet<string>): Occurrence | null {
   const horizonMonths = STEP[o.frequency] + 1;

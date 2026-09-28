@@ -22,11 +22,11 @@ export default async function Rules() {
   const supabase = await createSupabaseServerClient();
   const [rules, catalog, links, chat] = await Promise.all([
     loadRules(supabase), loadCatalog(supabase),
-    supabase.from('plan_settlements').select('id,period,fixed_expense:fixed_expenses(name),income:expected_incomes(name,frequency),tx:transactions(amount_minor,currency)')
-      .not('transaction_id', 'is', null).order('created_at', { ascending: false }).limit(10),
+    supabase.from('plan_settlements').select('id,period,status,fixed_expense:fixed_expenses(name),income:expected_incomes(name,frequency),tx:transactions(amount_minor,currency)')
+      .order('created_at', { ascending: false }).limit(10),
     supabase.from('conversation_messages').select('id', { count: 'exact', head: true }).eq('thread', 'onboarding'),
   ]);
-  type Link = { id: string; period: string; fixed_expense: { name: string } | null; income: { name: string; frequency: string } | null; tx: { amount_minor: number; currency: Currency } | null };
+  type Link = { id: string; period: string; status: 'paid' | 'skipped'; fixed_expense: { name: string } | null; income: { name: string; frequency: string } | null; tx: { amount_minor: number; currency: Currency } | null };
   const confirmed = (links.data ?? []) as unknown as Link[];
   const categoryId = new Map(catalog.categories.map((c) => [c.name, c.id]));
   return (
@@ -67,14 +67,14 @@ export default async function Rules() {
 
       {confirmed.length > 0 && (
         <section className="stack-sm" aria-labelledby="links">
-          <h2 id="links">Pagos e ingresos confirmados</h2>
+          <h2 id="links">Pagos e ingresos resueltos</h2>
           <ul className="list card" data-testid="settlement-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
             {confirmed.map((l) => {
               const name = l.fixed_expense?.name ?? l.income?.name ?? 'Pago';
               return (
                 <li key={l.id}>
                   <span className="setting-text"><span>{name} · {periodLabel(l.period, l.income?.frequency)}</span>
-                    <small className="muted">{l.income ? 'Ingreso recibido' : 'Pagado'}{l.tx ? ` · ${formatMoney({ amountMinor: Number(l.tx.amount_minor), currency: l.tx.currency })}` : ''}</small></span>
+                    <small className="muted">{l.status === 'skipped' ? 'Omitido' : l.income ? 'Ingreso recibido' : 'Pagado'}{l.tx ? ` · ${formatMoney({ amountMinor: Number(l.tx.amount_minor), currency: l.tx.currency })}` : ''}</small></span>
                   <ActionForm action={unlinkSettlementAction} className="inline" label={`Deshacer ${name} ${l.period}`}>
                     <input type="hidden" name="id" value={l.id} />
                     <button type="submit" className="link small-link">Deshacer</button>
