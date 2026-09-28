@@ -22,6 +22,8 @@ Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e
 | TASK-016 Recurring spending suggestions (Plus) | **VERIFIED** | unit tests; E2E Free teaser / Plus detection / accept as fixed expense | Thresholds (3 months, ±15 %, ±6 days) are PROPUESTOS |
 | TASK-017 Search by amount | **VERIFIED** | unit tests; E2E incl. filter-injection attempt | — |
 | TASK-018 Sync history (plain language) | **VERIFIED** | unit tests; E2E | — |
+| TASK-019 Velsuno design system, shell, access, welcome, dashboard, movements, detail, review | **VERIFIED** (functional + visual) | E2E regression; `visual` 54 screenshots, 8 breakpoints, light/dark, 0 horizontal overflow | PO visual walkthrough (checklist); other screens inherit tokens but keep the previous layout |
+| TASK-020 Dividir gasto (splits) | **VERIFIED** | Migrations 000014-15; DB tests incl. A/B, privileges, stale edit, guard (mutation-checked); unit; E2E 18/18 | — |
 
 ## Backlog (known debt)
 | Item | Origin | Note |
@@ -39,6 +41,7 @@ Real project: Supabase `jeloegnvaxlfqjntbbyy`. Evidence runs: `docs/runbooks/e2e
 - Gmail OAuth, Android SMS app: not started (post-beta per §53).
 
 ## FINAL MANUAL ACCEPTANCE CHECKLIST (run on the Preview when ready)
+- Velsuno UI on a real phone (one hand): bottom navigation, Dividir gasto sheet, keyboard over the sheet, light/dark from Más.
 - [ ] TASK-003: password recovery email → `/reset-password` → change password → login with the new one; old one rejected.
 - [ ] TASK-004: "Por revisar" queue, correct a movement, manual entry, register a card.
 - [ ] TASK-005: register an own account (with 4 digits) and a card; correct a category with "Recordar"; see it in Reglas.

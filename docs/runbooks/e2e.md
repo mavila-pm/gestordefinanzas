@@ -77,3 +77,9 @@ Cleanup: probe_users 0, orphan_rows 0 (only the PO's 2 real accounts remain).
 13 + 46 + 30 + 28 + 22 = **139/139** (9 new checks: card auto-link, recurring Free/Plus, amount search + injection,
 sync history). The review-manual audit assertions now expect the `card_link` event created when the card is
 registered (behavior change of TASK-014, same strictness). Cleanup 0|0.
+
+## Regression after Velsuno UI + splits (TASK-019..020) — 2026-09-28
+13 + 46 + 30 + 28 + 22 + 18 = **158/158** (new suite `splits`), plus `visual`: 54 real screenshots at
+320/375/390/430/768/1024/1280/1440 (saved for 320, 375, 1280), light and dark, 0 horizontal overflow. Test updates
+caused by the redesign (same assertions): saved notice after "Guardar y confirmar", delete behind a disclosure,
+detail meta testid. Cleanup 0|0.
