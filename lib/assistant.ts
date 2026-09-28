@@ -8,6 +8,7 @@ import { ASSISTANT_SYSTEM } from '../src/ai/prompts';
 import { sanitizeUserText } from '../src/ai/sanitize';
 import { isSmallTalk } from '../src/ai/interpreter';
 import { infer, STOP_TEXT } from './ai';
+import { logLearning } from './learning';
 import { loadMessages, readImages } from './onboarding';
 import { loadPlanningData, planFor, planInputFor } from './planning';
 
@@ -108,6 +109,14 @@ export async function assistantAct(supabase: SupabaseClient, userId: string, act
     if (![fields.obligationId, fields.transactionId].every((x) => /^[0-9a-f-]{36}$/.test(x ?? '')) || !/^\d{4}-\d{2}$/.test(fields.period ?? '')) return 'No pude marcarlo.';
     const { error } = await supabase.from('plan_settlements').insert({ user_id: userId, fixed_expense_id: fields.obligationId, period: fields.period, transaction_id: fields.transactionId });
     return error ? 'No pude marcarlo. Puede que ya esté enlazado.' : 'Listo, marcado como pagado.';
+  }
+  if (act === 'set_pref') {
+    if (fields.key !== 'allow_zero_for_debt' || (fields.value !== 'on' && fields.value !== 'off')) return 'No pude guardarlo.';
+    const on = fields.value === 'on';
+    const { error } = await supabase.from('planning_settings').upsert({ user_id: userId, currency: 'PEN', allow_zero_for_debt: on, updated_at: new Date().toISOString() }, { onConflict: 'user_id,currency' });
+    if (error) return 'No pude guardarlo.';
+    await logLearning(supabase, userId, 'preference', on ? 'accepted' : 'restored', null, { key: fields.key, value: on });
+    return on ? 'Listo. Lo tendré en cuenta al sugerirte abonos.' : 'Listo. Mantengo tu colchón.';
   }
   if (act === 'link_income') {
     if (![fields.incomeId, fields.transactionId].every((x) => /^[0-9a-f-]{36}$/.test(x ?? '')) || !/^\d{4}-(0[1-9]|1[0-2])(-\d{2})?$/.test(fields.period ?? '')) return 'No pude registrarlo.';

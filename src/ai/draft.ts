@@ -2,7 +2,7 @@ import type { Currency } from '../domain/money';
 import { formatMoney } from '../domain/money';
 import { BANK_LABEL } from './interpreter';
 import { fold } from './text';
-import type { Bare, Draft, FactStatus, Patch } from './types';
+import type { Bare, DebtFact, Draft, FactStatus, Patch } from './types';
 
 /**
  * Onboarding draft engine (ADR-0006): merges validated patches into the structured draft, decides the ONE next
@@ -141,7 +141,10 @@ function applyBare(d: Draft, key: string, b: Bare, touched: Set<string>) {
   const list = kind === 'income' ? d.incomes : kind === 'obligation' ? d.obligations : kind === 'debt' ? d.debts : [];
   const item = (list as Array<{ id: string }>).find((x) => x.id === id) as Record<string, unknown> | undefined;
   if (!item) return;
-  if (field === 'amount' || field === 'balance') {
+  if (field === 'minimum' && kind === 'debt') {
+    // The card's minimum payment (never the total, never the balance). "No sé" keeps it unknown.
+    if (b.amountMinor !== undefined) { item.minimumMinor = b.amountMinor; if (b.currency) item.currency = b.currency; }
+  } else if (field === 'amount' || field === 'balance') {
     const amountKey = field === 'balance' ? 'balanceMinor' : 'amountMinor';
     const statusKey = field === 'balance' ? 'balanceStatus' : 'amountStatus';
     if (b.amountMinor !== undefined) { item[amountKey] = b.amountMinor; item[statusKey] = b.approx ? 'estimated' : 'confirmed'; if (b.currency) item.currency = b.currency; }
@@ -188,14 +191,20 @@ export interface Question { key: string; text: string; replies: string[] }
 
 export function nextQuestion(d: Draft): Question | null {
   const ask = (key: string, text: string, replies: string[] = ['Después']): Question | null => (d.asked.includes(key) ? null : { key, text, replies });
+  // Ordered by impact (ADR-0008): what blocks "Dinero libre" (income, today's balance) → payment dates → payment
+  // amounts → card minimum → debt balances → completeness. A debt balance never blocks the free-money figure.
+  const cards = d.debts.filter((x) => x.kind === 'card');
+  const cardName = (x: DebtFact) => x.name.toLowerCase();
   const candidates: Array<() => Question | null> = [
     () => (d.incomes.length === 0 ? ask('income:new', '¿Cuánto recibes y qué día te pagan?', ['Después']) : null),
     ...d.incomes.map((i) => () => (i.amountMinor === null && i.amountStatus === 'unknown' ? ask(`income:${i.id}:amount`, `¿Cuánto recibes de ${i.name.toLowerCase()}?`) : null)),
     ...d.incomes.map((i) => () => (i.day === null ? ask(`income:${i.id}:day`, `¿Qué día te pagan ${i.name.toLowerCase() === 'sueldo' ? 'el sueldo' : i.name.toLowerCase()}?`, ['Quincenal', 'Después']) : null)),
-    ...d.debts.filter((x) => x.kind === 'card').map((x) => () => (x.balanceMinor === null ? ask(`debt:${x.id}:balance`, `¿Cuánto debes actualmente en la ${x.name.toLowerCase().replace('tarjeta', 'tarjeta')}?`, ['No sé', 'Tomar foto']) : null)),
     () => (d.balance === null ? ask('balance', '¿Cuánto tienes hoy en tu cuenta, más o menos?') : null),
-    ...d.obligations.map((o) => () => (o.amountMinor === null && o.amountStatus === 'unknown' ? ask(`obligation:${o.id}:amount`, `¿Cuánto pagas de ${o.name.toLowerCase()}?`, ['No sé', 'Tomar foto']) : null)),
     ...d.obligations.map((o) => () => (o.day === null && o.dayStatus === 'unknown' ? ask(`obligation:${o.id}:day`, `¿Qué día pagas ${o.name.toLowerCase()}?`) : null)),
+    ...cards.map((x) => () => (x.dueDay === null ? ask(`debt:${x.id}:day`, `¿Qué día vence la ${cardName(x)}?`) : null)),
+    ...d.obligations.map((o) => () => (o.amountMinor === null && o.amountStatus === 'unknown' ? ask(`obligation:${o.id}:amount`, `¿Cuánto pagas de ${o.name.toLowerCase()}?`, ['No sé', 'Tomar foto']) : null)),
+    ...cards.map((x) => () => (x.minimumMinor === null ? ask(`debt:${x.id}:minimum`, `¿Cuál es el pago mínimo de la ${cardName(x)}?`, ['No sé', 'Tomar foto']) : null)),
+    ...cards.map((x) => () => (x.balanceMinor === null ? ask(`debt:${x.id}:balance`, `¿Cuánto debes en la ${cardName(x)}?`, ['No sé', 'Tomar foto']) : null)),
     ...d.debts.filter((x) => x.kind !== 'card').map((x) => () => (x.balanceMinor === null ? ask(`debt:${x.id}:balance`, x.kind === 'personal' ? `¿Cuánto le debes a ${x.lender}?` : `¿Cuánto te falta pagar del ${x.name.toLowerCase()}?`) : null)),
     () => (!d.done.includes('obligations') ? ask('group:obligations', d.obligations.length ? '¿Algún otro pago fijo? Alquiler, luz, internet…' : '¿Qué pagos fijos tienes cada mes? Alquiler, luz, internet…', ['No tengo más']) : null),
     () => (d.variable.length === 0 ? ask('variable:basics', '¿Cuánto gastas al mes en lo básico, como comida y transporte?', ['No sé']) : null),

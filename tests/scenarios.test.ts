@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, type ExpectedIncome, type Obligation, type PlanInput } from '../src/engine/planning';
-import { changeBill, comparePayoff, delayIncome, payDebt } from '../src/engine/scenarios';
+import { changeBill, comparePayoff, delayIncome, extraDebtPayment, payDebt } from '../src/engine/scenarios';
 
 const ob = (o: Partial<Obligation> & { id: string; name: string }): Obligation => ({
   source: 'obligation', kind: 'other', currency: 'PEN', amountMinor: 10000, amountStatus: 'confirmed', frequency: 'monthly', anchorMonth: null,
@@ -74,5 +74,24 @@ describe('debt payoff comparison', () => {
     const c = comparePayoff([{ id: 'v', name: 'Visa', balanceMinor: 1000000, annualRateBp: 12000, minimumMinor: null }], 5000);
     expect(c.plans.every((p) => p.months === null)).toBe(true);
     expect(c.note).toContain('no baja');
+  });
+});
+
+describe('stated preference: "no me importa quedarme en cero si pago deuda"', () => {
+  const debts = [{ name: 'Visa', balanceMinor: 300000, annualRateBp: 6000 }, { name: 'Préstamo', balanceMinor: 80000, annualRateBp: 1800 }];
+  const plan = buildPlan(input({ cushionMinor: 40000 }));
+  it('default: only free money, to the highest rate; nothing applied', () => {
+    const x = extraDebtPayment(plan, debts, false)!;
+    expect(x).toMatchObject({ amountMinor: plan.freeMinor, target: 'Visa', usesCushion: false });
+  });
+  it('with the preference the cushion may go too, flagged as a trade-off', () => {
+    const x = extraDebtPayment(plan, debts, true)!;
+    expect(x.amountMinor).toBe(plan.freeMinor! + 40000);
+    expect(x.usesCushion).toBe(true);
+    expect(x.interestSavedMinor).toBe(Math.round((x.amountMinor * 6000) / 10000 / 12));
+  });
+  it('unknown rate among several debts: no target invented; incomplete plan: no suggestion', () => {
+    expect(extraDebtPayment(plan, [...debts, { name: 'Familiar', balanceMinor: 1000, annualRateBp: null }], false)!.target).toBe('');
+    expect(extraDebtPayment(buildPlan(input({ base: null })), debts, true)).toBeNull();
   });
 });

@@ -157,6 +157,13 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(answer({ k: 'what_delay', days: null }, v2)!.text).toBe('¿Cuántos días se retrasaría?');
     expect(answer({ k: 'what_pay_debt', amountMinor: 100000, target: 'deuda' }, { ...v2, debtLinks: [] })!.text).toBe('No tengo deudas registradas.');
   });
+  it('a stated preference is confirmed before saving, with its trade-off; it can be reverted', () => {
+    expect(detectIntent('No me importa quedarme en cero este mes si pago deuda')).toEqual({ k: 'pref_zero_debt', on: true });
+    expect(detectIntent('mejor no, quiero guardar algo')).toEqual({ k: 'pref_zero_debt', on: false });
+    const a = answer({ k: 'pref_zero_debt', on: true }, view)!;
+    expect(a.text).toMatch(/^Entendido: si pagas deuda, puedes quedarte en cero\..*¿Lo guardo\?$/);
+    expect(a.actions![0]).toMatchObject({ act: 'set_pref', fields: { key: 'allow_zero_for_debt', value: 'on' } });
+  });
   it('asks for the missing data instead of guessing (§66)', () => {
     const noBase = { ...view, plans: [{ ...plan, base: null, freeMinor: null, missing: [{ code: 'balance' as const, text: 'Indica cuánto tienes hoy en tu cuenta.' }] }] };
     const a = answer({ k: 'can_spend', amountMinor: 1000, currency: 'PEN' }, noBase)!;

@@ -117,9 +117,14 @@ export async function saveSettingsAction(_p: ActionState, form: FormData): Promi
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
   const v = parsed.value;
+  const { data: before } = await supabase.from('planning_settings').select('allow_zero_for_debt').eq('currency', v.currency).maybeSingle();
   const { error } = await supabase.from('planning_settings').upsert({ user_id: user.id, currency: v.currency,
-    essentials_monthly_minor: v.essentialsMonthlyMinor, cushion_minor: v.cushionMinor, updated_at: new Date().toISOString() });
-  return error ? { error: SAVE_ERROR } : done('Guardado.');
+    essentials_monthly_minor: v.essentialsMonthlyMinor, cushion_minor: v.cushionMinor, allow_zero_for_debt: v.allowZeroForDebt, updated_at: new Date().toISOString() });
+  if (error) return { error: SAVE_ERROR };
+  if ((before?.allow_zero_for_debt ?? false) !== v.allowZeroForDebt) {
+    await logLearning(supabase, user.id, 'preference', v.allowZeroForDebt ? 'accepted' : 'restored', null, { key: 'allow_zero_for_debt', value: v.allowZeroForDebt });
+  }
+  return done('Guardado.');
 }
 
 /** "Parece la cuota del carro" -> the person confirms: the real movement settles that month's payment. */

@@ -7,6 +7,7 @@ import { loadEssentialsSuggestion, loadPlanningData, planFor, planTimeline } fro
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import type { Plan, PlanLine } from '../../../src/engine/planning';
+import { extraDebtPayment } from '../../../src/engine/scenarios';
 import { shortDate } from '../../../src/web/dates';
 import { isUuid } from '../../../src/web/transaction-input';
 import {
@@ -140,6 +141,17 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
               </section>
             )}
             {p.freeMinor !== null && <Breakdown p={p} />}
+            {c === 'PEN' && (() => {
+              const x = extraDebtPayment(p, d.debts.filter((y) => y.currency === c), d.settings[c]?.allowZeroForDebt ?? false);
+              return x ? (
+                <p className="notice" data-testid="extra-debt">
+                  <span>{x.target ? <>Puedes abonar <strong><Money v={x.amountMinor} c={c} /></strong> a {x.target}.</> : <>Puedes abonar hasta <strong><Money v={x.amountMinor} c={c} /></strong> a una deuda.</>}
+                    {x.usesCushion ? ` Usa tu colchón: quedas en S/ 0 libre${x.until ? ` hasta el ${shortDate(x.until)}` : ''}.` : ''}
+                    {x.interestSavedMinor ? ` Evitas ~${formatMoney({ amountMinor: x.interestSavedMinor, currency: c })} de interés al mes.` : ''}{' '}
+                    <Link href="/app/compromisos">Ver deudas</Link></span>
+                </p>
+              ) : null;
+            })()}
             {p.freeMinor !== null && <PurchaseSimulator freeMinor={p.freeMinor} currency={c} estimated={p.status !== 'confirmed'} />}
 
             {p.missing.filter((m) => m.code !== 'balance' && m.code !== 'next_income').length > 0 && (
@@ -351,7 +363,7 @@ function IncomeSheet({ c }: { c: Currency }) {
   );
 }
 
-function SettingsSheet({ c, s }: { c: Currency; s: { essentialsMonthlyMinor: number | null; cushionMinor: number } | undefined }) {
+function SettingsSheet({ c, s }: { c: Currency; s: { essentialsMonthlyMinor: number | null; cushionMinor: number; allowZeroForDebt: boolean } | undefined }) {
   const v = (m: number | null | undefined) => (m == null ? '' : (m / 100).toFixed(2));
   return (
     <Sheet label="Indicar" triggerClassName="quiet" triggerLabel="Indicar básicos y colchón" title="Lo básico y tu colchón"
@@ -363,6 +375,8 @@ function SettingsSheet({ c, s }: { c: Currency; s: { essentialsMonthlyMinor: num
             <input name="essentials" inputMode="decimal" defaultValue={v(s?.essentialsMonthlyMinor)} placeholder="800" /></span></label>
           <label className="stack-sm"><span>Colchón</span><span className="money-input"><span className="cur" aria-hidden="true">{sym(c)}</span>
             <input name="cushion" inputMode="decimal" defaultValue={v(s?.cushionMinor)} placeholder="400" /></span></label>
+          <label className="row" style={{ justifyContent: 'flex-start', gap: 12 }}><input type="checkbox" name="allowZero" defaultChecked={s?.allowZeroForDebt} />
+            <span>Si pago deuda, puedo quedarme en cero</span></label>
           <button type="submit" className="wide">Guardar</button>
         </ActionForm>
       </div>

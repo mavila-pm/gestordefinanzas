@@ -133,3 +133,26 @@ export function comparePayoff(debts: readonly PayoffDebt[], monthlyBudgetMinor: 
   const never = plans.every((p) => p.months === null);
   return { available: true, missingRate: [], plans, note: never ? 'Con ese monto al mes la deuda no baja: los intereses son mayores.' : null };
 }
+
+// ── Extra debt payment the plan allows (respecting the person's stated preference) ──────────────────────
+export interface ExtraPayment { amountMinor: number; target: string; usesCushion: boolean; until: string | null; interestSavedMinor: number | null }
+
+/**
+ * What could go to debt today without touching what is already reserved. By default only free money; with the
+ * preference "quedarme en cero si pago deuda" the cushion may go too — shown as a trade-off, never applied.
+ * Target: highest known rate; with any rate unknown, the person picks (no invented ranking): target is ''.
+ */
+export function extraDebtPayment(plan: Pick<Plan, 'freeMinor' | 'until' | 'lines' | 'status'>, debts: ReadonlyArray<{ name: string; balanceMinor: number; annualRateBp: number | null }>,
+  allowZero: boolean): ExtraPayment | null {
+  if (plan.freeMinor === null || plan.status === 'incomplete') return null;
+  const open = debts.filter((d) => d.balanceMinor > 0);
+  if (!open.length) return null;
+  const cushion = allowZero ? plan.lines.filter((l) => l.kind === 'cushion').reduce((s, l) => s + (l.amountMinor ?? 0), 0) : 0;
+  const available = Math.max(0, plan.freeMinor) + cushion;
+  if (available < 5000) return null; // under S/ 50 is noise, not a suggestion
+  const rated = open.every((d) => d.annualRateBp !== null);
+  const target = rated ? [...open].sort((a, b) => b.annualRateBp! - a.annualRateBp! || a.balanceMinor - b.balanceMinor)[0]! : open.length === 1 ? open[0]! : null;
+  const amount = Math.min(available, target?.balanceMinor ?? available);
+  return { amountMinor: amount, target: target?.name ?? '', usesCushion: allowZero && amount > Math.max(0, plan.freeMinor), until: plan.until,
+    interestSavedMinor: target?.annualRateBp != null ? Math.round((amount * target.annualRateBp) / 10000 / 12) : null };
+}

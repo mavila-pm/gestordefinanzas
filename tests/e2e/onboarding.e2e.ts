@@ -28,17 +28,19 @@ await runSuite('onboarding', async ({ page, check }) => {
   await send(page, 'Me pagan 5,700 el 5, uso BCP, pago el carro como el 10, debo en la tarjeta y también le debo plata a mi pareja.');
   let v = await lastVelsuno(page);
   check('understood card lists income, car, card and personal debt', v.includes('Entendí esto') && v.includes('S/ 5,700 · día 5') && v.includes('Carro') && v.includes('Tarjeta BCP') && v.includes('Deuda con tu pareja'), v);
-  check('asks one important question: the card balance', v.includes('¿Cuánto debes actualmente en la tarjeta bcp?'), v);
+  check('asks ONE question, by impact: today\'s balance (it blocks Dinero libre)', v.includes('¿Cuánto tienes hoy en tu cuenta'), v);
   const u0 = await usage();
   check('deterministic reading costs no AI usage (§54)', u0.every((r) => r.requests === 0), JSON.stringify(u0));
 
-  await send(page, '2,430');
-  v = await lastVelsuno(page);
-  check('a bare answer fills the pending question', v.includes('Debes S/ 2,430'), v);
-  check('next question is today\'s balance', v.includes('¿Cuánto tienes hoy en tu cuenta'), v);
   await tap(page, 'Después');
   v = await lastVelsuno(page);
   check('"Después" moves on (unknown, never 0)', !v.includes('¿Cuánto tienes hoy') && !v.includes('Saldo de hoy S/ 0'), v);
+  check('next: the payment amount that is missing', v.includes('¿Cuánto pagas de carro?'), v);
+
+  await send(page, '900');
+  v = await lastVelsuno(page);
+  check('a bare answer fills the pending question', v.includes('Carro') && v.includes('S/ 900'), v);
+  check('next: the card minimum (not the total, not the balance)', v.includes('pago mínimo de la tarjeta bcp'), v);
 
   await send(page, 'no, el carro es 950');
   v = await lastVelsuno(page);

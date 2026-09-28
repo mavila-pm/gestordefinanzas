@@ -93,12 +93,12 @@ export function parseBalanceForm(get: Get): Result<{ currency: 'PEN' | 'USD'; am
   return { ok: true, value: { currency, amountMinor: negative ? -minor : minor } };
 }
 
-export function parseSettingsForm(get: Get): Result<{ currency: 'PEN' | 'USD'; essentialsMonthlyMinor: number | null; cushionMinor: number }> {
+export function parseSettingsForm(get: Get): Result<{ currency: 'PEN' | 'USD'; essentialsMonthlyMinor: number | null; cushionMinor: number; allowZeroForDebt: boolean }> {
   const currency = cur(get('currency'));
   const e = str(get('essentials'));
   const c = str(get('cushion'));
   const essentials = e ? (e === '0' ? 0 : parseAmountToMinor(e)) : null;
   const cushion = c ? (c === '0' ? 0 : parseAmountToMinor(c)) : 0;
   if (!currency || (e && essentials === null) || cushion === null) return { ok: false, error: 'Revisa los montos.' };
-  return { ok: true, value: { currency, essentialsMonthlyMinor: essentials, cushionMinor: cushion } };
+  return { ok: true, value: { currency, essentialsMonthlyMinor: essentials, cushionMinor: cushion, allowZeroForDebt: get('allowZero') === 'on' } };
 }

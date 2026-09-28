@@ -1,7 +1,7 @@
 import type { Currency } from '../domain/money';
 import type { IncomeMatch } from '../engine/observed';
 import { compareDebtStrategies, simulatePurchase, type MatchSuggestion, type Plan, type PlanInput } from '../engine/planning';
-import { changeBill, delayIncome, payDebt, type ScenarioResult } from '../engine/scenarios';
+import { changeBill, delayIncome, extraDebtPayment, payDebt, type ScenarioResult } from '../engine/scenarios';
 import type { AssistantAct } from './conversation';
 import { money } from './draft';
 import { findAmounts, fold } from './text';
@@ -15,7 +15,7 @@ export type Intent =
   | { k: 'pay_first' } | { k: 'how' } | { k: 'why_free' } | { k: 'paid'; name: string } | { k: 'got_paid' }
   | { k: 'update_amount'; name: string; amountMinor: number } | { k: 'income_changed'; amountMinor: number | null } | { k: 'debt_paid'; name: string }
   | { k: 'changed' } | { k: 'help' } | { k: 'unknown' }
-  | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number };
+  | { k: 'pref_zero_debt'; on: boolean } | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number };
 
 const NAMES = ['carro', 'auto', 'alquiler', 'internet', 'luz', 'agua', 'gas', 'celular', 'telefono', 'tarjeta', 'seguro', 'colegio', 'universidad', 'netflix', 'spotify', 'gimnasio', 'prestamo', 'cable'];
 const nameIn = (t: string) => NAMES.find((n) => new RegExp(`\\b${n}\\b`).test(t)) ?? null;
@@ -24,6 +24,9 @@ export function detectIntent(message: string): Intent {
   const t = fold(message);
   const amount = findAmounts(t)[0];
   const name = nameIn(t);
+  // Stated preference (§12): recorded only after the person confirms; the trade-off is shown first.
+  if (/\bno quiero quedarme en cero\b|\b(quiero|prefiero) (guardar|tener|dejar) (algo|un colchon|colchon)\b/.test(t)) return { k: 'pref_zero_debt', on: false };
+  if (/\b(no me importa|me da igual|no hay problema)\b.*\b(cero|nada|sin plata|sin nada)\b/.test(t) || /\bprefiero pagar (la |mis )?deudas?\b/.test(t)) return { k: 'pref_zero_debt', on: true };
   // What-if (simulated, never written): "¿qué pasa si pago 1000 a la tarjeta?", "¿y si mi sueldo se retrasa 5 días?"
   const hypo = /\b(que pasa si|y si|si)\b/.test(t);
   if (hypo && amount && /\bpago\b|\babono\b|\badelanto\b/.test(t) && /\b(tarjeta|visa|mastercard|amex|prestamo|deuda)\b/.test(t)) {
@@ -166,6 +169,14 @@ export function answer(intent: Intent, v: View): Answer | null {
       return { text: 'Buena noticia. Marca la deuda como pagada en Próximos pagos para que deje de contarse.', actions: [{ type: 'link', label: 'Ver deudas', href: '/app/compromisos' }] };
     case 'changed':
       return { text: 'La comparación con el mes anterior está en Análisis.', actions: [{ type: 'link', label: 'Ver análisis', href: '/app/analisis' }] };
+    case 'pref_zero_debt': {
+      const act: Action = { type: 'act', label: intent.on ? 'Sí, guardar' : 'Sí, cambiar', act: 'set_pref', fields: { key: 'allow_zero_for_debt', value: intent.on ? 'on' : 'off' } };
+      if (!intent.on) return { text: 'Entendido: mantengo tu colchón aunque pagues deuda. ¿Lo cambio?', actions: [act] };
+      const plan = v.plans.find((x) => x.currency === 'PEN');
+      const x = plan ? extraDebtPayment(plan, v.debts.filter((d) => d.currency === 'PEN'), true) : null;
+      const trade = x ? ` Hoy podrías abonar ${money(x.amountMinor, 'PEN')}${x.target ? ` a ${x.target}` : ''}${x.usesCushion ? `, quedando en S/ 0${x.until ? ` hasta el ${dm(x.until)}` : ''}` : ''}.` : '';
+      return { text: `Entendido: si pagas deuda, puedes quedarte en cero.${trade} ¿Lo guardo?`, actions: [act] };
+    }
     case 'what_pay_debt': {
       const input = v.inputs?.PEN;
       const debts = (v.debtLinks ?? []).filter((d) => d.currency === 'PEN');

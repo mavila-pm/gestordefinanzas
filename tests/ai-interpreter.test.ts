@@ -27,8 +27,8 @@ describe('local interpreter (no provider)', () => {
       { kind: 'card', institution: 'BCP', name: 'Tarjeta BCP', balanceMinor: null },
       { kind: 'personal', lender: 'tu pareja', balanceMinor: null },
     ]);
-    // ONE important question: the card balance (as in the spec example).
-    expect(asked).toEqual([`debt:${draft.debts[0]!.id}:balance`]);
+    // ONE important question, by impact: today's balance blocks "Dinero libre"; the card balance does not.
+    expect(asked).toEqual(['balance']);
   });
 
   it('§83: the acceptance sentence, including "no sé cuánto gasto en comida"', () => {
@@ -40,9 +40,12 @@ describe('local interpreter (no provider)', () => {
   });
 
   it('a bare answer fills the pending question; "no sé" records unknown, never 0', () => {
-    const { draft } = talk('Me pagan 5,700 el 5, debo en la tarjeta BCP', '2,430', 'no sé');
-    expect(draft.debts[0]).toMatchObject({ balanceMinor: 243000, balanceStatus: 'confirmed' });
+    const { draft, asked } = talk('Me pagan 5,700 el 5, debo en la tarjeta BCP', 'no sé', 'el 19', 'no sé', '2,430');
     expect(draft.balance).toEqual({ currency: 'PEN', amountMinor: null, status: 'unknown' });
+    const id = draft.debts[0]!.id;
+    // balance → card due day → card minimum ("no sé": stays unknown, never 0) → card balance
+    expect(asked).toEqual(["balance", `debt:${id}:day`, `debt:${id}:minimum`, `debt:${id}:balance`, "group:obligations"]);
+    expect(draft.debts[0]).toMatchObject({ dueDay: 19, minimumMinor: null, balanceMinor: 243000, balanceStatus: 'confirmed' });
   });
 
   it('single fact, corrections, removal, windows, semimonthly income, card statements', () => {
