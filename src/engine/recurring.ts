@@ -39,7 +39,7 @@ function monthsBack(month: string, n: number): string {
 export function detectRecurring(
   txs: readonly Pick<Transaction, 'type' | 'status' | 'amountMinor' | 'currency' | 'occurredAt' | 'merchantNormalized'>[],
   currentMonth: string,
-  fixed: readonly { name: string; currency: Currency; amountMinor: number; active: boolean }[] = [],
+  fixed: readonly { name: string; currency: Currency; amountMinor: number | null; active: boolean }[] = [],
 ): RecurringCandidate[] {
   const from = monthsBack(currentMonth, RECURRING_RULES.lookbackMonths - 1);
   const groups = new Map<string, { merchant: string; currency: Currency; byMonth: Map<string, { amount: number; day: number; date: string }> }>();
@@ -66,7 +66,7 @@ export function detectRecurring(
     const days = entries.map(([, v]) => v.day);
     if (Math.max(...days) - Math.min(...days) > RECURRING_RULES.maxDaySpread) continue;
     const tracked = fixed.some((f) => f.active && f.currency === g.currency && f.name.toUpperCase() === g.merchant.toUpperCase()
-      && Math.abs(f.amountMinor - typical) <= typical * RECURRING_RULES.maxAmountDeviation);
+      && (f.amountMinor === null || Math.abs(f.amountMinor - typical) <= typical * RECURRING_RULES.maxAmountDeviation));
     out.push({
       merchant: g.merchant, currency: g.currency, typicalAmountMinor: typical, dayOfMonth: median(days),
       months: entries.map(([m]) => m), lastSeen: entries.at(-1)![1].date, tracked,

@@ -9,13 +9,21 @@ import { limaMonth } from '../../../src/web/auth-input';
 import { monthLabel } from '../../../src/web/labels';
 import { formatLimaDateTime } from '../../../src/web/transaction-input';
 import { deactivateCommitmentAction, debtPaymentAction, saveDebtAction, saveFixedExpenseAction } from '../actions';
+import { removeObligationAction, saveObligationAction } from '../plan/actions';
+import { ObligationFields } from '../../../components/obligation-fields';
+import { loadPlanningData } from '../../../lib/planning';
+import { compareDebtStrategies } from '../../../src/engine/planning';
+import { shortDate } from '../../../src/web/dates';
 
 export const metadata = { title: 'Próximos pagos' };
 const CUR = <><option value="PEN">Soles (S/)</option><option value="USD">Dólares (US$)</option></>;
 
 export default async function Commitments() {
   const supabase = await createSupabaseServerClient();
-  const [{ fixed, debts }, catalog, { entitlements }] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase), loadEntitlements(supabase)]);
+  const [{ fixed, debts }, , { entitlements }, plan] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase), loadEntitlements(supabase), loadPlanningData(supabase)]);
+  const rows = new Map(plan.obligationRows.map((o) => [o.id, o]));
+  const paidThisMonth = (id: string) => plan.settledObligations.get(id)?.has(limaMonth()) ?? false;
+  const strategies = compareDebtStrategies(plan.debts.filter((x) => x.currency === 'PEN'));
   const month = limaMonth();
   // Plus feature: decided and computed on the server only (§84).
   const recurring = entitlements.features.recurringDetection ? await loadRecurring(supabase, month, fixed) : null;
@@ -44,24 +52,20 @@ export default async function Commitments() {
                   {' · '}{c.kind === 'debt' ? 'Cuota' : 'Gasto fijo'}
                 </small>
               </span>
-              <span className="amount">{formatMoney(c)}</span>
+              <span className="actions" style={{ gap: 8 }}>
+                {paidThisMonth(c.id) && <span className="tag positive-tag">Pagado</span>}
+                <span className="amount">{c.amountMinor === null ? <span className="muted">Por confirmar</span> : formatMoney({ amountMinor: c.amountMinor, currency: c.currency })}</span>
+              </span>
             </li>
           ))}
         </ul>
       )}
 
       <div className="actions">
-        <Sheet label={<><Icon name="add" size={18} />Agregar gasto fijo</>} triggerClassName="quiet" title="Gasto fijo" subtitle="Algo que pagas cada mes: alquiler, colegio, internet." testId="fixed-sheet">
+        <Sheet label={<><Icon name="add" size={18} />Agregar pago</>} triggerClassName="quiet" title="Nuevo pago" subtitle="Algo que pagas cada mes: alquiler, carro, internet." testId="fixed-sheet">
           <div className="sheet-body">
-            <ActionForm action={saveFixedExpenseAction} label="Agregar gasto fijo" closeOnSuccess>
-              <label className="stack-sm"><span>Nombre</span><input name="name" required maxLength={60} placeholder="Alquiler" /></label>
-              <div className="grid">
-                <label className="stack-sm"><span>Monto</span><input name="amount" required inputMode="decimal" autoComplete="off" /></label>
-                <label className="stack-sm"><span>Moneda</span><select name="currency" defaultValue="PEN">{CUR}</select></label>
-                <label className="stack-sm"><span>Día de pago</span><input name="dueDay" required inputMode="numeric" pattern="\d{1,2}" placeholder="1–31" /></label>
-              </div>
-              <label className="stack-sm"><span>Categoría (opcional)</span><select name="categoryId" defaultValue="">
-                <option value="">—</option>{catalog.categories.filter((c) => !c.own).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <ActionForm action={saveObligationAction} label="Agregar pago" closeOnSuccess>
+              <ObligationFields />
               <button type="submit" className="wide">Agregar</button>
             </ActionForm>
           </div>
@@ -133,23 +137,52 @@ export default async function Commitments() {
               );
             })}
           </ul>
+          {plan.debts.filter((x) => x.currency === 'PEN' && x.balanceMinor > 0).length > 1 && (
+            <details className="card" data-testid="debt-strategies">
+              <summary>¿Qué deuda pagar primero?</summary>
+              <div className="stack-sm" style={{ marginTop: 8 }}>
+                <p className="small"><strong>Avalancha</strong> · primero la de mayor tasa: pagas menos intereses.{' '}
+                  {strategies.avalanche.available ? <>Orden: {strategies.avalanche.order.join(' → ')}.</> : <span className="muted">Falta la tasa de {strategies.avalanche.missingRate.join(', ')}.</span>}</p>
+                <p className="small"><strong>Bola de nieve</strong> · primero el saldo más pequeño: cierras deudas antes. Orden: {strategies.snowball.order.join(' → ')}.</p>
+                <p className="muted small">Ninguna es mejor para todos. Paga siempre las cuotas mínimas y cubre tus próximos pagos antes de adelantar.</p>
+              </div>
+            </details>
+          )}
         </section>
       )}
 
       {activeFixed.length > 0 && (
         <section aria-labelledby="h-fixed" className="stack-sm">
-          <h2 id="h-fixed">Gastos fijos</h2>
-          <ul className="list card" style={{ paddingTop: 4, paddingBottom: 4 }}>
-            {activeFixed.map((f) => (
-              <li key={f.id}>
-                <span className="setting-text"><span>{f.name}</span><small className="muted">Cada mes, el día {f.dueDay}</small></span>
-                <span className="actions"><span className="amount">{formatMoney(f)}</span>
-                  <ActionForm action={deactivateCommitmentAction} className="inline" label={`Quitar ${f.name}`}>
-                    <input type="hidden" name="id" value={f.id} /><input type="hidden" name="kind" value="fixed" />
-                    <button type="submit" className="icon" aria-label={`Quitar ${f.name}`}><Icon name="close" size={18} /></button>
-                  </ActionForm></span>
-              </li>
-            ))}
+          <h2 id="h-fixed">Tus pagos</h2>
+          <ul className="list card" data-testid="obligation-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
+            {activeFixed.map((f) => {
+              const r = rows.get(f.id);
+              const when = !r ? '' : r.dueDay === null ? 'Fecha por confirmar'
+                : `${r.frequency === 'monthly' ? 'Cada mes' : r.frequency === 'yearly' ? 'Cada año' : r.frequency === 'quarterly' ? 'Cada 3 meses' : 'Cada 2 meses'} · ${r.dueDayMax ? `vence el ${r.dueDay}–${r.dueDayMax} aprox.` : `vence el ${r.dueDay}`}${r.targetDay ? ` · pagas el ${r.targetDay}` : ''}`;
+              return (
+                <li key={f.id}>
+                  <span className="setting-text"><span>{f.name}</span><small className="muted">{when}</small></span>
+                  <span className="actions" style={{ gap: 4 }}>
+                    <span className="amount">{f.amountMinor === null ? <span className="muted">Por confirmar</span> : <>{r?.amountStatus === 'estimated' ? '≈ ' : ''}{formatMoney({ amountMinor: f.amountMinor, currency: f.currency })}</>}</span>
+                    <Sheet label={<Icon name="more" />} triggerClassName="icon" triggerLabel={`Editar ${f.name}`} title={f.name}>
+                      <div className="sheet-body stack">
+                        <ActionForm action={saveObligationAction} label={`Editar ${f.name}`} closeOnSuccess>
+                          <input type="hidden" name="id" value={f.id} />
+                          <ObligationFields v={{ name: f.name, kind: r?.kind, currency: f.currency, amount: f.amountMinor === null ? '' : (f.amountMinor / 100).toFixed(2),
+                            amountUnknown: f.amountMinor === null, amountEstimated: r?.amountStatus === 'estimated', frequency: r?.frequency, anchorMonth: r?.anchorMonth,
+                            dueDay: r?.dueDay ?? null, dueDayMax: r?.dueDayMax ?? null, targetDay: r?.targetDay ?? null }} />
+                          <button type="submit" className="wide">Guardar</button>
+                        </ActionForm>
+                        <ActionForm action={removeObligationAction} className="inline" label={`Quitar ${f.name}`} closeOnSuccess>
+                          <input type="hidden" name="id" value={f.id} />
+                          <button type="submit" className="link" style={{ color: 'var(--semantic-error)' }}>Quitar este pago</button>
+                        </ActionForm>
+                      </div>
+                    </Sheet>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

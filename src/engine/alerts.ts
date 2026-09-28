@@ -38,7 +38,7 @@ export function buildAlerts(input: {
   // Debt due soon (spec §46 "deuda próxima"): installments due today or in the next 3 days.
   for (const c of (input.commitments ?? []).filter((c) => c.kind === 'debt' && c.daysUntil >= 0 && c.daysUntil <= 3)) {
     out.push({ level: 'IMPORTANT', code: `debt_due:${c.id}`, href: '/app/compromisos',
-      text: `${c.name}: cuota de ${formatMoney(c)} ${c.daysUntil === 0 ? 'vence hoy' : `vence en ${c.daysUntil} día(s)`} (${c.dueDate.slice(8, 10)}/${c.dueDate.slice(5, 7)}).` });
+      text: `${c.name}: cuota de ${c.amountMinor !== null ? formatMoney({ amountMinor: c.amountMinor, currency: c.currency }) : 'monto por confirmar'} ${c.daysUntil === 0 ? 'vence hoy' : `vence en ${c.daysUntil} día(s)`} (${c.dueDate.slice(8, 10)}/${c.dueDate.slice(5, 7)}).` });
   }
   for (const b of input.budgets ?? []) {
     const m = (v: number) => formatMoney({ amountMinor: v, currency: b.currency });

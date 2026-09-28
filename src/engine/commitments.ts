@@ -1,11 +1,15 @@
 import type { Currency } from '../domain/money';
 
-export interface FixedExpense { id: string; name: string; currency: Currency; amountMinor: number; dueDay: number; active: boolean }
+/** Recurring obligation template (fixed_expenses). Unknown amount/day stay null — never 0 (ADR-0005). */
+export interface FixedExpense {
+  id: string; name: string; currency: Currency; amountMinor: number | null; dueDay: number | null; active: boolean;
+  frequency?: 'monthly' | 'bimonthly' | 'quarterly' | 'yearly'; anchorMonth?: number | null;
+}
 export interface Debt {
   id: string; name: string; currency: Currency; principalMinor: number; balanceMinor: number;
   installmentMinor: number | null; installmentsTotal: number | null; installmentsPaid: number; dueDay: number | null; active: boolean;
 }
-export interface Commitment { kind: 'fixed' | 'debt'; id: string; name: string; currency: Currency; amountMinor: number; dueDate: string; daysUntil: number }
+export interface Commitment { kind: 'fixed' | 'debt'; id: string; name: string; currency: Currency; amountMinor: number | null; dueDate: string; daysUntil: number }
 
 /** Day of month clamped to the month length (31 in February -> 28/29). */
 export function dueDateIn(month: string, day: number): string {
@@ -22,7 +26,8 @@ export function dueDateIn(month: string, day: number): string {
 export function monthCommitments(month: string, today: string, fixed: readonly FixedExpense[], debts: readonly Debt[]): Commitment[] {
   const days = (date: string) => Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
   const items: Omit<Commitment, 'daysUntil'>[] = [
-    ...fixed.filter((f) => f.active).map((f) => ({ kind: 'fixed' as const, id: f.id, name: f.name, currency: f.currency, amountMinor: f.amountMinor, dueDate: dueDateIn(month, f.dueDay) })),
+    ...fixed.filter((f) => f.active && f.dueDay !== null && occursIn(f, month))
+      .map((f) => ({ kind: 'fixed' as const, id: f.id, name: f.name, currency: f.currency, amountMinor: f.amountMinor, dueDate: dueDateIn(month, f.dueDay!) })),
     ...debts.filter((d) => d.active && d.dueDay && d.installmentMinor && d.balanceMinor > 0
       && (d.installmentsTotal === null || d.installmentsPaid < d.installmentsTotal))
       .map((d) => ({ kind: 'debt' as const, id: d.id, name: d.name, currency: d.currency, amountMinor: Math.min(d.installmentMinor!, d.balanceMinor), dueDate: dueDateIn(month, d.dueDay!) })),
@@ -30,9 +35,18 @@ export function monthCommitments(month: string, today: string, fixed: readonly F
   return items.map((c) => ({ ...c, daysUntil: days(c.dueDate) })).sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.name.localeCompare(b.name));
 }
 
-export function totalsByCurrency(items: readonly { currency: Currency; amountMinor: number }[]): Partial<Record<Currency, number>> {
+const STEP = { monthly: 1, bimonthly: 2, quarterly: 3, yearly: 12 } as const;
+function occursIn(f: FixedExpense, month: string): boolean {
+  const freq = f.frequency ?? 'monthly';
+  if (freq === 'monthly') return true;
+  const m = Number(month.slice(5, 7));
+  return f.anchorMonth != null && ((m - f.anchorMonth) % STEP[freq] + 12) % STEP[freq] === 0;
+}
+
+/** Sum of KNOWN amounts per currency (unknown amounts are reported separately, never counted as 0). */
+export function totalsByCurrency(items: readonly { currency: Currency; amountMinor: number | null }[]): Partial<Record<Currency, number>> {
   const out: Partial<Record<Currency, number>> = {};
-  for (const i of items) out[i.currency] = (out[i.currency] ?? 0) + i.amountMinor;
+  for (const i of items) if (i.amountMinor !== null) out[i.currency] = (out[i.currency] ?? 0) + i.amountMinor;
   return out;
 }
 

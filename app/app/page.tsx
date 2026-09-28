@@ -9,6 +9,8 @@ import { closedMonthMilestone, mainInsight } from '../../src/engine/insights';
 import { budgetStatus } from '../../src/engine/budgets';
 import { loadBudgets, loadCommitmentData, loadProfile } from '../../lib/queries';
 import { preferredName } from '../../src/domain/profile';
+import { loadPlanningData, planFor } from '../../lib/planning';
+import { shortDate } from '../../src/web/dates';
 import { monthCommitments, totalsByCurrency } from '../../src/engine/commitments';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../src/web/auth-input';
@@ -33,7 +35,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const windowFrom = limaMonthRange(previousMonth(month, 3))!.from;
   const since30 = new Date(now.getTime() - 30 * 86_400_000).toISOString();
   // RLS scopes every query to the signed-in user; no user_id filter can widen it.
-  const [txRes, pendingRes, oldestRes, unresolvedRes, autoRes, profileRes, budgets, commitmentData, everRes] = await Promise.all([
+  const [txRes, pendingRes, oldestRes, unresolvedRes, autoRes, profileRes, budgets, commitmentData, everRes, planning] = await Promise.all([
     supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', windowFrom).lt('occurred_at', range.to)
       .order('occurred_at', { ascending: false }).limit(3000),
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
@@ -44,6 +46,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     loadBudgets(supabase),
     loadCommitmentData(supabase),
     supabase.from('transactions').select('id', { count: 'exact', head: true }),
+    loadPlanningData(supabase, now),
   ]);
 
   if (txRes.error) {
@@ -79,6 +82,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const firstTime = (everRes.count ?? 0) === 0;
 
   if (firstTime) return <Welcome name={firstName} />;
+  const free = month === currentMonth ? planFor(planning, 'PEN') : null;
+  const incomePlan = month === currentMonth && planning.recentIncome?.currency === 'PEN' ? planFor(planning, 'PEN', { transactionId: planning.recentIncome.transactionId }) : null;
 
   return (
     <main className="stack">
@@ -112,6 +117,34 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
         {pen.cashWithdrawalsMinor > 0 && <small style={{ opacity: .82 }}>Retiros de efectivo: {money(pen.cashWithdrawalsMinor, 'PEN')}. No cuentan como gasto hasta que sepas en qué se usaron.</small>}
       </section>
+
+      {free && (
+        <Link href="/app/plan" className="free-row" data-testid="free-summary">
+          {free.freeMinor !== null ? (
+            <>
+              <span className="setting-text">
+                <span className="muted small">{free.status === 'confirmed' ? 'Dinero libre' : 'Dinero libre estimado'}{free.nextIncome ? ` hasta el ${shortDate(free.nextIncome.date)}` : ''}</span>
+                <strong className="big">{free.freeMinor < 0 ? 'Faltan ' : ''}{money(free.freeMinor, 'PEN')}</strong>
+                <small className="muted">Ya descontamos {money(free.reservedMinor, 'PEN')} en próximos pagos.{free.missing.length ? ` Falta confirmar ${free.missing.length} dato${free.missing.length > 1 ? 's' : ''}.` : ''}</small>
+              </span>
+              <Icon name="chevron" />
+            </>
+          ) : (
+            <>
+              <span className="setting-text"><strong>¿Cuánto puedes gastar sin tocar lo que debes pagar?</strong><small className="muted">Calcula tu dinero libre con dos datos.</small></span>
+              <Icon name="chevron" />
+            </>
+          )}
+        </Link>
+      )}
+
+      {incomePlan && incomePlan.base && planning.recentIncome && (
+        <p className="notice positive" data-testid="income-event">
+          <span>Entraron <strong>{money(incomePlan.base.amountMinor, 'PEN')}</strong> el {shortDate(planning.recentIncome.date)}.
+            {incomePlan.until ? ` Hay ${money(incomePlan.reservedMinor, 'PEN')} por cubrir antes del próximo ingreso. ` : ' '}
+            <Link href={`/app/plan?ingreso=${planning.recentIncome.transactionId}`}>Ver distribución</Link></span>
+        </p>
+      )}
 
       {others.map((s) => (
         <section key={s.currency} className="card" aria-label={`Resumen ${s.currency}`}>

@@ -1,6 +1,6 @@
 -- E2E seed for ALL suites (docs/runbooks/e2e.md). Idempotent: removes every previous probe user first.
 -- Probe users live on the non-deliverable .invalid domain; one A/B pair per suite, so suites never share data:
---   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits
+--   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits   s11* cashflow
 -- __E2E_PASSWORD__ is replaced at run time (scripts/e2e.sh render) — the password is never committed.
 -- B rows attacked by id in the suites have fixed ids (see B_TX in tests/e2e/lib.ts).
 -- Deleting a user cascades to all of its rows.
@@ -12,7 +12,7 @@ declare r record; u uuid; ta uuid;
   c_tr uuid := (select id from public.categories where user_id is null and name = 'Transporte');
   c_otros uuid := (select id from public.categories where user_id is null and name = 'Otros');
 begin
-  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b')) v(tag) loop
+  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b')) v(tag) loop
     u := gen_random_uuid();
     insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -84,6 +84,34 @@ begin
     elsif r.tag = 's10b' then
       insert into public.transactions (id, user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint)
       values ('00000000-0000-4000-8000-00000000e10b', u, '2026-09-12 12:00-05', 'expense', 'outflow', 9900, 'PEN', 'E2E SECRET B', 'E2E SECRET B', c_food, 'confirmed', 'high', 'e2e-s10-b');
+    elsif r.tag = 's11a' then
+      -- Cash-flow planning demo (ADR-0005), all synthetic: balance S/ 5,000; salary on the 15th; car 9-10 (pay on the 7th);
+      -- card on the 10th; internet amount unknown; phone on the 5th; rent on the 20th; yearly insurance (reserve);
+      -- electricity expected 129.00 but last paid 160.00 (variation); an unlinked car payment last month (suggestion);
+      -- a salary that just came in (income event); two debts, one without a rate.
+      insert into public.balance_snapshots (user_id, currency, amount_minor) values (u, 'PEN', 500000);
+      insert into public.expected_incomes (user_id, name, currency, amount_minor, amount_status, frequency, day_of_month) values (u, 'Sueldo', 'PEN', 400000, 'estimated', 'monthly', 15);
+      insert into public.planning_settings (user_id, currency, essentials_monthly_minor, cushion_minor) values (u, 'PEN', 80000, 40000);
+      insert into public.fixed_expenses (user_id, name, kind, currency, amount_minor, amount_status, due_day, due_day_max, target_day) values
+        (u, 'Carro', 'car', 'PEN', 95000, 'confirmed', 9, 10, 7),
+        (u, 'Tarjeta', 'card', 'PEN', 50000, 'confirmed', 10, null, null),
+        (u, 'Internet', 'internet', 'PEN', null, 'unknown', 13, null, null),
+        (u, 'Celular', 'phone', 'PEN', 10000, 'confirmed', 5, null, null),
+        (u, 'Alquiler', 'rent', 'PEN', 150000, 'confirmed', 20, null, null),
+        (u, 'Luz', 'services', 'PEN', 12900, 'estimated', 18, null, null);
+      insert into public.fixed_expenses (user_id, name, kind, currency, amount_minor, frequency, anchor_month, due_day) values (u, 'Seguro', 'insurance', 'PEN', 120000, 'yearly', 3, 1);
+      insert into public.debts (user_id, name, principal_minor, balance_minor, annual_rate_bp, installment_minor, due_day) values
+        (u, 'Visa', 500000, 300000, 6000, null, null), (u, 'Préstamo familiar', 100000, 100000, null, null, null);
+      insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, status, confidence, fingerprint) values
+        (u, now() - interval '2 days', 'income', 'inflow', 400000, 'PEN', 'SUELDO DEMO', 'SUELDO DEMO', 'confirmed', 'high', 'e2e-s11-in'),
+        (u, date_trunc('month', now()) - interval '22 days', 'expense', 'outflow', 95000, 'PEN', 'PAGO CUOTA CARRO', 'PAGO CUOTA CARRO', 'confirmed', 'high', 'e2e-s11-car');
+      insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, status, confidence, fingerprint)
+        values (u, date_trunc('month', now()) - interval '12 days', 'expense', 'outflow', 16000, 'PEN', 'LUZ DEL SUR', 'LUZ DEL SUR', 'confirmed', 'high', 'e2e-s11-luz') returning id into ta;
+      insert into public.plan_settlements (user_id, fixed_expense_id, period, transaction_id)
+        select u, id, to_char(date_trunc('month', now()) - interval '12 days', 'YYYY-MM'), ta from public.fixed_expenses where user_id = u and name = 'Luz';
+    elsif r.tag = 's11b' then
+      insert into public.fixed_expenses (id, user_id, name, currency, amount_minor, due_day) values ('00000000-0000-4000-8000-00000000e11b', u, 'B secreto', 'PEN', 99900, 10);
+      insert into public.balance_snapshots (user_id, currency, amount_minor) values (u, 'PEN', 777700);
     elsif r.tag = 's9b' then
       insert into public.budgets (user_id, category_id, amount_minor) values (u, c_food, 99900);
       insert into public.debts (user_id, name, principal_minor, balance_minor) values (u, 'B deuda secreta', 100000, 50000);

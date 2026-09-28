@@ -34,8 +34,8 @@ await runSuite('planning-account', async ({ page, check }) => {
   await page.goto(`${BASE}/app/compromisos`);
   check('Free: recurring detection offered as Plus, nothing computed', ((await page.getByTestId('recurring').textContent()) ?? '').includes('Disponible en Plus')
     && (await page.getByTestId('recurring-list').count()) === 0);
-  await page.click('text=Agregar gasto fijo');
-  const ff = 'form[aria-label="Agregar gasto fijo"]';
+  await page.getByRole('button', { name: 'Agregar pago' }).first().click();
+  const ff = 'form[aria-label="Agregar pago"]';
   await page.fill(`${ff} input[name=name]`, 'E2E Alquiler');
   await page.fill(`${ff} input[name=amount]`, '1500');
   await page.fill(`${ff} input[name=dueDay]`, '5');

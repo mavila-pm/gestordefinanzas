@@ -67,7 +67,7 @@ for (const theme of ['light', 'dark'] as const) {
     await login(page, probe('s78a'));
     for (const [name, path] of [['dashboard', '/app?month=2026-09'], ['movements', '/app/movimientos?month=2026-09'], ['review', '/app/revisar'], ['more', '/app/mas'],
       ['analysis', '/app/analisis?month=2026-09'], ['budgets', '/app/presupuestos'], ['payments', '/app/compromisos'], ['accounts', '/app/tarjetas'],
-      ['rules', '/app/reglas'], ['connections', '/app/conexiones'], ['plan', '/app/cuenta'], ['settings', '/app/ajustes'], ['new', '/app/movimientos/nuevo'],
+      ['rules', '/app/reglas'], ['connections', '/app/conexiones'], ['account-plan', '/app/cuenta'], ['settings', '/app/ajustes'], ['new', '/app/movimientos/nuevo'],
       ['import', '/app/importar']] as const) {
       await page.goto(`${BASE}${path}`);
       await shoot(page, name, width, theme, save);
@@ -91,6 +91,14 @@ for (const theme of ['light', 'dark'] as const) {
     await shoot(page, 'split-filled', width, theme, save);
     await rows.nth(2).locator('input[inputmode=decimal]').fill('900');
     await shoot(page, 'split-invalid', width, theme, save);
+    // Cash-flow planning demo (seed s11a).
+    await ctx.clearCookies();
+    await ctx.addCookies([{ name: 'vs-theme', value: theme, url: BASE }]);
+    await login(page, probe('s11a'));
+    for (const [name, path] of [['free-dashboard', '/app'], ['free-plan', '/app/plan'], ['free-payments', '/app/compromisos']] as const) {
+      await page.goto(`${BASE}${path}`);
+      await shoot(page, name, width, theme, save);
+    }
     await ctx.close();
   }
 }

@@ -287,7 +287,7 @@ export async function debtPaymentAction(_prev: ActionState, form: FormData): Pro
   const total = d.installments_total as number | null;
   // Optimistic concurrency: only applies if the balance did not change meanwhile.
   const { data, error } = await supabase.from('debts')
-    .update({ balance_minor: Math.max(0, balance - amount), installments_paid: total === null ? paid : Math.min(paid, total) })
+    .update({ balance_minor: Math.max(0, balance - amount), installments_paid: total === null ? paid : Math.min(paid, total), last_payment_on: new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10) })
     .eq('id', id).eq('balance_minor', balance).select('id');
   if (error || !data?.length) return { error: 'No se pudo registrar: el saldo cambió. Recarga e intenta de nuevo.' };
   return done('Pago registrado en la deuda. Recuerda que el movimiento del banco se registra aparte (no se duplica).');
