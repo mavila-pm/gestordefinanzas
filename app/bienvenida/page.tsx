@@ -1,0 +1,35 @@
+import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { Chat } from '../../components/chat';
+import { Logo } from '../../components/ui/logo';
+import { aiAvailability } from '../../src/ai/config';
+import { loadMessages, onboardingResume, startOnboarding } from '../../lib/onboarding';
+import { createSupabaseServerClient } from '../../lib/supabase/server';
+import { leaveOnboarding, onboardingAction } from './actions';
+
+export const metadata: Metadata = { title: 'Bienvenida · Velsuno' };
+
+/** First access (ADR-0006): a full-screen conversation instead of an empty dashboard or a long form. */
+export default async function Bienvenida() {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+  const state = await startOnboarding(supabase, user.id);
+  if (state.status === 'completed') redirect('/app');
+  if (state.status === 'skipped') await onboardingResume(supabase, user.id);
+  const messages = await loadMessages(supabase, 'onboarding');
+  const { vision } = aiAvailability();
+  return (
+    <div className="onboarding">
+      <header className="onboarding-top">
+        <span className="brand" aria-label="Velsuno"><Logo height={22} /></span>
+        <form action={leaveOnboarding}><button type="submit" className="link">Ahora no</button></form>
+      </header>
+      <main className="onboarding-body" id="main">
+        <h1 className="sr-only">Configura Velsuno conversando</h1>
+        <Chat initial={messages} send={onboardingAction} camera={vision} label="Conversación de bienvenida"
+          placeholder="Escribe como te salga…" />
+      </main>
+    </div>
+  );
+}

@@ -11,8 +11,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
-  const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true })
-    .in('status', ['review_required', 'possible_duplicate']);
+  const [{ count }, onboarding] = await Promise.all([
+    supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
+    supabase.from('onboarding_states').select('status').maybeSingle(),
+  ]);
+  // First access goes to the conversation (ADR-0006); "Ahora no" (skipped) or finished never comes back here.
+  if (!onboarding.error && (!onboarding.data || onboarding.data.status === 'active')) redirect('/bienvenida');
   const pending = count ?? 0;
   return (
     <div className="shell">

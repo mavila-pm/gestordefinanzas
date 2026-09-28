@@ -9,6 +9,8 @@ const securityHeaders = [
 
 const config: NextConfig = {
   poweredByHeader: false,
+  // Camera reads send up to 3 images, downscaled to ~1600px JPEG in the browser (ADR-0006).
+  experimental: { serverActions: { bodySizeLimit: '4mb' } },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

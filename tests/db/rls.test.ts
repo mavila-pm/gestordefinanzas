@@ -45,8 +45,9 @@ describe.skipIf(!DATABASE_URL)('RLS: user isolation (User A vs User B)', () => {
       where n.nspname = 'public' and c.relkind = 'r' and has_table_privilege(r.role, c.oid, p.priv)
         and (r.role = 'anon' or p.priv in ('TRUNCATE', 'REFERENCES', 'TRIGGER')
           -- app_writer may delete only: manual transactions (delete_manual_transaction) and split allocations
-          -- (replace-all inside set_transaction_split). Any other DELETE grant fails this guard.
-          or (r.role = 'app_writer' and p.priv = 'DELETE' and c.relname not in ('transactions', 'transaction_allocations')))`);
+          -- (replace-all inside set_transaction_split), and balance snapshots only through the demo-only
+          -- delete_demo_balance_snapshots (allowlisted users, ADR-0006). Any other DELETE grant fails this guard.
+          or (r.role = 'app_writer' and p.priv = 'DELETE' and c.relname not in ('transactions', 'transaction_allocations', 'balance_snapshots')))`);
     expect(rows).toEqual([]);
     const writer = await pool.query(`select rolbypassrls, rolcanlogin, rolsuper from pg_roles where rolname = 'app_writer'`);
     expect(writer.rows).toEqual([{ rolbypassrls: false, rolcanlogin: false, rolsuper: false }]);

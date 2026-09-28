@@ -6,6 +6,7 @@ export const PRIMARY: Item[] = [
   { href: '/app', match: '/app', label: 'Resumen', icon: 'home', exact: true },
   { href: '/app/movimientos?month=all', match: '/app/movimientos', label: 'Movimientos', icon: 'transfer' },
   { href: '/app/revisar', match: '/app/revisar', label: 'Por revisar', icon: 'review' },
+  { href: '/app/preguntar', match: '/app/preguntar', label: 'Preguntar', icon: 'chat' },
   { href: '/app/plan', match: '/app/plan', label: 'Dinero libre', icon: 'milestone' },
   { href: '/app/analisis', match: '/app/analisis', label: 'Análisis', icon: 'analytics' },
   { href: '/app/presupuestos', match: '/app/presupuestos', label: 'Presupuestos', icon: 'categories' },
@@ -19,10 +20,10 @@ export const SETUP: Item[] = [
   { href: '/app/ajustes', match: '/app/ajustes', label: 'Ajustes', icon: 'settings' },
 ];
 export const MOBILE: Item[] = [
-  PRIMARY[0]!, PRIMARY[1]!, { ...PRIMARY[2]!, label: 'Revisar' },
+  PRIMARY[0]!, PRIMARY[1]!, { ...PRIMARY[2]!, label: 'Revisar' }, PRIMARY[3]!,
   { href: '/app/mas', match: '/app/mas', label: 'Más', icon: 'more' },
 ];
 /** Destinations reached through "Más" on mobile, so that tab stays active on them. */
-export const UNDER_MORE = [...PRIMARY.slice(3), ...SETUP].map((i) => i.match).concat('/app/importar');
+export const UNDER_MORE = [...PRIMARY.slice(4), ...SETUP].map((i) => i.match).concat('/app/importar');
 
-export const MORE_ITEMS = [...PRIMARY.slice(3), ...SETUP];
+export const MORE_ITEMS = [...PRIMARY.slice(4), ...SETUP];
