@@ -118,3 +118,13 @@ describe('search by amount (§52)', () => {
     expect(searchAmountMinor(sanitizeSearch('12.345'))).toBeNull();
   });
 });
+
+describe('sync history labels (§52)', () => {
+  it('plain language only, unknown values fall back safely', async () => {
+    const { describeSyncEvent } = await import('../src/web/sync-history');
+    expect(describeSyncEvent({ channel: 'import', outcome: 'duplicate_same_event', created_at: '', transaction_id: null }))
+      .toEqual({ channel: 'Mensaje pegado', outcome: 'Repetido: ya lo teníamos', linkable: false });
+    expect(describeSyncEvent({ channel: 'x', outcome: 'BCP_SMS_V1', created_at: '', transaction_id: 't' }))
+      .toEqual({ channel: 'Otra fuente', outcome: 'Procesado', linkable: true });
+  });
+});

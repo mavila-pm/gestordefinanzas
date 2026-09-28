@@ -84,6 +84,12 @@ await runSuite('import-learning', async ({ page, check }) => {
   check('imports wait in review with the import reason', queue.includes('Importado por ti desde un mensaje pegado') && queue.includes('RESTAURANTE EL EJEMPLO'), queue.slice(0, 400));
   check('imported purchase linked to the registered card automatically (TASK-014)', !queue.includes('****4821 sin asociar') && !queue.includes('****4821 no identificada'), queue);
   check('no internal terms in the queue', !/BCP_SMS|BCP_EMAIL|fingerprint|user_import|sender_not_verified/.test(queue), queue);
+
+  await page.goto(`${BASE}/app/conexiones`);
+  const sync = (await page.getByTestId('sync-history').textContent()) ?? '';
+  check('sync history explains each pasted message in plain language (TASK-018)', sync.includes('Mensaje pegado') && sync.includes('Movimiento nuevo')
+    && sync.includes('Repetido: ya lo teníamos') && sync.includes('Unido a un movimiento que ya tenías') && sync.includes('No era una notificación bancaria'), sync);
+  check('sync history shows no internal terms', !/BCP_|fingerprint|sha256|user_import/i.test(sync), sync);
   await page.goto(`${BASE}/app?month=2026-09`);
   check('pending imports do not count as expenses yet', (await page.getByTestId('expenses-PEN').textContent()) === 'S/ 0.00', (await page.getByTestId('expenses-PEN').textContent()) ?? '');
 

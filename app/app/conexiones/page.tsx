@@ -1,10 +1,17 @@
 import { ActionForm } from '../../../components/action-form';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { rotateAddressAction } from '../actions';
+import { describeSyncEvent, type SyncEventRow } from '../../../src/web/sync-history';
+import { formatLimaDateTime } from '../../../src/web/transaction-input';
 
 export default async function Connections() {
   const supabase = await createSupabaseServerClient();
-  const { data } = await supabase.from('email_connections').select('address_local,created_at').eq('status', 'active').maybeSingle();
+  const [{ data }, history] = await Promise.all([
+    supabase.from('email_connections').select('address_local,created_at').eq('status', 'active').maybeSingle(),
+    // RLS: only the user's own events.
+    supabase.from('financial_events').select('channel,outcome,created_at,transaction_id').order('created_at', { ascending: false }).limit(30),
+  ]);
+  const events = (history.data ?? []) as SyncEventRow[];
   const domain = process.env.INGEST_EMAIL_DOMAIN;
   const ready = !!domain && !!process.env.INBOUND_EMAIL_SECRET && !!process.env.DATABASE_URL;
   return (
@@ -33,6 +40,25 @@ export default async function Connections() {
           <li><span>Importar mensaje pegado</span><a href="/app/importar">Disponible</a></li>
           <li><span>Registro manual</span><a href="/app/movimientos/nuevo">Disponible</a></li>
         </ul>
+      </section>
+
+      <section className="card stack-sm">
+        <h2>Historial de sincronización</h2>
+        {history.error ? <p role="alert" className="error">No se pudo cargar el historial.</p>
+          : events.length === 0 ? <p className="muted">Aún no llega ninguna notificación.</p> : (
+          <ul className="list" data-testid="sync-history">
+            {events.map((e, i) => {
+              const d = describeSyncEvent(e);
+              return (
+                <li key={i}>
+                  <span>{d.outcome}<br /><small className="muted">{d.channel} · {formatLimaDateTime(e.created_at)}</small></span>
+                  {d.linkable && <a href={`/app/movimientos/${e.transaction_id}`}>Ver</a>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <small className="muted">Últimos 30 eventos. Los mensajes repetidos o que no son movimientos no crean nada.</small>
       </section>
     </main>
   );
