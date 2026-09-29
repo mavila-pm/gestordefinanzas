@@ -1,0 +1,67 @@
+/**
+ * End-to-end check against the REAL Supabase project, driven through the running app.
+ * access to the Supabase host.
+ * Run all suites: scripts/e2e.sh (seed: tests/e2e/seed.sql).
+ */
+import { BASE, act, login, probe, runSuite } from './lib.ts';
+
+const A = probe('s3a');
+const B = probe('s3b');
+
+await runSuite('auth-dashboard', async ({ page, check }) => {
+  async function loginAttempt(email: string, password: string) {
+    await page.goto(`${BASE}/login`);
+    await page.fill('input[name=email]', email);
+    await page.fill('input[name=password]', password);
+    await act(page, () => page.click('form button[type=submit]'));
+  }
+
+  // 1. Protected route without session
+  await page.goto(`${BASE}/app`);
+  check('unauthenticated /app redirects to /login', page.url().startsWith(`${BASE}/login`), page.url());
+
+  // 2. Wrong password and unknown email: identical generic message (no enumeration)
+  await loginAttempt(A, 'wrong-password-123');
+  const loginErr = await page.locator('[role=alert]:not(#__next-route-announcer__)').textContent();
+  check('wrong password -> generic error', !!loginErr?.includes('Correo o contraseña incorrectos'), loginErr ?? '');
+  await loginAttempt('nobody-e2e@invalid.test', 'whatever-123');
+  check('unknown email -> same generic error', (await page.locator('[role=alert]:not(#__next-route-announcer__)').textContent()) === loginErr);
+
+  // 3. Login A -> dashboard with A's data only (RLS through the app)
+  await login(page, A);
+  check('login A lands on /app', page.url().startsWith(`${BASE}/app`), page.url());
+  await page.goto(`${BASE}/app?month=2026-09`);
+  const expenses = await page.getByTestId('expenses-PEN').textContent();
+  check('A expenses = S/ 100.00 (purchase + card payment + ATM)', expenses === 'S/ 100.00', expenses ?? '');
+  const list = (await page.getByTestId('tx-list').textContent()) ?? '';
+  check('A sees own merchant', list.includes('E2E RESTAURANTE A'), list);
+  check('A does NOT see B merchant', !list.includes('E2E SECRET B'), list);
+  check('withdrawal shown apart, not as expense', (await page.content()).includes('Retiros de efectivo'));
+
+  // 4. Logout
+  // Server-action redirect = client-side navigation (no new load event): wait for the URL instead of networkidle.
+  await Promise.all([page.waitForURL(/\/login/), page.click('text=Cerrar sesión')]);
+  await page.goto(`${BASE}/app`);
+  check('after logout /app redirects to /login', page.url().startsWith(`${BASE}/login`), page.url());
+
+  // 5. Password recovery for an unknown email: neutral message (Supabase sends nothing)
+  await page.goto(`${BASE}/forgot-password`);
+  await page.fill('input[name=email]', 'nobody-e2e@invalid.test');
+  await act(page, () => page.click('form button[type=submit]'));
+  const resetMsg = await page.locator('[role=status], [role=alert]:not(#__next-route-announcer__)').first().textContent();
+  check('forgot-password neutral message', !!resetMsg?.includes('Si existe una cuenta'), resetMsg ?? '');
+  const nextCookie = (await page.context().cookies()).find((c) => c.name === 'gf_auth_next');
+  check('recovery remembers /reset-password in an httpOnly /auth cookie (callback URL stays query-free)',
+    nextCookie?.value === '%2Freset-password' || nextCookie?.value === '/reset-password'
+      ? nextCookie.httpOnly && nextCookie.path === '/auth' : false, JSON.stringify(nextCookie));
+
+  // 6. Signup with an already registered email: neutral message (no enumeration)
+  await page.goto(`${BASE}/signup`);
+  await page.fill('input[name=email]', B);
+  await page.fill('input[name=password]', 'another-pass-123');
+  await act(page, () => page.click('form button[type=submit]'));
+  const signupMsg = await page.locator('[role=status], [role=alert]:not(#__next-route-announcer__)').first().textContent();
+  check('signup existing email -> neutral message', !!signupMsg?.includes('Si el correo es válido'), signupMsg ?? '');
+  const signupCookie = (await page.context().cookies()).find((c) => c.name === 'gf_auth_next');
+  check('signup remembers /app for the confirmation link', decodeURIComponent(signupCookie?.value ?? '') === '/app', JSON.stringify(signupCookie));
+});

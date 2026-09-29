@@ -1,0 +1,118 @@
+{
+  "card-bcp-pen": {
+    "sha256": "28d21e1427a42887fd129d5172b81fc0b28976bf9f1f91a2d373734afd81c06d",
+    "document": "card_statement",
+    "institution": "BCP",
+    "last4": "4821",
+    "currency": "PEN",
+    "balance": "2430.00",
+    "payment_minimum": "284.30",
+    "payment_total": "2430.00",
+    "due_date": "2026-10-19",
+    "cut_date": "2026-10-04",
+    "confidence": "high",
+    "uncertain": []
+  },
+  "card-bbva-usd": {
+    "sha256": "3b77f6efdb57bda15030bf3f34444d5a46cc731ca1e50d204d6c3869a42cdccc",
+    "document": "card_statement",
+    "institution": "BBVA",
+    "last4": "1177",
+    "currency": "USD",
+    "balance": "350.00",
+    "payment_minimum": "25.00",
+    "due_date": "2026-10-05",
+    "confidence": "high",
+    "uncertain": []
+  },
+  "card-bcp-blurry": {
+    "sha256": "eb5e5f34dd82f14af5420b10c2c7504d226ae466acfb0729cf744fc767df489e",
+    "document": "card_statement",
+    "institution": "BCP",
+    "last4": "4821",
+    "currency": "PEN",
+    "balance": "2430.00",
+    "payment_minimum": "284.30",
+    "due_date": "2026-10-19",
+    "confidence": "low",
+    "uncertain": [
+      "payment_minimum",
+      "due_date"
+    ]
+  },
+  "card-missing-minimum": {
+    "sha256": "94c9d3e585ce5cbd753663584d67bfa6cc47802403b265207b08f18be577e7e0",
+    "document": "card_statement",
+    "institution": "INTERBANK",
+    "last4": "5503",
+    "currency": "PEN",
+    "balance": "1120.50",
+    "payment_minimum": null,
+    "due_date": "2026-10-22",
+    "confidence": "medium",
+    "uncertain": []
+  },
+  "loan-interbank": {
+    "sha256": "f44d4abee58b77eb56a5408b7bd2106d7d6262b51271892023b94cec7f016f25",
+    "document": "loan",
+    "institution": "INTERBANK",
+    "currency": "PEN",
+    "balance": "12500.00",
+    "amount": "850.00",
+    "due_date": "2026-10-15",
+    "confidence": "high",
+    "uncertain": []
+  },
+  "bill-luz": {
+    "sha256": "4e8c69d694bdafc202339e54e58c553bbdbea4c8ef9a2854044b3f92e7548cb4",
+    "document": "bill",
+    "merchant": "Luz del Sur",
+    "currency": "PEN",
+    "amount": "160.40",
+    "due_date": "2026-10-18",
+    "confidence": "high",
+    "uncertain": []
+  },
+  "bill-internet": {
+    "sha256": "0855536ebaf01388b2466ce8ddcaa99a857f9ef12f63a7c97ac2f19fff4e8fd3",
+    "document": "bill",
+    "merchant": "Movistar",
+    "currency": "PEN",
+    "amount": "99.90",
+    "due_date": "2026-10-13",
+    "confidence": "high",
+    "uncertain": []
+  },
+  "receipt-market": {
+    "sha256": "92d1f57f8f6cc6909b778ce46b95e8fa94f3f3850c1405c1e44ec2e6a34752ec",
+    "document": "receipt",
+    "merchant": "Supermercado",
+    "currency": "PEN",
+    "amount": "86.50",
+    "confidence": "high",
+    "uncertain": []
+  },
+  "bank-screen-bcp": {
+    "sha256": "7ca7a4671009b2fca820054fdc574c5f54643e3442957531648ed0d568e443e3",
+    "document": "bank_screen",
+    "institution": "BCP",
+    "currency": "PEN",
+    "balance": "3250.75",
+    "confidence": "high",
+    "uncertain": []
+  },
+  "card-two-currencies": {
+    "sha256": "17dc652babe26574afd8775a413505fc7180bf7eb671e0487330498ed0340884",
+    "document": "card_statement",
+    "institution": "BCP",
+    "last4": "4821",
+    "currency": "PEN",
+    "balance": "1200.00",
+    "payment_minimum": "120.00",
+    "due_date": "2026-10-19",
+    "confidence": "medium",
+    "uncertain": [
+      "currency"
+    ]
+  }
+}

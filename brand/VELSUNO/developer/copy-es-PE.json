@@ -1,0 +1,19 @@
+{
+  "welcome": "Tu dinero, más claro. Empecemos por lo esencial.",
+  "login": "Entra a tu cuenta.",
+  "signup": "Crea tu cuenta Velsuno.",
+  "empty_state": "Aún no hay movimientos. Añade uno o configura una fuente compatible.",
+  "detected": "Registramos una compra de {amount}. Revisa el detalle.",
+  "review_required": "Falta confirmar el tipo de este movimiento.",
+  "overspending": "{category} está {amount} por encima de tu promedio mensual.",
+  "savings_milestone": "Cerraste {month} con {amount} de ahorro, {delta} más que en {previous_month}.",
+  "trial_started": "Tu prueba de Plus está activa hasta el {date}. No necesitas tarjeta.",
+  "trial_ending": "Tu prueba termina el {date}. Si no eliges Plus, seguirás en Free.",
+  "upgrade": "Amplía tu automatización con Plus.",
+  "plus_active": "Plus está activo. Consulta tus funciones y próxima renovación en tu cuenta.",
+  "payment_successful": "Recibimos tu pago. Consulta el detalle en tu cuenta.",
+  "payment_failed": "No pudimos confirmar el pago. Revisa tu método de pago.",
+  "error": "No pudimos guardar el cambio. Intenta de nuevo.",
+  "sync_disconnected": "Esta fuente dejó de actualizarse. Revisa la conexión para continuar.",
+  "account_recovery": "Si existe una cuenta con ese correo, recibirás instrucciones para recuperar el acceso."
+}
