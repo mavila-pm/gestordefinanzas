@@ -85,5 +85,16 @@ await runSuite('perf', async ({ page, check }) => {
   log('Preguntar send', shown, answered);
   check('Preguntar: sent message visible < 100 ms', shown < 100, String(shown));
 
+  // Server render per main screen (warm, median of 3): navigation start → load event, from the browser's timing.
+  for (const path of ['/app', '/app/plan', '/app/movimientos', '/app/tarjetas', '/app/compromisos', '/app/preguntar']) {
+    const t: number[] = [];
+    for (let k = 0; k < 4; k++) {
+      await page.goto(`${BASE}${path}`, { waitUntil: 'load' });
+      const ms = await page.evaluate(() => { const n = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming; return Math.round(n.responseEnd - n.startTime); });
+      if (k > 0) t.push(ms); // first load warms the route
+    }
+    t.sort((a, b) => a - b);
+    rows.push(`PERF render ${path.padEnd(27)} html ${String(t[1]).padStart(5)} ms (median of 3, warm)`);
+  }
   console.log(rows.join('\n'));
 });

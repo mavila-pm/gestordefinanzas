@@ -24,11 +24,12 @@ import { loadPlanningData, planFor, planInputFor, planTimeline } from './plannin
 const KEEP = 40;
 
 async function view(supabase: SupabaseClient): Promise<View> {
-  const [d, review] = await Promise.all([
-    loadPlanningData(supabase),
+  const planning = loadPlanningData(supabase);
+  const [d, review, cards] = await Promise.all([
+    planning,
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
+    loadCardViews(supabase, planning),
   ]);
-  const cards = await loadCardViews(supabase, d);
   const currencies = [...new Set<'PEN' | 'USD'>(['PEN', ...d.obligations.map((o) => o.currency), ...d.incomes.map((i) => i.currency), ...(Object.keys(d.balances) as Array<'PEN' | 'USD'>)])];
   return {
     today: d.today,

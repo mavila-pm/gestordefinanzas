@@ -118,3 +118,8 @@ select percentile_cont(array[.5,.9,.95]) within group (order by weighted_tokens)
 
 ## Partial seed
 `scripts/e2e.sh render-seed s13a s13b` renders only those pairs (delete + recreate, only their branches; ~3.5 KB instead of ~16 KB) — use it to reseed the suites you re-run. Pair map: header of `tests/e2e/seed.sql` (s13* = income-link).
+
+## Perf — 2026-09-29 (local prod build → real Supabase, 390 px, warm, median of 3; noise ±50 ms)
+Tap feedback: nav 8–37 ms · sheet 19 ms · save 12 ms · Vels send 26–41 ms (all < 100 ms). Done: nav ~330 ms, save 279 ms, Vels answer ~530 ms.
+HTML render before → after parallelizing card reads with the plan load: `/app` 201→218 · `/app/plan` 217→164 · `/app/movimientos` 255→199 ·
+`/app/tarjetas` 229→208 · `/app/compromisos` 191→248 · `/app/preguntar` 253→190 ms. Only Tarjetas/Vels changed; the rest is run-to-run noise.

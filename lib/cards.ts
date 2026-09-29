@@ -9,10 +9,12 @@ export interface CardView { id: string; name: string; currency: Currency; statem
 
 const limaStartOfNextDay = (d: string) => new Date(Date.parse(`${d}T00:00:00-05:00`) + 86_400_000).toISOString();
 
-export async function loadCardViews(supabase: SupabaseClient, d: PlanningData): Promise<CardView[]> {
-  const [cards, sts] = await Promise.all([
+/** `planning` may be a pending load: the card reads start at once instead of waiting for it. */
+export async function loadCardViews(supabase: SupabaseClient, planning: PlanningData | Promise<PlanningData>): Promise<CardView[]> {
+  const [cards, sts, d] = await Promise.all([
     supabase.from('cards').select('id,alias,currency,credit_limit_minor,statement_day,payment_day').eq('active', true).eq('kind', 'credit').limit(20),
     supabase.from('card_statements').select('card_id,cut_date,due_date,billed_minor,minimum_minor,used_minor,used_as_of,status,source,updated_at').order('cut_date', { ascending: false }).limit(60),
+    planning,
   ]);
   const latest = new Map<string, Statement>();
   for (const s of sts.data ?? []) if (!latest.has(s.card_id)) latest.set(s.card_id, {

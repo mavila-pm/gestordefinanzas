@@ -28,8 +28,8 @@ function Options({ id, kind, name, detail }: { id: string; kind: 'card' | 'accou
 
 export default async function CardsAndAccounts() {
   const supabase = await createSupabaseServerClient();
-  const [catalog, d] = await Promise.all([loadCatalog(supabase), loadPlanningData(supabase)]);
-  const views = new Map((await loadCardViews(supabase, d)).map((v) => [v.id, v]));
+  const [catalog, cardViews] = await Promise.all([loadCatalog(supabase), loadCardViews(supabase, loadPlanningData(supabase))]);
+  const views = new Map(cardViews.map((v) => [v.id, v]));
   const cards = activeOnly(catalog.cards);
   const accounts = activeOnly(catalog.accounts);
   return (
