@@ -168,7 +168,7 @@ export function nextIncome(incomes: readonly ExpectedIncome[], currency: Currenc
 
 // ── Safe-to-spend ("Dinero libre") ────────────────────────────────────────────────────────────────────────
 export type LineKind = 'overdue' | 'payment' | 'essentials' | 'debt' | 'reserve' | 'cushion';
-export interface PlanLine { kind: LineKind; label: string; amountMinor: number | null; date: string | null; dateMax: string | null; note: string | null; obligationId?: string }
+export interface PlanLine { kind: LineKind; label: string; amountMinor: number | null; date: string | null; dateMax: string | null; note: string | null; obligationId?: string; period?: string }
 export interface Missing { code: 'balance' | 'balance_stale' | 'next_income' | 'amount' | 'date' | 'essentials' | 'income_window'; text: string; obligationId?: string }
 export type PlanStatus = 'confirmed' | 'partial' | 'incomplete';
 
@@ -279,7 +279,7 @@ export function buildPlan(input: PlanInput): Plan {
   return { currency, status, base: input.base, from, nextIncome: next, until, lines, reservedMinor, freeMinor, missing };
 
   function line(x: Occurrence, kind: LineKind, note: string | null): PlanLine {
-    return { kind, label: x.name, amountMinor: x.amountMinor, date: x.targetDate ?? x.dueDate, dateMax: x.targetDate ? null : x.dueDateMax, note, obligationId: x.obligationId };
+    return { kind, label: x.name, amountMinor: x.amountMinor, date: x.targetDate ?? x.dueDate, dateMax: x.targetDate ? null : x.dueDateMax, note, obligationId: x.obligationId, period: x.period };
   }
 }
 

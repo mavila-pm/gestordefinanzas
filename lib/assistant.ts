@@ -11,6 +11,7 @@ import { isSmallTalk } from '../src/ai/interpreter';
 import { infer, STOP_TEXT } from './ai';
 import { logLearning } from './learning';
 import { isReplay } from './idempotency';
+import { applyPlan } from './plan-applications';
 import { loadMessages, readImages } from './onboarding';
 import { loadPlanningData, planFor, planInputFor, planTimeline } from './planning';
 
@@ -51,7 +52,7 @@ function toCard(a: Answer): MessageCard | null {
   const links = (a.actions ?? []).filter((x) => x.type === 'link') as Array<{ label: string; href: string }>;
   // Writes proposed by Vels carry a one-time reference: two tabs / a replayed request store the row once (ADR-0012).
   const acts = (a.actions ?? []).filter((x) => x.type === 'act')
-    .map((x) => (x.type === 'act' && x.act === 'create_debt' ? { ...x, fields: { ...x.fields, ref: `vels:${crypto.randomUUID()}` } } : x)) as unknown as MessageCard['acts'];
+    .map((x) => (x.type === 'act' && (x.act === 'create_debt' || x.act === 'apply_plan') ? { ...x, fields: { ...x.fields, ref: `vels:${crypto.randomUUID()}` } } : x)) as unknown as MessageCard['acts'];
   const replies = (a.actions ?? []).filter((x) => x.type === 'reply').map((x) => x.label);
   if (links.length) card.links = links;
   if (acts?.length) card.acts = acts;
@@ -135,6 +136,17 @@ export async function assistantAct(supabase: SupabaseClient, userId: string, act
     if (error) return 'No pude guardarla.';
     await logLearning(supabase, userId, 'obligation', 'accepted', data.id, { kind: 'debt', lender, amount, currency });
     return `Listo. Debes ${money(amount, currency)} a ${lender}. No la cuento en Dinero libre hasta que tenga fecha.`;
+  }
+  if (act === 'apply_plan') {
+    // Confirmation required: saves the reservations the person saw (ADR-0013). Never pays, moves money or marks paid.
+    const currency = fields.currency === 'USD' ? 'USD' : fields.currency === 'PEN' ? 'PEN' : null;
+    const num = (x: string | undefined) => (x && /^-?\d{1,13}$/.test(x) ? Number(x) : null);
+    if (!currency) return 'No pude aplicarlo.';
+    const r = await applyPlan(supabase, await loadPlanningData(supabase), {
+      currency, base: 'balance', seen: { freeMinor: num(fields.free), reservedMinor: num(fields.reserved) },
+      ref: /^vels:[0-9a-f-]{36}$/.test(fields.ref ?? '') ? fields.ref! : null,
+    });
+    return r.ok ? `Plan aplicado hasta el ${Number(r.until.slice(8))}/${r.until.slice(5, 7)}. Apartado: ${money(r.reservedMinor, currency)}. No se movió dinero.` : r.error;
   }
   if (act === 'set_essentials') {
     const amount = Number(fields.amount);

@@ -12,6 +12,8 @@ import type { Plan, PlanLine } from '../../../src/engine/planning';
 import { extraDebtPayment } from '../../../src/engine/scenarios';
 import { addDays } from '../../../src/engine/planning';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
+import { AppliedPlanCard, ApplyPlan } from '../../../components/applied-plan';
+import { loadApplied } from '../../../lib/plan-applications';
 import { shortDate } from '../../../src/web/dates';
 import { isUuid } from '../../../src/web/transaction-input';
 import {
@@ -85,7 +87,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const { ingreso, si, dias, monto, deuda } = await searchParams;
   const supabase = await createSupabaseServerClient();
   // One parallel round: the observed-essentials read no longer waits for the plan data.
-  const [d, essentialRows] = await Promise.all([loadPlanningData(supabase), loadEssentialRows(supabase)]);
+  const [d, essentialRows, applied] = await Promise.all([loadPlanningData(supabase), loadEssentialRows(supabase), loadApplied(supabase)]);
   const currencies = (['PEN', 'USD'] as const).filter((c, i) => i === 0 || d.balances[c] || d.incomes.some((x) => x.currency === c) || d.obligations.some((o) => o.currency === c));
   const incomeId = ingreso && isUuid(ingreso) && d.transactionsById.has(ingreso) ? ingreso : null;
   const incomeTx = incomeId ? d.transactionsById.get(incomeId)! : null;
@@ -125,7 +127,10 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
               <ul className="list">{distribution.lines.map((l, i) => <LineRow key={i} l={l} c={distribution.currency} />)}</ul>
             </details>
           )}
-          <Link href="/app/plan" className="section-link">Cerrar distribución</Link>
+          <div className="actions">
+            {d.recentIncome?.transactionId === incomeId && <ApplyPlan p={distribution} income={incomeId!} label="Aplicar este reparto" />}
+            <Link href="/app/plan" className="section-link">Cerrar distribución</Link>
+          </div>
         </section>
       )}
 
@@ -156,6 +161,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
               </section>
             )}
             {p.freeMinor !== null && <Breakdown p={p} />}
+            <AppliedPlanCard p={p} applied={applied.active[c]} history={applied.history} settled={d.settledObligations} today={d.today} />
             {c === 'PEN' && (() => {
               const x = extraDebtPayment(p, d.debts.filter((y) => y.currency === c), d.settings[c]?.allowZeroForDebt ?? false);
               return x ? (

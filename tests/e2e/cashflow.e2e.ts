@@ -9,7 +9,7 @@ import { act, apiAs, B_TX, BASE, login, probe, runSuite } from './lib.ts';
 const A = probe('s11a');
 const minor = (s: string) => Math.round(Number(s.replace(/[^\d.]/g, '')) * 100);
 
-await runSuite('cashflow', async ({ page, check }) => {
+await runSuite('cashflow', async ({ browser, page, check }) => {
   await login(page, A);
   await page.goto(`${BASE}/app`);
   const row = (await page.getByTestId('free-summary').textContent()) ?? '';
@@ -128,6 +128,45 @@ await runSuite('cashflow', async ({ page, check }) => {
   await page.goto(`${BASE}/app/compromisos?cuota=800`);
   const po = (await page.getByTestId('payoff').textContent()) ?? '';
   check('payoff with a missing rate: no ranking invented', po.includes('Falta la tasa de Préstamo familiar') && !po.includes('meses'), po);
+
+  // "Aplicar plan" (ADR-0013): saves reservations; never pays, moves money or marks paid. Two tabs → one active plan.
+  const snapshot = async () => JSON.stringify([
+    (await sb.from('transactions').select('id', { count: 'exact', head: true })).count,
+    (await sb.from('plan_settlements').select('id', { count: 'exact', head: true })).count,
+    (await sb.from('fixed_expenses').select('id,amount_minor,active').order('id')).data,
+    (await sb.from('debts').select('id,balance_minor').order('id')).data]);
+  const plans = async () => (await sb.from('plan_applications').select('id,status,free_minor,reserved_minor,supersedes_id,lines').order('created_at')).data ?? [];
+  const money0 = await snapshot();
+  await page.goto(`${BASE}/app/plan`);
+  const tab2 = await (await browser.newContext()).newPage();
+  await login(tab2, A);
+  await tab2.goto(`${BASE}/app/plan`);
+  const heroFree = minor((await page.getByTestId('free-PEN-amount').textContent()) ?? '');
+  await act(page, () => page.getByTestId('apply-PEN').click());
+  const card = (await page.getByTestId('applied-PEN').textContent()) ?? '';
+  const p1 = await plans();
+  check('apply: one active plan with the free money shown and its lines', p1.length === 1 && p1[0]!.status === 'active' && Math.abs(Number(p1[0]!.free_minor)) === heroFree && Array.isArray(p1[0]!.lines) && p1[0]!.lines.length > 0, JSON.stringify(p1.map((x) => [x.status, x.free_minor])));
+  check('applied card separates Comprometido / Reservado / Pagado / Libre and says no money moved', ['Plan aplicado', 'Comprometido', 'Reservado', 'Pagado', 'el dinero sigue en tu cuenta'].every((w) => card.includes(w)), card);
+  await act(tab2, () => tab2.getByTestId('apply-PEN').click());
+  const p2 = await plans();
+  check('second tab applies the same plan → still exactly one active (the first is kept as history)', p2.filter((x) => x.status === 'active').length === 1 && p2.length === 2 && p2[1]!.supersedes_id === p2[0]!.id, JSON.stringify(p2.map((x) => x.status)));
+  await tab2.context().close();
+  check('applying wrote no movement, payment, settlement or debt change', (await snapshot()) === money0);
+  // Data changed after applying → the card says so; "Actualizar plan" saves the new one.
+  const lastBal = (await sb.from('balance_snapshots').select('amount_minor').order('as_of', { ascending: false }).limit(1).single()).data!;
+  await sb.from('balance_snapshots').insert({ user_id: (await sb.auth.getUser()).data.user!.id, currency: 'PEN', amount_minor: Number(lastBal.amount_minor) + 10000 });
+  await page.reload();
+  const changedNote = (await page.getByTestId('applied-PEN').textContent()) ?? '';
+  check('after a balance change the applied plan says it changed', changedNote.includes('Tus datos cambiaron'), changedNote);
+  await act(page, () => page.getByRole('button', { name: 'Actualizar plan' }).click());
+  const p3 = await plans();
+  check('update supersedes: one active, with S/ 100 more free', p3.filter((x) => x.status === 'active').length === 1 && Number(p3.at(-1)!.free_minor) === Number(p2[1]!.free_minor) + 10000, JSON.stringify(p3.map((x) => [x.status, x.free_minor])));
+  const blocked = await sb.from('plan_applications').update({ free_minor: 1 }).eq('id', p3.at(-1)!.id).select('id');
+  check('API: an applied plan\'s amounts cannot be edited', !!blocked.error, JSON.stringify(blocked.error));
+  await act(page, () => page.getByRole('button', { name: 'Quitar plan' }).click());
+  const p4 = await plans();
+  check('Quitar plan: no active plan; history kept (nothing deleted)', p4.length === 3 && p4.every((x) => x.status !== 'active') && p4.at(-1)!.status === 'cancelled', JSON.stringify(p4.map((x) => x.status)));
+  check('history lists previous plans', ((await page.getByTestId('applied-history-PEN').textContent()) ?? '').includes('Quitado'));
 
   const bRead = await sb.from('fixed_expenses').select('id').eq('id', B_TX.obligation);
   check('API: A cannot read B\'s obligations', !bRead.error && (bRead.data ?? []).length === 0, JSON.stringify(bRead));

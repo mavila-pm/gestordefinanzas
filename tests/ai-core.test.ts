@@ -189,6 +189,18 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(answer({ k: 'estimate_basics', amountMinor: 50000 }, view)!.text).toContain('estimado');
     expect(answer({ k: 'pay_min' }, view)!.text).toContain('No tengo una deuda de tarjeta');
   });
+  it('Vels "aplicar plan": proposes with what it will reserve, says it moves no money; never on an incomplete plan', () => {
+    for (const q of ['Aplica el plan', 'guárdalo, aplica este plan', 'Déjame el plan así', 'Guarda el reparto']) expect(detectIntent(q)).toEqual({ k: 'apply_plan' });
+    expect(detectIntent('¿Qué plan tengo?')).not.toEqual({ k: 'apply_plan' });
+    const a = answer({ k: 'apply_plan' }, view)!;
+    expect(a.text).toMatch(/^¿Lo aplico\? Aparta S\/ [\d,]+ en pagos y reservas.*No paga ni mueve dinero\.$/);
+    expect(a.actions![0]).toMatchObject({ act: 'apply_plan', fields: { currency: 'PEN', free: String(plan.freeMinor), reserved: String(plan.reservedMinor) } });
+    expect(answer({ k: 'organize' }, view)!.actions![0]).toMatchObject({ act: 'apply_plan' });
+    const noBase = { ...view, plans: [{ ...plan, base: null, freeMinor: null, status: 'incomplete' as const, missing: [{ code: 'balance' as const, text: 'Indica cuánto tienes hoy en tu cuenta.' }] }] };
+    const b = answer({ k: 'apply_plan' }, noBase)!;
+    expect(b.text).toBe('Indica cuánto tienes hoy en tu cuenta.');
+    expect(b.actions!.some((x) => x.type === 'act')).toBe(false);
+  });
   it('Vels openers: from real state and the current screen, max 3, deterministic', async () => {
     const { velsSuggestions } = await import('../src/ai/assistant');
     expect(velsSuggestions(view, '/app/compromisos')).toContain('¿Qué pago primero?');

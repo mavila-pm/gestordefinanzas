@@ -67,6 +67,17 @@ await runSuite('vels', async ({ page, check }) => {
   await act(page, () => panel(page).getByRole('button', { name: 'Guardar' }).click());
   check('same confirmation again writes nothing more (idempotent)', (await debts()).filter((x) => x.name === 'Deuda con tu pareja').length === 1 && (await lastVels(page)).includes('Ya la tenía guardada'));
 
+  // "Aplica el plan": proposal first (nothing saved), then one saved plan; the same card again saves nothing more.
+  await say(page, 'Aplica el plan');
+  const ap = await lastVels(page);
+  const planRows = async () => (await sb.from('plan_applications').select('id,status')).data ?? [];
+  check('Vels proposes the plan with what it reserves and says it moves no money; nothing saved yet', ap.includes('¿Lo aplico?') && ap.includes('No paga ni mueve dinero') && (await planRows()).length === 0, ap);
+  const t1 = await txs(); const s1 = await settlements();
+  await act(page, () => panel(page).getByRole('button', { name: 'Aplicar plan' }).last().click());
+  check('confirmed → one active plan; no movement, no settlement', (await planRows()).filter((x) => x.status === 'active').length === 1 && (await txs()) === t1 && (await settlements()) === s1, await lastVels(page));
+  await act(page, () => panel(page).getByRole('button', { name: 'Aplicar plan' }).first().click());
+  check('same confirmation card again → still one plan row (idempotent)', (await planRows()).length === 1);
+
   await say(page, '¿Qué pago primero?');
   check('no cross-user data in answers', !(await panel(page).textContent() ?? '').includes('B deuda secreta'));
 
