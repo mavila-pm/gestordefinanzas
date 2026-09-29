@@ -65,7 +65,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const todayLima = new Date(now.getTime() - 5 * 3600_000).toISOString().slice(0, 10);
   const commitments = monthCommitments(month, todayLima, commitmentData.fixed, commitmentData.debts);
   const commitmentTotals = totalsByCurrency(commitments);
-  const alerts = buildAlerts({ txs: all, pendingCount, oldestPendingDays, unresolvedEvents30d, now, currency: 'PEN', budgets: month === currentMonth ? budgetsNow : [], commitments: month === currentMonth ? commitments : [] });
+  // "Due soon" looks 3 days ahead, so at month end it must also see the first days of next month.
+  const soon = month === currentMonth ? [...commitments, ...monthCommitments(previousMonth(currentMonth, -1), todayLima, commitmentData.fixed, commitmentData.debts).filter((c) => c.daysUntil <= 3)] : [];
+  const alerts = buildAlerts({ txs: all, pendingCount, oldestPendingDays, unresolvedEvents30d, now, currency: 'PEN', budgets: month === currentMonth ? budgetsNow : [], commitments: soon });
   const insight = mainInsight(all, month, 'PEN');
   // Milestones are event-driven: only the month that just closed, shown while viewing the current month.
   const firstName = preferredName(profileRes);

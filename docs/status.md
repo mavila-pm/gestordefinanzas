@@ -4,8 +4,8 @@ States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md`
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
 migrations applied through `20260929000027`.
 
-## Checkpoint (2026-09-28)
-Last full regression: unit 280 · DB 94 · E2E 271/271 (10 suites, clean seed) · visual 144 shots, no overflow · cleanup 0|0.
+## Checkpoint (2026-09-29)
+Last full regression: unit 302 · DB 104 · E2E 289/289 (10 suites; 1 month-end bug found and fixed, re-run 23/23) · visual 162 shots, 0 overflow, 0 UX issues · perf probe 8/8 · cleanup 0|0.
 Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify` / `task-close` / `financial-safety`.
 
 ## Product areas
@@ -31,6 +31,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Idempotent creates: DB-unique `client_ref` on debts/payments/incomes/accounts; forms, Vels, camera, onboarding (032, ADR-0012) | VERIFIED | — |
 | Aplicar plan: saved reservations per currency (supersede / quitar / history), paid only via real settlements, stale-tab guard, Vels confirm (033, ADR-0013) | VERIFIED | — |
 | Card statements: billed / minimum / due / used, post-cut from real purchases, usable = min(plan, bank room), minimum-only carry + interest; Tarjetas + Vels (034, ADR-0014) | VERIFIED | Camera read of statements (key) |
+| Month-end bug: 'cuota vence pronto' now sees the first days of next month (was silent on the 29–31) (035) | VERIFIED | — |
 | Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Statement camera read needs the AI provider (key) |
 
 ## Blockers / decisions (external)
@@ -39,6 +40,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 - Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); plan limits enforcement.
 
 ## Next work (no external decision needed)
-1. Copy pass on screens not touched since TASK-021; camera failure-state UX with a real provider (key).
+1. Partial payments on obligations and sinking funds (named reserves) in the planning engine.
+2. Copy pass on older screens (Reglas, Conexiones, Importar); camera failure-state UX once a provider key exists.
 
 PO manual checklist: `docs/runbooks/acceptance-checklist.md`.

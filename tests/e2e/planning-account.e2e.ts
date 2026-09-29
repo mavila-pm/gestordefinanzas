@@ -10,7 +10,9 @@ const A = probe('s9a');
 
 await runSuite('planning-account', async ({ page, check }) => {
   const limaToday = new Date(Date.now() - 5 * 3600_000);
-  const dueTomorrow = String(Math.min(limaToday.getUTCDate() + 1, 28));
+  // A due day within the next 3 days that the form accepts (1–28): tomorrow, else today, else the 1st (month end).
+  const d0 = limaToday.getUTCDate();
+  const dueTomorrow = String(d0 + 1 <= 28 ? d0 + 1 : d0 <= 28 ? d0 : 1);
 
   const webhook = await page.request.post(`${BASE}/api/inbound/email`, { data: { deliveryId: 'x', to: 'f_x@x.pe' } });
   check('webhook disabled without server secrets (503)', webhook.status() === 503, String(webhook.status()));
