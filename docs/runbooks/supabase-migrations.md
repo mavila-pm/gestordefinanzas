@@ -41,6 +41,7 @@
 | 20260929000024_idempotent_creates.sql | idempotent_creates | 2026-09-29 |
 | 20260929000025_plan_applications.sql | plan_applications | 2026-09-29 |
 | 20260929000026_card_statements.sql | card_statements | 2026-09-29 |
+| 20260929000027_replay_hardening.sql | replay_hardening | 2026-09-29 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

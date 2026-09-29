@@ -133,7 +133,10 @@ export async function assistantAct(supabase: SupabaseClient, userId: string, act
     if (same?.length) return 'Ya la tenía guardada.';
     const clientRef = /^vels:[0-9a-f-]{36}$/.test(fields.ref ?? '') ? fields.ref! : null;
     const { data, error } = await supabase.from('debts').insert({ user_id: userId, name, lender, currency, principal_minor: amount, balance_minor: amount, client_ref: clientRef }).select('id').single();
-    if (isReplay(error)) return 'Ya la tenía guardada.';
+    if (isReplay(error)) {
+      const { data: prev } = await supabase.from('debts').select('active').eq('client_ref', clientRef!).maybeSingle();
+      return prev?.active === false ? 'Esa deuda ya no está activa. Si es otra, dímelo de nuevo.' : 'Ya la tenía guardada.';
+    }
     if (error) return 'No pude guardarla.';
     await logLearning(supabase, userId, 'obligation', 'accepted', data.id, { kind: 'debt', lender, amount, currency });
     return `Listo. Debes ${money(amount, currency)} a ${lender}. No la cuento en Dinero libre hasta que tenga fecha.`;

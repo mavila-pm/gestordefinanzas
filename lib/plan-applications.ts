@@ -43,6 +43,7 @@ export async function applyPlan(
     p_from: p.from, p_until: p.until, p_reserved_minor: p.reservedMinor, p_free_minor: p.freeMinor,
     p_plan_status: p.status, p_lines: linesToApply(p), p_client_ref: opts.ref,
   });
+  if (error?.message?.includes('plan_closed')) return { ok: false, error: 'Ese plan ya no está activo. Pídeme uno nuevo si lo quieres.' };
   if (error || typeof data !== 'string') return { ok: false, error: 'No pudimos aplicar el plan. Intenta de nuevo.' };
   return { ok: true, id: data, freeMinor: p.freeMinor, reservedMinor: p.reservedMinor, until: p.until };
 }

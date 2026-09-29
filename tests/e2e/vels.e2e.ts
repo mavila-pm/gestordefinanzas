@@ -122,6 +122,9 @@ await runSuite('vels', async ({ page, check }) => {
   await stf.locator('input[name=billed]').fill('3000');
   await stf.locator('input[name=minimum]').fill('150');
   await act(page, () => stf.locator('button[type=submit]').click());
+  // Saving the same cut again is a correction, never a second statement.
+  await page.getByRole('button', { name: 'Estado de cuenta de Tarjeta BCP' }).click();
+  await act(page, () => stf.locator('button[type=submit]').click());
   const sts = (await sb.from('card_statements').select('billed_minor,minimum_minor,used_minor,source')).data ?? [];
   check('statement saved once: billed S/ 3,000, minimum S/ 150, used unknown (null, not 0), manual', sts.length === 1 && Number(sts[0]!.billed_minor) === 300000 && Number(sts[0]!.minimum_minor) === 15000 && sts[0]!.used_minor === null && sts[0]!.source === 'manual', JSON.stringify(sts));
   const pos = ((await page.getByTestId('card-position').first().textContent()) ?? '').replace(/\s+/g, ' ');

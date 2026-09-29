@@ -367,11 +367,14 @@ export async function saveCardStatementAction(_prev: ActionState, form: FormData
   const { data: card } = await supabase.from('cards').select('id,currency,statement_day,payment_day').eq('id', id).eq('kind', 'credit').maybeSingle();
   if (!card) return { error: 'No encontramos esa tarjeta.' };
   const now = new Date().toISOString();
-  const { error } = await supabase.from('card_statements').upsert({
-    user_id: user.id, card_id: card.id, currency: card.currency, cut_date: v.cutDate, due_date: v.dueDate,
-    billed_minor: v.billedMinor, minimum_minor: v.minimumMinor, used_minor: v.usedMinor, used_as_of: v.usedMinor === null ? null : now,
-    source: 'manual', status: 'confirmed', updated_at: now,
-  }, { onConflict: 'card_id,cut_date' });
+  // One statement per cut: an existing one is corrected (amounts/dates only); otherwise a new one is added.
+  const fields = { due_date: v.dueDate, billed_minor: v.billedMinor, minimum_minor: v.minimumMinor, used_minor: v.usedMinor, used_as_of: v.usedMinor === null ? null : now, updated_at: now };
+  const { data: existing } = await supabase.from('card_statements').select('id').eq('card_id', card.id).eq('cut_date', v.cutDate).maybeSingle();
+  let { error } = existing
+    ? await supabase.from('card_statements').update(fields).eq('id', existing.id)
+    : await supabase.from('card_statements').insert({ ...fields, user_id: user.id, card_id: card.id, currency: card.currency, cut_date: v.cutDate, source: 'manual', status: 'confirmed', client_ref: ref(form) });
+  // Two tabs saving the same cut at once: the second becomes a correction of the first.
+  if (error?.code === '23505' && !existing) ({ error } = await supabase.from('card_statements').update(fields).eq('card_id', card.id).eq('cut_date', v.cutDate));
   if (error) return { error: 'No se guardó. Intenta de nuevo.' };
   // The statement also tells the cycle days when the card had none (never overwrites what the person set).
   if (card.statement_day === null || card.payment_day === null) {

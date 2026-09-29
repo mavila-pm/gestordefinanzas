@@ -48,6 +48,14 @@ describe.skipIf(!DATABASE_URL)('plan applications', () => {
     expect(r).toHaveLength(1);
   });
 
+  it('the same reference after "Quitar plan" is not a replay: the stale button is refused (plan_closed)', async () => {
+    const a = await commit(USER_A, APPLY, ['PEN', 'ref-stale-00001']);
+    await pool.query(`update public.plan_applications set status = 'cancelled', closed_at = now() where id = $1`, [a.id]);
+    const again = await commit(USER_A, APPLY, ['PEN', 'ref-stale-00001']);
+    expect(again.code).toBe('P0001');
+    expect((await rows(USER_A)).filter((x) => x.status === 'active')).toHaveLength(0);
+  });
+
   it('closed plans are immutable; amounts cannot be edited; no delete; cancel works once', async () => {
     const a = await commit(USER_A, APPLY, ['PEN', 'ref-imm-000001']);
     await asRole(pool, 'authenticated', USER_A, async (c) => {

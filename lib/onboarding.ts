@@ -20,13 +20,13 @@ import { loadProfile } from './queries';
  * visible conversation. Deterministic first: the local interpreter reads most messages at zero cost; a provider
  * is called only when nothing could be read and one is configured. Taps (summary, start, confirm) never call AI.
  */
-export interface OnboardingState { status: 'active' | 'completed' | 'skipped'; isDemo: boolean; draft: Draft; applied: Record<string, string[]> }
+export interface OnboardingState { status: 'active' | 'completed' | 'skipped'; isDemo: boolean; draft: Draft; applied: Record<string, string[]>; startedAt: string | null }
 
 export async function loadOnboarding(supabase: SupabaseClient): Promise<OnboardingState | null> {
-  const { data } = await supabase.from('onboarding_states').select('status,is_demo,facts,applied').maybeSingle();
+  const { data } = await supabase.from('onboarding_states').select('status,is_demo,facts,applied,started_at').maybeSingle();
   if (!data) return null;
   const facts = (data.facts ?? {}) as Partial<Draft>;
-  return { status: data.status, isDemo: data.is_demo, draft: { ...emptyDraft(), ...facts }, applied: (data.applied ?? {}) as Record<string, string[]> };
+  return { status: data.status, isDemo: data.is_demo, draft: { ...emptyDraft(), ...facts }, applied: (data.applied ?? {}) as Record<string, string[]>, startedAt: data.started_at ?? null };
 }
 
 export async function loadMessages(supabase: SupabaseClient, thread: 'onboarding' | 'assistant', limit = 60): Promise<ChatMessage[]> {
@@ -52,11 +52,11 @@ export async function startOnboarding(supabase: SupabaseClient, userId: string):
   if (existing) return existing;
   const { data: demo } = await supabase.from('demo_access').select('user_id').maybeSingle();
   const { error } = await supabase.from('onboarding_states').insert({ user_id: userId, status: 'active', is_demo: !!demo, facts: emptyDraft() });
-  if (!error) return { status: 'active', isDemo: !!demo, draft: emptyDraft(), applied: {} };
+  if (!error) return { status: 'active', isDemo: !!demo, draft: emptyDraft(), applied: {}, startedAt: null };
   // 23505: a parallel request created it. Re-read with a different query: identical GETs are memoized within a render.
   if (error.code !== '23505') throw new Error(`onboarding_start_failed: ${error.code}`);
-  const { data } = await supabase.from('onboarding_states').select('status,is_demo,facts,applied').eq('user_id', userId).single();
-  return { status: data!.status, isDemo: data!.is_demo, draft: { ...emptyDraft(), ...(data!.facts ?? {}) }, applied: data!.applied ?? {} };
+  const { data } = await supabase.from('onboarding_states').select('status,is_demo,facts,applied,started_at').eq('user_id', userId).single();
+  return { status: data!.status, isDemo: data!.is_demo, draft: { ...emptyDraft(), ...(data!.facts ?? {}) }, applied: data!.applied ?? {}, startedAt: data!.started_at ?? null };
 }
 
 /** The opening is fixed copy, not stored: it is always there and cannot be lost or duplicated (§4). */
@@ -208,12 +208,14 @@ export async function onboardingFinish(supabase: SupabaseClient, userId: string)
   if (!state) return { ok: false };
   if (state.status === 'completed') return { ok: true };
   const w = domainWrites(state.draft, userId);
+  const attempt = state.startedAt ? String(Date.parse(state.startedAt)) : '0';
   const applied: Record<string, string[]> = {};
   let replayed = false;
   const insert = async (table: string, rows: Array<Record<string, unknown>>) => {
     if (!rows.length) return true;
-    // Deterministic references: a double "Empezar" (two tabs) cannot create the onboarding rows twice (ADR-0012).
-    const refd = ['fixed_expenses', 'debts', 'expected_incomes', 'accounts'].includes(table) ? rows.map((r, n) => ({ ...r, client_ref: `onb:${table}:${n}` })) : rows;
+    // Deterministic per attempt: a double "Empezar" (two tabs) cannot create the onboarding rows twice (ADR-0012).
+    // The attempt nonce (started_at) keeps a leftover row from an earlier (reset) onboarding from masking this one.
+    const refd = ['fixed_expenses', 'debts', 'expected_incomes', 'accounts'].includes(table) ? rows.map((r, n) => ({ ...r, client_ref: `onb:${attempt}:${table}:${n}` })) : rows;
     const { data, error } = await supabase.from(table).insert(refd).select('id');
     if (isReplay(error)) { replayed = true; return false; }
     if (error) return false;
@@ -227,9 +229,15 @@ export async function onboardingFinish(supabase: SupabaseClient, userId: string)
     if (!cur || cur.essentials_monthly_minor === null) await supabase.from('planning_settings').upsert(w.settings);
   }
   if (!ok && replayed) {
-    // A parallel "Empezar" already wrote these rows: undo only what THIS attempt created, and report success.
+    // A parallel "Empezar" already wrote these rows: undo only what THIS attempt created. Success only once the
+    // other request really completed; otherwise report the failure (never a silent success).
     for (const [table, ids] of Object.entries(applied)) await supabase.from(table).delete().in('id', ids);
-    return { ok: true };
+    for (let i = 0; i < 10; i++) {
+      const s = await loadOnboarding(supabase);
+      if (s?.status === 'completed') return { ok: true };
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return { ok: false };
   }
   if (!ok) {
     // Partial write: undo what this attempt created so a retry does not duplicate anything.

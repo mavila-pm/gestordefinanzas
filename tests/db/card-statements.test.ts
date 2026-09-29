@@ -24,6 +24,10 @@ describe.skipIf(!DATABASE_URL)('card statements', () => {
       expect(await errorCode(c, INS, [USER_A, cardA, 'PEN', 300000, 15000])).toBe('23505');
       expect((await c.query(`update public.card_statements set billed_minor = 300000, minimum_minor = 15000 where card_id = $1`, [cardA])).rowCount).toBe(1);
       expect(await errorCode(c, `delete from public.card_statements where card_id = $1`, [cardA])).toBe('42501');
+      // Provenance and ownership columns are not rewritable by the person.
+      for (const set of [`source = 'import'`, `status = 'estimated'`, `card_id = '${cardAusd}'`, `created_at = now()`]) {
+        expect(await errorCode(c, `update public.card_statements set ${set} where card_id = $1`, [cardA])).toBe('42501');
+      }
     });
   });
 

@@ -14,3 +14,6 @@ Status: ACCEPTED · Date: 2026-09-29 · Migration 000024 (applied).
 - Updates stay naturally idempotent (same values); settlements already had `(user_id, fixed_expense_id, period)` unique.
 - Tests: `tests/db/idempotent-creates.test.ts` (5 parallel committed inserts → 1 row + 4×23505; per-user scope; bad ref
   → 23514; foreign user_id → 42501); E2E vels "same confirmation again writes nothing more".
+- Review follow-up (000027): a replayed ref counts as success only while its row is still live (apply_plan →
+  `plan_closed` for a removed/replaced plan; Vels debt → "ya no está activa"); onboarding refs carry the attempt
+  (`started_at`) and a replay reports success only once the other request really completed.
