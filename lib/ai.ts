@@ -22,13 +22,14 @@ export async function infer(
   req: { operation: Operation; system: string; messages: AIMessage[]; images?: AIImage[]; json: boolean },
   validate: (text: string) => boolean = () => true,
   cfg: AIConfig = aiConfig(),
+  resolve: (p: AIConfig['provider']) => AIProvider | null = (p) => providerFor(p),
 ): Promise<InferResult> {
   const camera = req.operation === 'vision_extract';
   const chain: Array<{ provider: AIProvider; model: string }> = [];
-  const main = providerFor(cfg.provider);
+  const main = resolve(cfg.provider);
   const mainModel = camera ? cfg.visionModel : cfg.textModel;
   if (main && (!camera || main.supportsVision(mainModel))) chain.push({ provider: main, model: mainModel });
-  const fb = cfg.fallbackProvider !== cfg.provider ? providerFor(cfg.fallbackProvider) : null;
+  const fb = cfg.fallbackProvider !== cfg.provider ? resolve(cfg.fallbackProvider) : null;
   if (fb && cfg.fallbackModel && (!camera || fb.supportsVision(cfg.fallbackModel))) chain.push({ provider: fb, model: cfg.fallbackModel });
   if (!chain.length) return { ok: false, reason: 'unavailable' };
 
