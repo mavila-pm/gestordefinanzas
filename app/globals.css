@@ -25,6 +25,7 @@ main { width: 100%; max-width: 960px; margin: 0 auto; padding: var(--space-24) v
 .narrow { max-width: 440px; } .narrow-md { max-width: 680px; }
 .stack > * + * { margin-top: var(--space-24); }
 .stack-sm { display: grid; gap: var(--space-8); align-content: start; }
+.stack-xs { display: flex; flex-direction: column; gap: 2px; }
 .row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-12); flex-wrap: wrap; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-8); align-items: center; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-16); }

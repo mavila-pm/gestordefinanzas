@@ -3,6 +3,9 @@ import { Icon } from '../../../components/ui/icon';
 import { Sheet } from '../../../components/ui/sheet';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { activeOnly, loadCatalog } from '../../../lib/queries';
+import { loadPlanningData } from '../../../lib/planning';
+import { loadCardViews } from '../../../lib/cards';
+import { CardPositionSummary, StatementSheet } from '../../../components/card-position';
 import { createAccountAction, createCardAction, deactivateAction, updateCardCycleAction } from '../actions';
 
 export const metadata = { title: 'Cuentas y tarjetas' };
@@ -25,7 +28,8 @@ function Options({ id, kind, name, detail }: { id: string; kind: 'card' | 'accou
 
 export default async function CardsAndAccounts() {
   const supabase = await createSupabaseServerClient();
-  const catalog = await loadCatalog(supabase);
+  const [catalog, d] = await Promise.all([loadCatalog(supabase), loadPlanningData(supabase)]);
+  const views = new Map((await loadCardViews(supabase, d)).map((v) => [v.id, v]));
   const cards = activeOnly(catalog.cards);
   const accounts = activeOnly(catalog.accounts);
   return (
@@ -61,8 +65,10 @@ export default async function CardsAndAccounts() {
               const detail = [c.institution, c.kind === 'credit' ? 'Crédito' : 'Débito', c.currency === 'USD' ? 'Dólares' : 'Soles'].filter(Boolean).join(' · ');
               return (
                 <li key={c.id}>
-                  <span className="setting-text"><span>{c.alias} ****{c.last4}</span><small className="muted">{detail}</small></span>
+                  <span className="setting-text"><span>{c.alias} ****{c.last4}</span><small className="muted">{detail}</small>
+                    {views.has(c.id) && <CardPositionSummary v={views.get(c.id)!} />}</span>
                   <span className="actions" style={{ gap: 4 }}>
+                    {views.has(c.id) && <StatementSheet v={views.get(c.id)!} />}
                     {c.kind === 'credit' && (
                       <Sheet label="Ciclo" triggerClassName="link small-link" triggerLabel={`Ciclo de ${c.alias}`} title={c.alias} subtitle="Vels lo usa para decirte cuándo pagas lo que compras.">
                         <div className="sheet-body">

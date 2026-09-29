@@ -1,5 +1,6 @@
 'use server';
 
+import { validStatement } from '../../src/engine/cards';
 import { revalidatePath } from 'next/cache';
 import { logLearning } from '../../lib/learning';
 import { isReplay, ref } from '../../lib/idempotency';
@@ -14,7 +15,7 @@ import { loadUserContext } from '../../lib/queries';
 import { SupabaseImportRepository } from '../../src/infrastructure/supabase/import-repository';
 import { parseImportForm, importOutcomeText } from '../../src/web/import-input';
 import {
-  errorText, isUuid, parseAccountForm, parseCardCycleForm, parseCardForm, parseSplitForm, parseDebtForm, parseFixedExpenseForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
+  errorText, isUuid, parseAccountForm, parseCardCycleForm, parseCardStatementForm, parseCardForm, parseSplitForm, parseDebtForm, parseFixedExpenseForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
 } from '../../src/web/transaction-input';
 
 export interface ActionState {
@@ -350,4 +351,31 @@ export async function updateCardCycleAction(_prev: ActionState, form: FormData):
     .eq('id', id).eq('kind', 'credit').select('id');
   if (error || !data?.length) return { error: 'No se guardó. Intenta de nuevo.' };
   return done('Guardado.');
+}
+
+/** Card statement (ADR-0014): one per (card, cut date); saving again corrects it. Never invents amounts. */
+export async function saveCardStatementAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const parsed = parseCardStatementForm((k) => form.get(k));
+  if (!isUuid(id) || !parsed.ok) return { error: 'Revisa las fechas y los montos.' };
+  const v = parsed.value;
+  const invalid = validStatement(v);
+  if (invalid) return { error: invalid };
+  const supabase = await createSupabaseServerClient();
+  const user = await authUser(supabase);
+  if (!user) return { error: errorText('not_authenticated') };
+  const { data: card } = await supabase.from('cards').select('id,currency,statement_day,payment_day').eq('id', id).eq('kind', 'credit').maybeSingle();
+  if (!card) return { error: 'No encontramos esa tarjeta.' };
+  const now = new Date().toISOString();
+  const { error } = await supabase.from('card_statements').upsert({
+    user_id: user.id, card_id: card.id, currency: card.currency, cut_date: v.cutDate, due_date: v.dueDate,
+    billed_minor: v.billedMinor, minimum_minor: v.minimumMinor, used_minor: v.usedMinor, used_as_of: v.usedMinor === null ? null : now,
+    source: 'manual', status: 'confirmed', updated_at: now,
+  }, { onConflict: 'card_id,cut_date' });
+  if (error) return { error: 'No se guardó. Intenta de nuevo.' };
+  // The statement also tells the cycle days when the card had none (never overwrites what the person set).
+  if (card.statement_day === null || card.payment_day === null) {
+    await supabase.from('cards').update({ statement_day: card.statement_day ?? Number(v.cutDate.slice(8)), payment_day: card.payment_day ?? Number(v.dueDate.slice(8)) }).eq('id', card.id);
+  }
+  return done('Estado de cuenta guardado.');
 }

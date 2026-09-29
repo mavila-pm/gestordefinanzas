@@ -111,6 +111,30 @@ await runSuite('vels', async ({ page, check }) => {
   check('Vels reasons by cycle: when the billed amount is due and when today\'s purchase is paid', cy.includes('Lo facturado vence') && cy.includes('Lo que compres hoy') && cy.includes('se paga el'), cy);
   await page.keyboard.press('Escape');
 
+  // Statement entered by hand (ADR-0014): billed / minimum / due; Tarjetas and Vels read the same numbers.
+  await page.goto(`${BASE}/app/tarjetas`);
+  await page.getByRole('button', { name: 'Estado de cuenta de Tarjeta BCP' }).click();
+  const stf = page.locator('dialog[open] form[aria-label="Estado de cuenta de Tarjeta BCP"]');
+  const today = new Date(Date.now() - 5 * 3600_000); const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const cut = iso(new Date(today.getTime() - 3 * 86_400_000)); const due = iso(new Date(today.getTime() + 20 * 86_400_000));
+  await stf.locator('input[name=cutDate]').fill(cut);
+  await stf.locator('input[name=dueDate]').fill(due);
+  await stf.locator('input[name=billed]').fill('3000');
+  await stf.locator('input[name=minimum]').fill('150');
+  await act(page, () => stf.locator('button[type=submit]').click());
+  const sts = (await sb.from('card_statements').select('billed_minor,minimum_minor,used_minor,source')).data ?? [];
+  check('statement saved once: billed S/ 3,000, minimum S/ 150, used unknown (null, not 0), manual', sts.length === 1 && Number(sts[0]!.billed_minor) === 300000 && Number(sts[0]!.minimum_minor) === 15000 && sts[0]!.used_minor === null && sts[0]!.source === 'manual', JSON.stringify(sts));
+  const pos = ((await page.getByTestId('card-position').first().textContent()) ?? '').replace(/\s+/g, ' ');
+  check('Tarjetas shows billed + due, minimum-only carry with interest, and when today\'s purchase is paid', pos.includes('Facturado S/ 3,000.00') && pos.includes('pasan S/ 2,850.00 al próximo ciclo') && pos.includes('Lo que compres hoy se paga el'), pos);
+  await openVels(page);
+  await say(page, '¿Hasta cuánto puedo usar la tarjeta?');
+  const cl = await lastVels(page);
+  check('Vels uses the statement: billed + due date, limit real ≠ bank line', cl.includes('Facturado') && cl.includes('S/ 3,000') && cl.includes('límite real es'), cl);
+  await say(page, '¿Pago el mínimo?');
+  const pm = await lastVels(page);
+  check('Vels minimum vs total uses the billed amount and its due date', pm.includes('S/ 3,000') && /hasta el \d+ \w+/.test(pm), pm);
+  await page.keyboard.press('Escape');
+
   await page.goto(`${BASE}/app/preguntar`);
   check('Vels page (existing route) says Vels and has no second bubble', ((await page.locator('h1').textContent()) ?? '') === 'Vels' && (await page.getByTestId('vels-fab').count()) === 0);
 });

@@ -380,3 +380,14 @@ export function parseCardCycleForm(get: Get): Parsed<{ creditLimitMinor: number 
   if (s === undefined || p === undefined || limit === undefined || (limitRaw && limit === null)) return fail('invalid_request');
   return { ok: true, value: { creditLimitMinor: limit, statementDay: s, paymentDay: p } };
 }
+
+/** Card statement entry (ADR-0014): dates required; amounts optional (blank = unknown, never 0). */
+export function parseCardStatementForm(get: Get): Parsed<{ cutDate: string; dueDate: string; billedMinor: number | null; minimumMinor: number | null; usedMinor: number | null }> {
+  const date = (k: string) => { const v = str(get(k)); return /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : null; };
+  // "0" is a real, known value here (nothing billed) — distinct from blank (unknown).
+  const amount = (k: string) => { const v = str(get(k)); if (!v) return null; if (/^0+(\.0{1,2})?$/.test(v)) return 0; const m = parseAmountToMinor(v); return m === null ? undefined : m; };
+  const cutDate = date('cutDate'); const dueDate = date('dueDate');
+  const billedMinor = amount('billed'); const minimumMinor = amount('minimum'); const usedMinor = amount('used');
+  if (!cutDate || !dueDate || billedMinor === undefined || minimumMinor === undefined || usedMinor === undefined) return fail('invalid_request');
+  return { ok: true, value: { cutDate, dueDate, billedMinor, minimumMinor, usedMinor } };
+}

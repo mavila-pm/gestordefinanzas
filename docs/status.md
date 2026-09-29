@@ -2,7 +2,7 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20260929000025`.
+migrations applied through `20260929000026`.
 
 ## Checkpoint (2026-09-28)
 Last full regression: unit 280 · DB 94 · E2E 271/271 (10 suites, clean seed) · visual 144 shots, no overflow · cleanup 0|0.
@@ -30,7 +30,8 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Vels: floating bubble + panel on every /app screen, full page (route /app/preguntar), contextual openers, card operating limit, organize block, minimum vs total, 'le debo X' → pending debt (confirm), estimated basics (030, ADR-0011) | VERIFIED | — |
 | Idempotent creates: DB-unique `client_ref` on debts/payments/incomes/accounts; forms, Vels, camera, onboarding (032, ADR-0012) | VERIFIED | — |
 | Aplicar plan: saved reservations per currency (supersede / quitar / history), paid only via real settlements, stale-tab guard, Vels confirm (033, ADR-0013) | VERIFIED | — |
-| Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Billed vs post-cut amounts need statement data (camera/import) |
+| Card statements: billed / minimum / due / used, post-cut from real purchases, usable = min(plan, bank room), minimum-only carry + interest; Tarjetas + Vels (034, ADR-0014) | VERIFIED | Camera read of statements (key) |
+| Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Statement camera read needs the AI provider (key) |
 
 ## Blockers / decisions (external)
 - AI provider (DeepSeek and/or Gemini) + server key → then `scripts/ai-bench.ts` against the local baseline (synthetic data only).

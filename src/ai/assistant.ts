@@ -3,6 +3,7 @@ import type { IncomeMatch, TimelineItem } from '../engine/observed';
 import { compareDebtStrategies, simulatePurchase, type MatchSuggestion, type Plan, type PlanInput } from '../engine/planning';
 import { cardCycle, changeBill, delayIncome, extraDebtPayment, payDebt, type ScenarioResult } from '../engine/scenarios';
 import type { AssistantAct } from './conversation';
+import type { CardPosition } from '../engine/cards';
 import { money } from './draft';
 import { findAmounts, fold } from './text';
 
@@ -73,7 +74,7 @@ export interface View {
   reviewCount: number;
   suggestions: MatchSuggestion[];
   incomeMatches?: IncomeMatch[];
-  cards?: Array<{ name: string; currency: Currency; creditLimitMinor: number | null; statementDay?: number | null; paymentDay?: number | null }>;
+  cards?: Array<{ name: string; currency: Currency; creditLimitMinor: number | null; statementDay?: number | null; paymentDay?: number | null; position?: CardPosition }>;
   recentIncome?: { amountMinor: number; currency: Currency; date: string } | null;
   timeline?: TimelineItem[];
   /** Plan inputs per currency, for what-if scenarios (simulated copies; nothing is written). */
@@ -230,15 +231,22 @@ export function answer(intent: Intent, v: View): Answer | null {
     }
     case 'card_limit': {
       if (!p || p.freeMinor === null) return { text: 'Para calcularlo me falta tu saldo de hoy y tu próximo ingreso.', actions: [PLAN_LINK], pending: !p?.base ? 'balance' : undefined };
-      const real = Math.max(0, p.freeMinor);
       const bank = (v.cards ?? []).find((c) => c.currency === p.currency && c.creditLimitMinor);
       const withDays = (v.cards ?? []).find((c) => c.currency === p.currency && c.statementDay && c.paymentDay);
+      const pos = (v.cards ?? []).find((c) => c.currency === p.currency && c.position?.billed)?.position ?? null;
       const cycle = withDays ? cardCycle(v.today, withDays.statementDay!, withDays.paymentDay!) : null;
+      // Real usable: plan free, capped by the bank room when the used amount is known (ADR-0014).
+      const real = pos?.usableMinor ?? Math.max(0, p.freeMinor);
+      const rows: Array<{ label: string; value: string }> = [{ label: 'Por qué', value: 'Lo que podrías pagar completo sin tocar tus pagos' }];
+      if (pos?.billed) {
+        rows.push({ label: 'Facturado', value: `${pos.billed.amountMinor === null ? 'por confirmar' : money(pos.billed.amountMinor, p.currency)} · vence ${dm(pos.billed.dueDate)}` });
+        if (pos.postCutMinor) rows.push({ label: 'Después del corte', value: `${money(pos.postCutMinor, p.currency)} (va al próximo estado)` });
+        if (pos.bankAvailableMinor !== null) rows.push({ label: 'Disponible del banco', value: money(pos.bankAvailableMinor, p.currency) });
+      } else if (cycle) rows.push({ label: 'Lo facturado vence', value: `${dm(cycle.dueOfBilled)} (paga el total y no hay interés)` });
+      if (cycle) rows.push({ label: 'Lo que compres hoy', value: `se paga el ${dm(cycle.dueOfToday)}` });
       return {
         text: `${bank ? `El banco te permite ${money(bank.creditLimitMinor!, p.currency)}. ` : ''}Para este ciclo, tu límite real es ${money(real, p.currency)}${p.status !== 'confirmed' ? ' (estimado)' : ''}.`,
-        rows: [{ label: 'Por qué', value: 'Lo que podrías pagar completo sin tocar tus pagos' },
-          ...(cycle ? [{ label: 'Lo facturado vence', value: `${dm(cycle.dueOfBilled)} (paga el total y no hay interés)` }, { label: 'Lo que compres hoy', value: `se paga el ${dm(cycle.dueOfToday)}` }] : [])],
-        actions: [PLAN_LINK],
+        rows, actions: [PLAN_LINK],
       };
     }
     case 'organize': {
@@ -257,6 +265,19 @@ export function answer(intent: Intent, v: View): Answer | null {
       const card = (v.debtLinks ?? []).find((d) => d.currency === 'PEN' && (d.obligationId || /tarjeta|visa|mastercard|amex/i.test(d.name)));
       if (!card) return { text: '¿De qué tarjeta? No tengo una deuda de tarjeta registrada.', actions: [{ type: 'link', label: 'Agregar deuda', href: '/app/compromisos' }] };
       if (!input?.base) return { text: 'Me falta tu saldo de hoy para responderte.', pending: 'balance' };
+      // With a statement on file, "total" is what was billed (post-cut purchases go to the next statement).
+      const st = (v.cards ?? []).find((c) => c.currency === 'PEN' && c.position?.billed?.amountMinor != null)?.position ?? null;
+      if (st?.billed && st.billed.amountMinor !== null) {
+        const billed = st.billed.amountMinor;
+        // Free after paying the billed total = free + what the plan already reserved for this card − billed.
+        const pen = v.plans.find((x) => x.currency === 'PEN');
+        const reservedForCard = pen?.lines.filter((l) => card.obligationId && l.obligationId === card.obligationId).reduce((s2, l) => s2 + (l.amountMinor ?? 0), 0) ?? 0;
+        const after = pen?.freeMinor == null ? null : pen.freeMinor + reservedForCard - billed;
+        const due = dm(st.billed.dueDate);
+        if (after !== null && after >= 0) return { text: `Paga el total facturado (${money(billed, 'PEN')}) hasta el ${due}: te quedan ${money(after, 'PEN')} libres y no pagas intereses.`, actions: [PLAN_LINK] };
+        const carried = st.minimumOnly ? ` Pasan ${money(st.minimumOnly.carriedMinor, 'PEN')} al próximo ciclo${st.minimumOnly.interestMinor ? `, ~${money(st.minimumOnly.interestMinor, 'PEN')} de interés` : ' con interés'}.` : '';
+        return { text: `No te alcanza para el total (${money(billed, 'PEN')}). Paga al menos el mínimo${st.billed.minimumMinor !== null ? ` (${money(st.billed.minimumMinor, 'PEN')})` : ''} hasta el ${due} y abona lo que puedas.${carried}`, actions: [PLAN_LINK] };
+      }
       const total = payDebt(input, card, card.balanceMinor)!;
       const min = v.obligations.find((o) => o.id === card.obligationId)?.amountMinor ?? null;
       if (total.freeAfterMinor !== null && total.freeAfterMinor >= 0) {
