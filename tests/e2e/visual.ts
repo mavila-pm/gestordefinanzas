@@ -99,6 +99,17 @@ for (const theme of ['light', 'dark'] as const) {
       await page.goto(`${BASE}${path}`);
       await shoot(page, name, width, theme, save);
     }
+    // Vels user after its suite (seed s14a): applied plan + card statement (ADR-0013/0014), and the Vels panel.
+    await ctx.clearCookies();
+    await ctx.addCookies([{ name: 'vs-theme', value: theme, url: BASE }]);
+    await login(page, probe('s14a'));
+    for (const [name, path] of [['applied-plan', '/app/plan'], ['card-statement', '/app/tarjetas']] as const) {
+      await page.goto(`${BASE}${path}`);
+      await shoot(page, name, width, theme, save);
+    }
+    await page.getByTestId('vels-fab').click();
+    await page.locator('dialog.vels-panel[open] .composer').waitFor();
+    await shoot(page, 'vels-panel', width, theme, save);
     // Conversational onboarding (seed s12a; runs after the onboarding suite, which leaves it reset to a fresh start).
     await ctx.clearCookies();
     await ctx.addCookies([{ name: 'vs-theme', value: theme, url: BASE }]);

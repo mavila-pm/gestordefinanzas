@@ -20,7 +20,7 @@ export function CardPositionSummary({ v }: { v: CardView }) {
   if (p.usableMinor !== null && (p.billed || p.limitMinor !== null)) rows.push(`Sin romper tu plan puedes usar ${m(p.usableMinor)}`);
   if (p.purchaseTodayPaidOn) rows.push(`Lo que compres hoy se paga el ${shortDate(p.purchaseTodayPaidOn)}`);
   if (!rows.length) return null;
-  return <span className="stack-xs" data-testid="card-position">{rows.map((r, i) => <small key={i} className="muted">{r}</small>)}</span>;
+  return <span className="stack-xs card-position" data-testid="card-position">{rows.map((r, i) => <small key={i} className="muted">{r}</small>)}</span>;
 }
 
 export function StatementSheet({ v }: { v: CardView }) {
@@ -32,7 +32,7 @@ export function StatementSheet({ v }: { v: CardView }) {
       <input name={name} inputMode="decimal" defaultValue={amt(value)} placeholder={hint} /></span></label>
   );
   return (
-    <Sheet label="Estado" triggerClassName="link small-link" triggerLabel={`Estado de cuenta de ${v.name}`} title={v.name} subtitle="Cópialo de tu estado de cuenta. Si no sabes un monto, déjalo vacío.">
+    <Sheet label="Estado" triggerClassName="link small-link" triggerLabel={`Estado de cuenta de ${v.name}`} title={`Estado de cuenta · ${v.name}`} subtitle="Cópialo de tu estado de cuenta. Si no sabes un monto, déjalo vacío.">
       <div className="sheet-body">
         <ActionForm action={saveCardStatementAction} label={`Estado de cuenta de ${v.name}`} closeOnSuccess>
           <input type="hidden" name="id" value={v.id} />

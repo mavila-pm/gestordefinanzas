@@ -70,7 +70,7 @@ export default async function CardsAndAccounts() {
                   <span className="actions" style={{ gap: 4 }}>
                     {views.has(c.id) && <StatementSheet v={views.get(c.id)!} />}
                     {c.kind === 'credit' && (
-                      <Sheet label="Ciclo" triggerClassName="link small-link" triggerLabel={`Ciclo de ${c.alias}`} title={c.alias} subtitle="Vels lo usa para decirte cuándo pagas lo que compras.">
+                      <Sheet label="Ciclo" triggerClassName="link small-link" triggerLabel={`Ciclo de ${c.alias}`} title={`Ciclo · ${c.alias}`} subtitle="Vels lo usa para decirte cuándo pagas lo que compras.">
                         <div className="sheet-body">
                           <ActionForm action={updateCardCycleAction} label={`Ciclo de ${c.alias}`} closeOnSuccess>
                             <input type="hidden" name="id" value={c.id} />
