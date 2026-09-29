@@ -10,6 +10,7 @@ import { sanitizeUserText } from '../src/ai/sanitize';
 import { isSmallTalk } from '../src/ai/interpreter';
 import { infer, STOP_TEXT } from './ai';
 import { logLearning } from './learning';
+import { isReplay } from './idempotency';
 import { loadMessages, readImages } from './onboarding';
 import { loadPlanningData, planFor, planInputFor, planTimeline } from './planning';
 
@@ -48,7 +49,9 @@ function toCard(a: Answer): MessageCard | null {
   if (a.title) card.title = a.title;
   if (a.rows?.length) card.rows = a.rows;
   const links = (a.actions ?? []).filter((x) => x.type === 'link') as Array<{ label: string; href: string }>;
-  const acts = (a.actions ?? []).filter((x) => x.type === 'act') as unknown as MessageCard['acts'];
+  // Writes proposed by Vels carry a one-time reference: two tabs / a replayed request store the row once (ADR-0012).
+  const acts = (a.actions ?? []).filter((x) => x.type === 'act')
+    .map((x) => (x.type === 'act' && x.act === 'create_debt' ? { ...x, fields: { ...x.fields, ref: `vels:${crypto.randomUUID()}` } } : x)) as unknown as MessageCard['acts'];
   const replies = (a.actions ?? []).filter((x) => x.type === 'reply').map((x) => x.label);
   if (links.length) card.links = links;
   if (acts?.length) card.acts = acts;
@@ -126,7 +129,9 @@ export async function assistantAct(supabase: SupabaseClient, userId: string, act
     // Idempotent against a double tap: the same debt (name + amount) already open is not created twice.
     const { data: same } = await supabase.from('debts').select('id').eq('name', name).eq('balance_minor', amount).eq('currency', currency).eq('active', true).limit(1);
     if (same?.length) return 'Ya la tenía guardada.';
-    const { data, error } = await supabase.from('debts').insert({ user_id: userId, name, lender, currency, principal_minor: amount, balance_minor: amount }).select('id').single();
+    const clientRef = /^vels:[0-9a-f-]{36}$/.test(fields.ref ?? '') ? fields.ref! : null;
+    const { data, error } = await supabase.from('debts').insert({ user_id: userId, name, lender, currency, principal_minor: amount, balance_minor: amount, client_ref: clientRef }).select('id').single();
+    if (isReplay(error)) return 'Ya la tenía guardada.';
     if (error) return 'No pude guardarla.';
     await logLearning(supabase, userId, 'obligation', 'accepted', data.id, { kind: 'debt', lender, amount, currency });
     return `Listo. Debes ${money(amount, currency)} a ${lender}. No la cuento en Dinero libre hasta que tenga fecha.`;
@@ -193,7 +198,12 @@ export async function assistantVision(supabase: SupabaseClient, userId: string, 
   const w = visionWrites(patches, { obligations: fx.data ?? [], debts: debts.data ?? [], cardLast4: (cards.data ?? []).map((c) => c.last4 as string) }, userId);
   let failed = 0;
   for (const u of w.updates) { const { error } = await supabase.from(u.table).update(u.patch).eq('id', u.id); if (error) failed++; }
-  for (const i of w.inserts) { const { error } = await supabase.from(i.table).insert(i.row); if (error) failed++; }
+  // Deterministic per-proposal references: a concurrent second "Confirmar" cannot insert the same rows again.
+  for (const [n, i] of w.inserts.entries()) {
+    const row = i.table === 'fixed_expenses' || i.table === 'debts' ? { ...i.row, client_ref: `vis:${last!.id}:${n}` } : i.row;
+    const { error } = await supabase.from(i.table).insert(row);
+    if (error && !isReplay(error) && !(i.table === 'cards' && error.code === '23505')) failed++;
+  }
   const done = w.updates.length + w.inserts.length - failed;
   const a = answer({ k: 'free' }, await view(supabase));
   await say(supabase, userId, 'velsuno', failed

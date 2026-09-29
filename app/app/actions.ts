@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { logLearning } from '../../lib/learning';
+import { isReplay, ref } from '../../lib/idempotency';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
@@ -122,8 +123,9 @@ export async function createAccountAction(_prev: ActionState, form: FormData): P
   const a = parsed.value;
   // Accounts are user-owned rows protected by RLS (user_id must equal the session user).
   const { error } = await supabase.from('accounts').insert({
-    user_id: user.id, alias: a.alias, institution_code: a.institution, currency: a.currency, last4: a.last4,
+    user_id: user.id, alias: a.alias, institution_code: a.institution, currency: a.currency, last4: a.last4, client_ref: ref(form),
   });
+  if (isReplay(error)) return done('Cuenta registrada.');
   if (error) return { error: errorText(error.code === '23505' ? 'duplicate_account' : null) };
   return done('Cuenta registrada.');
 }
@@ -254,9 +256,9 @@ export async function saveFixedExpenseAction(_prev: ActionState, form: FormData)
   if (!user) return { error: errorText('not_authenticated') };
   const v = parsed.value;
   const { error } = await supabase.from('fixed_expenses').insert({
-    user_id: user.id, name: v.name, currency: v.currency, amount_minor: v.amountMinor, due_day: v.dueDay, category_id: v.categoryId,
+    user_id: user.id, name: v.name, currency: v.currency, amount_minor: v.amountMinor, due_day: v.dueDay, category_id: v.categoryId, client_ref: ref(form),
   });
-  if (error) return { error: errorText(null) };
+  if (error && !isReplay(error)) return { error: errorText(null) };
   return done('Gasto fijo registrado.');
 }
 
@@ -269,9 +271,9 @@ export async function saveDebtAction(_prev: ActionState, form: FormData): Promis
   const { error } = await supabase.from('debts').insert({
     user_id: user.id, name: v.name, lender: v.lender, currency: v.currency, principal_minor: v.principalMinor, balance_minor: v.balanceMinor,
     annual_rate_bp: v.annualRateBp, installment_minor: v.installmentMinor, installments_total: v.installmentsTotal,
-    installments_paid: v.installmentsPaid, due_day: v.dueDay,
+    installments_paid: v.installmentsPaid, due_day: v.dueDay, client_ref: ref(form),
   });
-  if (error) return { error: errorText(null) };
+  if (error && !isReplay(error)) return { error: errorText(null) };
   return done('Deuda registrada.');
 }
 

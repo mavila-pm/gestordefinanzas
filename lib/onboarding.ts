@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { domainWrites, validPatches } from '../src/ai/apply';
+import { isReplay } from './idempotency';
 import type { ChatMessage, MessageCard } from '../src/ai/conversation';
 import { canStart, compactState, hasFacts, mergePatches, nextQuestion, summarize, type Changed } from '../src/ai/draft';
 import { checkImage, IMAGE_ERROR_TEXT, imageReadKey, READ_REUSE_MINUTES } from '../src/ai/image';
@@ -208,9 +209,13 @@ export async function onboardingFinish(supabase: SupabaseClient, userId: string)
   if (state.status === 'completed') return { ok: true };
   const w = domainWrites(state.draft, userId);
   const applied: Record<string, string[]> = {};
+  let replayed = false;
   const insert = async (table: string, rows: Array<Record<string, unknown>>) => {
     if (!rows.length) return true;
-    const { data, error } = await supabase.from(table).insert(rows).select('id');
+    // Deterministic references: a double "Empezar" (two tabs) cannot create the onboarding rows twice (ADR-0012).
+    const refd = ['fixed_expenses', 'debts', 'expected_incomes', 'accounts'].includes(table) ? rows.map((r, n) => ({ ...r, client_ref: `onb:${table}:${n}` })) : rows;
+    const { data, error } = await supabase.from(table).insert(refd).select('id');
+    if (isReplay(error)) { replayed = true; return false; }
     if (error) return false;
     applied[table] = (data ?? []).map((r) => r.id as string);
     return true;
@@ -220,6 +225,11 @@ export async function onboardingFinish(supabase: SupabaseClient, userId: string)
   if (ok && w.settings) {
     const { data: cur } = await supabase.from('planning_settings').select('essentials_monthly_minor').eq('currency', 'PEN').maybeSingle();
     if (!cur || cur.essentials_monthly_minor === null) await supabase.from('planning_settings').upsert(w.settings);
+  }
+  if (!ok && replayed) {
+    // A parallel "Empezar" already wrote these rows: undo only what THIS attempt created, and report success.
+    for (const [table, ids] of Object.entries(applied)) await supabase.from(table).delete().in('id', ids);
+    return { ok: true };
   }
   if (!ok) {
     // Partial write: undo what this attempt created so a retry does not duplicate anything.

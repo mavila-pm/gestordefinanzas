@@ -7,6 +7,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { decide, logLearning } from '../../../lib/learning';
+import { isReplay, ref } from '../../../lib/idempotency';
 import { addDays, limaToday } from '../../../src/engine/planning';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSettingsForm } from '../../../src/web/planning-input';
@@ -55,8 +56,8 @@ export async function saveObligationAction(_p: ActionState, form: FormData): Pro
     }
     return done('Pago actualizado.');
   }
-  const { error } = await supabase.from('fixed_expenses').insert(row);
-  return error ? { error: SAVE_ERROR } : done('Pago agregado.');
+  const { error } = await supabase.from('fixed_expenses').insert({ ...row, client_ref: ref(form) });
+  return error && !isReplay(error) ? { error: SAVE_ERROR } : done('Pago agregado.');
 }
 
 /** Resolve one missing piece in context ("Falta el monto de Internet") without the full form. */
@@ -106,8 +107,8 @@ export async function saveIncomeAction(_p: ActionState, form: FormData): Promise
   const row = { user_id: user.id, name: v.name, currency: v.currency, amount_minor: v.amountMinor, amount_status: v.amountStatus, frequency: v.frequency,
     day_of_month: v.dayOfMonth, day_max: v.dayMax, second_day: v.secondDay, anchor_date: v.anchorDate };
   const id = form.get('id');
-  const { error } = isUuid(id) ? await supabase.from('expected_incomes').update(row).eq('id', id) : await supabase.from('expected_incomes').insert(row);
-  return error ? { error: SAVE_ERROR } : done('Ingreso guardado. Solo lo usamos para saber hasta cuándo planificar.');
+  const { error } = isUuid(id) ? await supabase.from('expected_incomes').update(row).eq('id', id) : await supabase.from('expected_incomes').insert({ ...row, client_ref: ref(form) });
+  return error && !isReplay(error) ? { error: SAVE_ERROR } : done('Ingreso guardado.');
 }
 
 export async function removeIncomeAction(_p: ActionState, form: FormData): Promise<ActionState> {
