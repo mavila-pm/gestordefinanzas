@@ -59,3 +59,10 @@ The PO must choose and provide, as **server-side environment variables in Vercel
 
 Then: run the benchmark with both keys, record the table above, pick `AI_PROVIDER` / `AI_TEXT_MODEL` /
 `AI_VISION_MODEL` (+ optional `AI_FALLBACK_PROVIDER`), and review each provider's data-retention terms.
+
+## OpenRouter (2026-10-06, block 040)
+- `OPENROUTER_API_KEY` (server env only) enables generic calls without account data (`generateAIResponse`, `/app/prueba-ia`).
+- Vels/onboarding send account state; they use OpenRouter only with `AI_PROVIDER=openrouter`, after reviewing the
+  account's privacy settings (free routes may log or train on prompts).
+- `OPENROUTER_MODEL` (default `openrouter/free`) must be free (`:free`) or priced in `AI_PRICES`; otherwise the
+  provider stays off, so the budget guards never under-count. Free models share one key-wide rate limit (429 → retry once).

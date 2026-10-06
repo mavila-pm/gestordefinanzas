@@ -13,6 +13,8 @@ export const PRICE_SNAPSHOT: Record<string, Rate> = {
   'deepseek-v4-flash-vision-exp': { in: 300_000, out: 1_200_000, cached: 6_000 },
   // Gemini 3.5 Flash-Lite (secondary sources; image input at the text rate).
   'gemini-flash-lite-latest': { in: 300_000, out: 2_500_000, cached: 30_000 },
+  // OpenRouter's free router: $0 per token. Other OpenRouter models need ':free' or an AI_PRICES entry (else refused).
+  'openrouter/free': { in: 0, out: 0, cached: 0 },
   'fixture-text': { in: 0, out: 0, cached: 0 },
   'fixture-vision': { in: 0, out: 0, cached: 0 },
 };
@@ -25,9 +27,14 @@ export function ratesFrom(env: Record<string, string | undefined> = process.env)
   } catch { return PRICE_SNAPSHOT; }
 }
 
+const FREE: Rate = { in: 0, out: 0, cached: 0 };
+/** OpenRouter's ':free' variants cost $0 per token. */
+const isFreeVariant = (model: string) => /^[a-z0-9._-]+\/[a-z0-9._-]+:free$/i.test(model);
+export const isPriced = (model: string, rates: Record<string, Rate> = PRICE_SNAPSHOT) => model in rates || isFreeVariant(model);
+
 export function estimateCostMicroUsd(model: string, u: AIUsage, rates: Record<string, Rate> = PRICE_SNAPSHOT): number {
   const worst = Object.values(rates).reduce((a, r) => ({ in: Math.max(a.in, r.in), out: Math.max(a.out, r.out), cached: Math.max(a.cached, r.cached) }), { in: 0, out: 0, cached: 0 });
-  const r = rates[model] ?? worst;
+  const r = rates[model] ?? (isFreeVariant(model) ? FREE : worst);
   const fresh = Math.max(u.input - u.cached, 0) + u.image;
   return Math.ceil((fresh * r.in + u.cached * r.cached + u.output * r.out) / 1_000_000);
 }

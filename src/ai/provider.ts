@@ -16,6 +16,8 @@ export interface AIRequest {
   /** Ask the provider for a single JSON object (structured extraction). */
   json: boolean;
   maxOutputTokens: number;
+  /** 0 (default) = most deterministic; callers clamp to [0, 1]. */
+  temperature?: number;
   reasoning: 'off' | 'low' | 'high';
   timeoutMs: number;
 }

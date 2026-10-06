@@ -16,7 +16,7 @@ export function geminiProvider(opts: { apiKey: string; baseUrl?: string; fetchIm
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: m.content }, ...(i === req.messages.length - 1 ? (req.images ?? []).map((img) => ({ inlineData: { mimeType: img.mime, data: img.base64 } })) : [])],
       }));
-      const generationConfig: Record<string, unknown> = { maxOutputTokens: req.maxOutputTokens, temperature: 0 };
+      const generationConfig: Record<string, unknown> = { maxOutputTokens: req.maxOutputTokens, temperature: req.temperature ?? 0 };
       if (req.json) generationConfig.responseMimeType = 'application/json';
       generationConfig.thinkingConfig = { thinkingBudget: req.reasoning === 'off' ? 0 : req.reasoning === 'low' ? 512 : 2048 };
       const data = await postJson(`${base}/models/${encodeURIComponent(req.model)}:generateContent`, { 'x-goog-api-key': opts.apiKey },

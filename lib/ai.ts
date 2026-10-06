@@ -1,8 +1,9 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { aiConfig, providerFor, type AIConfig } from '../src/ai/config';
+import { aiConfig, generalAIConfig, providerFor, type AIConfig } from '../src/ai/config';
 import { AIProviderError, ZERO_USAGE, type AIImage, type AIMessage, type AIProvider, type AIUsage } from '../src/ai/provider';
 import { estimateCostMicroUsd, ratesFrom } from '../src/ai/pricing';
+import { sanitizeUserText } from '../src/ai/sanitize';
 import type { Operation } from '../src/ai/types';
 
 /**
@@ -19,7 +20,7 @@ const OUTCOME: Record<string, 'error' | 'timeout' | 'invalid_output'> = { timeou
 
 export async function infer(
   supabase: SupabaseClient,
-  req: { operation: Operation; system: string; messages: AIMessage[]; images?: AIImage[]; json: boolean },
+  req: { operation: Operation; system: string; messages: AIMessage[]; images?: AIImage[]; json: boolean; temperature?: number; maxOutputTokens?: number },
   validate: (text: string) => boolean = () => true,
   cfg: AIConfig = aiConfig(),
   resolve: (p: AIConfig['provider']) => AIProvider | null = (p) => providerFor(p),
@@ -58,7 +59,9 @@ export async function infer(
     const started = Date.now();
     try {
       const r = await provider.complete({ operation: req.operation, model, system: req.system, messages, images: req.images, json: req.json,
-        maxOutputTokens: cfg.maxOutput[req.operation], reasoning: cfg.reasoning, timeoutMs: cfg.timeoutMs });
+        // A caller may ask for less output or more variety, never more than the configured cap.
+        maxOutputTokens: Math.min(Math.max(req.maxOutputTokens ?? Infinity, 50), cfg.maxOutput[req.operation]),
+        temperature: Math.min(Math.max(req.temperature ?? 0, 0), 1), reasoning: cfg.reasoning, timeoutMs: cfg.timeoutMs });
       if (!validate(r.text)) {
         // A malformed answer is recorded (it cost tokens) but not retried: a retry would double the cost (§62).
         await settle(r.usage, 'invalid_output', r.latencyMs);
@@ -74,6 +77,18 @@ export async function infer(
     }
   }
   return { ok: false, reason: 'failed' };
+}
+
+/**
+ * Generic text answer for product features (provider-agnostic: OpenRouter, Gemini, DeepSeek… per src/ai/config.ts).
+ * Same door as everything else: the signed-in user's quota and rate limit, timeout, at most one retry, usage recorded.
+ * User messages are sanitized here (secrets never reach a provider); the answer is untrusted text for the caller.
+ * It may run on OPENROUTER_API_KEY alone (generalAIConfig): never put account data (balances, movements) in the prompt.
+ */
+export function generateAIResponse(supabase: SupabaseClient, opts: { messages: AIMessage[]; systemPrompt: string; temperature?: number; maxTokens?: number }): Promise<InferResult> {
+  const messages = opts.messages.map((m) => (m.role === 'user' ? { role: m.role, content: sanitizeUserText(m.content).text } : m));
+  return infer(supabase, { operation: 'assistant_answer', system: opts.systemPrompt, messages, json: false,
+    temperature: opts.temperature, maxOutputTokens: opts.maxTokens }, undefined, generalAIConfig());
 }
 
 /** Human copy for a stop (§49): no urgency, never blocks the rest of the product. */
