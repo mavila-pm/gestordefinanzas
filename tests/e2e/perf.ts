@@ -96,5 +96,27 @@ await runSuite('perf', async ({ page, check }) => {
     t.sort((a, b) => a - b);
     rows.push(`PERF render ${path.padEnd(27)} html ${String(t[1]).padStart(5)} ms (median of 3, warm)`);
   }
+  // Web vitals per main screen (fresh context = cold cache, mobile viewport): LCP, CLS, JS and font bytes.
+  for (const path of ['/app', '/app/plan', '/app/movimientos', '/app/tarjetas', '/app/compromisos']) {
+    const ctx = await page.context().browser()!.newContext({ viewport: { width: 390, height: 844 } });
+    await ctx.addCookies(await page.context().cookies());
+    const p2 = await ctx.newPage();
+    await p2.addInitScript(() => {
+      const w = window as unknown as { __lcp: number; __cls: number };
+      w.__lcp = 0; w.__cls = 0;
+      new PerformanceObserver((l) => { for (const e of l.getEntries()) w.__lcp = e.startTime; }).observe({ type: 'largest-contentful-paint', buffered: true });
+      new PerformanceObserver((l) => { for (const e of l.getEntries() as Array<PerformanceEntry & { value: number; hadRecentInput: boolean }>) if (!e.hadRecentInput) w.__cls += e.value; }).observe({ type: 'layout-shift', buffered: true });
+    });
+    await p2.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
+    await p2.waitForTimeout(300);
+    const v = await p2.evaluate(() => {
+      const w = window as unknown as { __lcp: number; __cls: number };
+      const res = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+      const kb = (f: (r: PerformanceResourceTiming) => boolean) => Math.round(res.filter(f).reduce((s, r) => s + (r.encodedBodySize || r.transferSize), 0) / 1024);
+      return { lcp: Math.round(w.__lcp), cls: w.__cls.toFixed(3), js: kb((r) => r.initiatorType === 'script' || r.name.endsWith('.js')), font: kb((r) => /\.(woff2?|ttf)(\?|$)/.test(r.name)) };
+    });
+    rows.push(`PERF vitals ${path.padEnd(18)} LCP ${String(v.lcp).padStart(5)} ms  CLS ${v.cls}  JS ${String(v.js).padStart(4)} KB  font ${String(v.font).padStart(4)} KB`);
+    await ctx.close();
+  }
   console.log(rows.join('\n'));
 });

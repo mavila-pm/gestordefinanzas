@@ -32,9 +32,10 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Aplicar plan: saved reservations per currency (supersede / quitar / history), paid only via real settlements, stale-tab guard, Vels confirm (033, ADR-0013) | VERIFIED | — |
 | Card statements: billed / minimum / due / used, post-cut from real purchases, usable = min(plan, bank room), minimum-only carry + interest; Tarjetas + Vels (034, ADR-0014) | VERIFIED | Camera read of statements (key) |
 | Month-end bug: 'cuota vence pronto' now sees the first days of next month (was silent on the 29–31) (035) | VERIFIED | — |
-| E2E harness: insert-only seed under a run id (no collisions, no cleanup dependency), exact-namespace guarded cleanup, harness DB test (036) | VERIFIED | Real-project cleanup blocked: the MCP connector does not run DELETE (see runbook incident); 41 synthetic users pending |
+| E2E harness: insert-only seed under a run id (no collisions, no cleanup dependency), exact-namespace guarded cleanup, harness DB test (036) | VERIFIED | Real-project cleanup blocked: the MCP connector does not run DELETE (see runbook incident); 61 synthetic users pending (3 runs) |
 | Resumen redesign: Dinero libre first + bar (pagos/reservado/libre), state chip, 'Lo que viene' to next income, month as context (037) | VERIFIED | PO walkthrough on a phone |
 | UX writing pass (ux-writing skill): real plurals (no "(s)"), one date format ("28 set"), errors say what to do (no "inválido"), one save error, shorter help/success texts, "Ver pagos", chat typing label (038) | VERIFIED | Vels/onboarding answers kept (already short and test-pinned) |
+| Premium polish: CSS motion system (tokens, route + loading→content entry, sheet/panel exit via allow-discrete, feedback/result entry, bar reveal, hover only on hover devices, tiered reduced motion), Manrope WOFF2 subset via next/font (CLS 0.18→0, font 67→24 KB), Vels chat lazy-loaded, Resumen skeleton mirrors layout (039) | VERIFIED | No exit page transitions (by design: no Next internals, no added latency); PO feel check on a phone |
 | Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Statement camera read needs the AI provider (key) |
 
 ## Blockers / decisions (external)

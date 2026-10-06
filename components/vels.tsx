@@ -4,8 +4,12 @@ import { usePathname } from 'next/navigation';
 import { startTransition, useCallback, useRef, useState } from 'react';
 import { assistantAction, velsOpenAction } from '../app/app/preguntar/actions';
 import type { ChatMessage } from '../src/ai/conversation';
-import { Chat } from './chat';
+import dynamic from 'next/dynamic';
 import { Icon } from './ui/icon';
+
+/** The chat (and its camera code) is not needed on every screen: it loads when Vels opens, in parallel with the data. */
+const loadChat = () => import('./chat').then((m) => m.Chat);
+const Chat = dynamic(loadChat, { ssr: false, loading: () => <div className="vels-loading" role="status" aria-label="Abriendo Vels"><span /><span /><span /></div> });
 
 const HELLO: ChatMessage = { id: 'vels-hello', role: 'velsuno', body: 'Hola, soy Vels. ¿En qué te ayudo?', card: null };
 
@@ -23,10 +27,10 @@ export function VelsBubble() {
     setState((s) => ({ messages: r.messages.length ? r.messages : [HELLO], suggestions: r.suggestions, n: (s?.n ?? 0) + 1 }));
   }), []);
   if (path.startsWith('/app/preguntar')) return null; // the full Vels page is already open
-  const open = () => { dialog.current?.showModal(); load(path); };
+  const open = () => { dialog.current?.showModal(); void loadChat(); load(path); };
   return (
     <>
-      <button type="button" className="vels-fab" aria-label="Hablar con Vels" aria-haspopup="dialog" onClick={open} data-testid="vels-fab">
+      <button type="button" className="vels-fab" aria-label="Hablar con Vels" aria-haspopup="dialog" onClick={open} onPointerEnter={() => void loadChat()} data-testid="vels-fab">
         <span aria-hidden="true">V</span>
       </button>
       <dialog ref={dialog} className="vels-panel" aria-labelledby="vels-title" data-testid="vels-panel"

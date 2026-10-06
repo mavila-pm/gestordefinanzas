@@ -139,3 +139,9 @@ select percentile_cont(array[.5,.9,.95]) within group (order by weighted_tokens)
 Tap feedback: nav 8–37 ms · sheet 19 ms · save 12 ms · Vels send 26–41 ms (all < 100 ms). Done: nav ~330 ms, save 279 ms, Vels answer ~530 ms.
 HTML render before → after parallelizing card reads with the plan load: `/app` 201→218 · `/app/plan` 217→164 · `/app/movimientos` 255→199 ·
 `/app/tarjetas` 229→208 · `/app/compromisos` 191→248 · `/app/preguntar` 253→190 ms. Only Tarjetas/Vels changed; the rest is run-to-run noise.
+
+## Vitals — 2026-10-06 (local prod build → real Supabase, 390 px, fresh context; `scripts/e2e.sh perf` prints `PERF vitals`)
+Before → after the polish (039). LCP ms: `/app` 276→156 · `/app/plan` 192→144 · `/app/movimientos` 440→136 · `/app/tarjetas` 480→216 ·
+`/app/compromisos` 548→176. CLS `/app` 0.181→0.000 (the TTF font swap re-wrapped the hero legend; now a preloaded 24 KB WOFF2 subset via
+next/font). JS ~140 KB unchanged (framework). Note: CSS family names are case-insensitive, so the next/font const must not be named
+`manrope` (it collided with the tokens' `@font-face Manrope` and loaded both files).

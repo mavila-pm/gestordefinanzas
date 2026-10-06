@@ -38,6 +38,7 @@ await runSuite('vels', async ({ page, check }) => {
   const openers = await panel(page).getByTestId('vels-openers').locator('button').allTextContents();
   check('a few openers from the real state (max 3)', openers.length > 0 && openers.length <= 3, JSON.stringify(openers));
   await page.keyboard.press('Escape');
+  await panel(page).waitFor({ state: 'hidden' });
   check('Escape closes Vels; the page stays usable', !(await panel(page).isVisible()) && (await page.getByRole('navigation', { name: 'Principal' }).isVisible()));
 
   // Context of the screen only seeds the openers; answers come from the same core.
@@ -95,6 +96,7 @@ await runSuite('vels', async ({ page, check }) => {
   const db = await panel(page).boundingBox();
   check('desktop: floating panel (not full screen), bottom-right', !!db && db.width <= 420 && db.x > 600, JSON.stringify(db));
   await page.getByRole('button', { name: 'Cerrar' }).last().click();
+  await panel(page).waitFor({ state: 'hidden' });
   check('close button closes the panel', !(await panel(page).isVisible()));
   // Card cycle saved in the visual interface → Vels uses it (one core, two views).
   await page.goto(`${BASE}/app/tarjetas`);

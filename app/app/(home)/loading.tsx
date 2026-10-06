@@ -1,11 +1,11 @@
-/** Shown the moment a tab or link is tapped, while the server prepares the page (the shell stays in place). */
+/** Shown while the server prepares Resumen; same shape as the screen (title, Dinero libre, income row, list). */
 export default function Loading() {
   return (
-    <div className="stack narrow-md route-loading" role="status" aria-busy="true" aria-label="Cargando">
-      <div className="sk" style={{ height: 32, width: '45%' }} />
-      <div className="sk" style={{ height: 120 }} />
-      <div className="sk" style={{ height: 56 }} />
-      <div className="sk" style={{ height: 56 }} />
+    <div className="stack route-loading" role="status" aria-busy="true" aria-label="Cargando">
+      <div className="sk" style={{ height: 36, width: '40%' }} />
+      <div className="sk" style={{ height: 300, borderRadius: 'var(--radius-card)' }} />
+      <div className="sk" style={{ height: 72, borderRadius: 'var(--radius-card)' }} />
+      <div className="sk" style={{ height: 200, borderRadius: 'var(--radius-card)' }} />
     </div>
   );
 }

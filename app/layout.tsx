@@ -1,6 +1,13 @@
 import type { Metadata, Viewport } from 'next';
+import localFont from 'next/font/local';
 import { cookies } from 'next/headers';
 import './globals.css';
+
+/**
+ * Manrope (brand font) as a Latin subset in WOFF2 (24 KB vs the 165 KB TTF), preloaded, with a metric-adjusted
+ * fallback so the swap does not shift the layout (CLS). Built from brand/VELSUNO/fonts with fonttools pyftsubset.
+ */
+const velsunoSans = localFont({ src: './fonts/Manrope-latin.woff2', weight: '200 800', display: 'swap', variable: '--font-manrope', preload: true });
 
 export const metadata: Metadata = {
   title: { default: 'Velsuno', template: '%s · Velsuno' },
@@ -26,7 +33,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const chosen = (await cookies()).get('vs-theme')?.value;
   const theme = chosen === 'light' || chosen === 'dark' ? chosen : undefined;
   return (
-    <html lang="es-PE" data-theme={theme} suppressHydrationWarning>
+    <html lang="es-PE" data-theme={theme} className={velsunoSans.variable} suppressHydrationWarning>
       <head>{!theme && <script dangerouslySetInnerHTML={{ __html: SYSTEM_THEME }} />}</head>
       <body>{children}</body>
     </html>
