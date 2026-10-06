@@ -10,6 +10,9 @@ Product Owner: Mauro. Spec deviations need a Change Request (Anexo A) before imp
 - Path rules load automatically from `.claude/rules/` (financial, database, frontend, auth-security).
 - Skills: `verify` (pick + run the right checks), `task-close` (close a block), `financial-safety` (money-affecting diffs), `ux-writing`
   (third-party UI copy guide, MIT; Velsuno's copy rules in `.claude/rules/frontend.md` and Spanish es-PE win over it).
+  Motion (iart-ai/web-animation-skills, MIT): `micro-interaction`, `page-transition-animation`, `60fps-animation`,
+  `accessible-animation`, `gsap-web`. Frontend rules win (motion only when it explains, reduced motion); GSAP/Motion
+  are not dependencies: adding one is a decision, not a default.
 
 ## Git and environments
 - Work only on the branch named in the session (currently `claude/beautiful-keller-ikxlrj`). Commit + push to it is authorized.
