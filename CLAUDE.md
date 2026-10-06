@@ -8,7 +8,8 @@ Product Owner: Mauro. Spec deviations need a Change Request (Anexo A) before imp
 - How to verify (N0–N4, commands): `docs/qa.md` · Autonomy, stop conditions, sessions, handoff: `docs/agent-workflow.md`.
 - Decisions: `docs/decisions/ADR-*.md` · Operations: `docs/runbooks/` · Layout: `docs/architecture/structure.md`.
 - Path rules load automatically from `.claude/rules/` (financial, database, frontend, auth-security).
-- Skills: `verify` (pick + run the right checks), `task-close` (close a block), `financial-safety` (money-affecting diffs).
+- Skills: `verify` (pick + run the right checks), `task-close` (close a block), `financial-safety` (money-affecting diffs), `ux-writing`
+  (third-party UI copy guide, MIT; Velsuno's copy rules in `.claude/rules/frontend.md` and Spanish es-PE win over it).
 
 ## Git and environments
 - Work only on the branch named in the session (currently `claude/beautiful-keller-ikxlrj`). Commit + push to it is authorized.
