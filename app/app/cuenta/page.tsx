@@ -70,7 +70,7 @@ export default async function Account() {
       {demo.data && (
         <section className="stack-sm" data-testid="demo-controls">
           <h2 className="lead">Modo demo</h2>
-          <p className="muted small">Solo para revisar la experiencia. No cambia tu suscripción real ni toca tus datos reales.</p>
+          <p className="muted small">Solo para probar la experiencia. No cambia tu suscripción ni tus datos.</p>
           <ActionForm action={setDemoPlanAction} label="Simular plan" className="stack-sm">
             <fieldset className="segmented">
               <legend className="label">Simular límites de</legend>
@@ -87,7 +87,7 @@ export default async function Account() {
           </ActionForm>
         </section>
       )}
-      <p className="muted small">Durante la beta los límites se muestran pero no se aplican. La seguridad, la revisión, las correcciones y la descarga de tus datos no dependen del plan.</p>
+      <p className="muted small">En la beta los límites se muestran, pero no se aplican. Seguridad, revisión, correcciones y descarga de tus datos no dependen del plan.</p>
     </main>
   );
 }

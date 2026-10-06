@@ -33,7 +33,7 @@ await runSuite('analysis-dashboard', async ({ browser, page, check }) => {
   check('milestone for the closed month (consistency, with name)', milestone === 'Llevas tres meses consecutivos cerrando con saldo positivo, Mauro. En agosto ahorraste S/ 1,000.00.', milestone);
   check('dashboard greets by the preferred name only', ((await page.locator('main h1').first().textContent()) ?? '') === 'Tu mes, Mauro');
   const health = (await page.getByTestId('data-health').textContent()) ?? '';
-  check('data health PARTIAL with reasons (pending + no automatic source)', health.includes('Datos parciales') && health.includes('1 movimiento(s) por revisar') && health.includes('fuentes automáticas'), health);
+  check('data health PARTIAL with reasons (pending + no automatic source)', health.includes('Datos parciales') && health.includes('1 movimiento por revisar') && health.includes('fuentes automáticas'), health);
   const alerts = await page.locator('[data-testid=alerts] li').evaluateAll((els) => els.map((e) => e.getAttribute('data-alert')));
   check('alerts: pending + unusual expense (card payment/ATM never unusual)', JSON.stringify(alerts) === JSON.stringify(['pending', 'unusual_expense']), JSON.stringify(alerts));
   check('unusual expense names the merchant', ((await page.locator('[data-alert=unusual_expense]').textContent()) ?? '').includes('S/ 3,000.00 en TIENDA RARA E2E'));

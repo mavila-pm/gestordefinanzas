@@ -16,7 +16,7 @@ function Options({ id, kind, name, detail }: { id: string; kind: 'card' | 'accou
   return (
     <Sheet label={<Icon name="more" />} triggerClassName="icon" triggerLabel={`Opciones de ${name}`} title={name} subtitle={detail}>
       <div className="sheet-body stack-sm">
-        <p className="muted small">Si la desactivas deja de usarse para reconocer movimientos nuevos. Tu historial no cambia.</p>
+        <p className="muted small">Si la desactivas, ya no reconocemos con ella movimientos nuevos. Tu historial no cambia.</p>
         <ActionForm action={deactivateAction} className="inline" label={`Desactivar ${name}`} closeOnSuccess>
           <input type="hidden" name="id" value={id} /><input type="hidden" name="kind" value={kind} />
           <button type="submit" className="danger wide">Desactivar</button>
@@ -41,7 +41,7 @@ export default async function CardsAndAccounts() {
 
       <section className="stack-sm" aria-labelledby="h-acc">
         <h2 id="h-acc">Cuentas</h2>
-        {accounts.length === 0 ? <p className="muted">Aún no agregas cuentas. Agrega las tuyas para que una transferencia entre ellas no cuente como gasto.</p> : (
+        {accounts.length === 0 ? <p className="muted">Aún no hay cuentas. Agrégalas para que pasar dinero entre ellas no cuente como gasto.</p> : (
           <ul className="list card" data-testid="account-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
             {accounts.map((a) => {
               const detail = [a.institution ?? 'Otro banco', a.currency === 'USD' ? 'Dólares' : 'Soles'].join(' · ');
@@ -59,7 +59,7 @@ export default async function CardsAndAccounts() {
 
       <section className="stack-sm" aria-labelledby="h-cards">
         <h2 id="h-cards">Tarjetas</h2>
-        {cards.length === 0 ? <p className="muted">Aún no agregas tarjetas. Con una tarjeta de crédito registrada, sus compras se confirman solas.</p> : (
+        {cards.length === 0 ? <p className="muted">Aún no hay tarjetas. Si registras tu tarjeta de crédito, sus compras se confirman solas.</p> : (
           <ul className="list card" data-testid="card-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
             {cards.map((c) => {
               const detail = [c.institution, c.kind === 'credit' ? 'Crédito' : 'Débito', c.currency === 'USD' ? 'Dólares' : 'Soles'].filter(Boolean).join(' · ');
@@ -80,7 +80,7 @@ export default async function CardsAndAccounts() {
                             </div>
                             <label className="stack-sm"><span>Línea del banco</span><span className="money-input"><span className="cur" aria-hidden="true">{c.currency === 'USD' ? 'US$' : 'S/'}</span>
                               <input name="limit" inputMode="decimal" defaultValue={c.creditLimitMinor ? (c.creditLimitMinor / 100).toFixed(2) : ''} placeholder="10000" /></span></label>
-                            <small className="muted">La línea no es tu presupuesto: Vels calcula cuánto puedes usar de verdad.</small>
+                            <small className="muted">La línea del banco no es tu presupuesto. Vels calcula cuánto puedes usar.</small>
                             <button type="submit" className="wide">Guardar</button>
                           </ActionForm>
                         </div>

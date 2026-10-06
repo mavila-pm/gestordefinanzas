@@ -1,4 +1,5 @@
 import { ActionForm } from '../../../components/action-form';
+import { plural } from '../../../src/domain/plural';
 import { Icon } from '../../../components/ui/icon';
 import { Sheet } from '../../../components/ui/sheet';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
@@ -65,7 +66,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
               <span className="setting-text">
                 <span>{c.name}</span>
                 <small className={c.daysUntil < 0 ? 'muted' : c.daysUntil <= 3 ? 'warn' : 'muted'}>
-                  {c.daysUntil < 0 ? `Venció el ${c.dueDate.slice(8, 10)}/${c.dueDate.slice(5, 7)}` : c.daysUntil === 0 ? 'Vence hoy' : c.daysUntil <= 3 ? `Vence en ${c.daysUntil} día(s)` : `Vence el ${c.dueDate.slice(8, 10)}/${c.dueDate.slice(5, 7)}`}
+                  {c.daysUntil < 0 ? `Venció el ${shortDate(c.dueDate)}` : c.daysUntil === 0 ? 'Vence hoy' : c.daysUntil <= 3 ? `Vence en ${plural(c.daysUntil, 'día', 'días')}` : `Vence el ${shortDate(c.dueDate)}`}
                   {' · '}{c.kind === 'debt' ? 'Cuota' : 'Gasto fijo'}
                 </small>
               </span>
@@ -139,7 +140,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                             <input type="hidden" name="id" value={d.id} />
                             <label className="stack-sm"><span>Monto pagado</span>
                               <input name="amount" required inputMode="decimal" autoComplete="off" defaultValue={d.installmentMinor ? (d.installmentMinor / 100).toFixed(2) : ''} /></label>
-                            <small className="muted">Solo baja el saldo de la deuda. No crea un gasto: el pago ya aparece en tus movimientos cuando llega del banco.</small>
+                            <small className="muted">Solo baja el saldo. No crea otro gasto: el pago real llega como movimiento.</small>
                             <button type="submit" className="wide">Registrar pago</button>
                           </ActionForm>
                         </div>
@@ -161,7 +162,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                 <p className="small"><strong>Avalancha</strong> · primero la de mayor tasa: pagas menos intereses.{' '}
                   {strategies.avalanche.available ? <>Orden: {strategies.avalanche.order.join(' → ')}.</> : <span className="muted">Falta la tasa de {strategies.avalanche.missingRate.join(', ')}.</span>}</p>
                 <p className="small"><strong>Bola de nieve</strong> · primero el saldo más pequeño: cierras deudas antes. Orden: {strategies.snowball.order.join(' → ')}.</p>
-                <p className="muted small">Ninguna es mejor para todos. Paga siempre las cuotas mínimas y cubre tus próximos pagos antes de adelantar.</p>
+                <p className="muted small">Ninguna es mejor para todos. Primero paga los mínimos y tus próximos pagos; después adelanta.</p>
                 <form method="get" className="row" aria-label="Simular pago de deudas">
                   <label className="stack-sm" style={{ flex: 1 }}><span>¿Cuánto puedes pagar al mes?</span>
                     <span className="money-input"><span className="cur" aria-hidden="true">S/</span><input name="cuota" inputMode="decimal" defaultValue={cuota ?? ''} placeholder="600" /></span></label>
@@ -242,9 +243,9 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
       <section className="stack-sm" data-testid="recurring" aria-labelledby="h-rec">
         <h2 id="h-rec">Cobros que se repiten</h2>
         {!entitlements.features.recurringDetection ? (
-          <p className="muted">Disponible en Plus: detectamos cobros que se repiten cada mes para que no se te pase ninguno.</p>
+          <p className="muted">En Plus: detectamos los cobros que se repiten cada mes.</p>
         ) : recurring === null ? <p role="alert" className="error">No pudimos revisar tus movimientos. Intenta de nuevo.</p>
-          : recurring.length === 0 ? <p className="muted">Aún no vemos cobros que se repitan al menos 3 meses con monto y fecha parecidos.</p> : (
+          : recurring.length === 0 ? <p className="muted">Aún no vemos cobros que se repitan (3 meses con monto y fecha parecidos).</p> : (
           <ul className="list card" data-testid="recurring-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
             {recurring.map((r) => (
               <li key={`${r.currency}-${r.merchant}`}>
@@ -263,7 +264,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
           </ul>
         )}
       </section>
-      <p className="muted small">Son recordatorios: no cuentan como gasto. El pago real llega (o lo registras) como movimiento.</p>
+      <p className="muted small">Son recordatorios, no gastos. El gasto es el pago real.</p>
     </main>
   );
 }

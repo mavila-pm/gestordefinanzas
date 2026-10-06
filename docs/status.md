@@ -34,6 +34,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Month-end bug: 'cuota vence pronto' now sees the first days of next month (was silent on the 29–31) (035) | VERIFIED | — |
 | E2E harness: insert-only seed under a run id (no collisions, no cleanup dependency), exact-namespace guarded cleanup, harness DB test (036) | VERIFIED | Real-project cleanup blocked: the MCP connector does not run DELETE (see runbook incident); 41 synthetic users pending |
 | Resumen redesign: Dinero libre first + bar (pagos/reservado/libre), state chip, 'Lo que viene' to next income, month as context (037) | VERIFIED | PO walkthrough on a phone |
+| UX writing pass (ux-writing skill): real plurals (no "(s)"), one date format ("28 set"), errors say what to do (no "inválido"), one save error, shorter help/success texts, "Ver pagos", chat typing label (038) | VERIFIED | Vels/onboarding answers kept (already short and test-pinned) |
 | Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Statement camera read needs the AI provider (key) |
 
 ## Blockers / decisions (external)

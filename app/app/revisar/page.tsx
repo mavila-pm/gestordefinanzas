@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { plural } from '../../../src/domain/plural';
 import { ActionForm } from '../../../components/action-form';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { ingestionCodesFor, LINKED_SELECT, loadCatalog, REVIEW_STATUSES, toLinked } from '../../../lib/queries';
@@ -30,9 +31,9 @@ export default async function ReviewQueue() {
     <main className="stack">
       <div className="page-head">
         <h1>Por revisar</h1>
-        <p>{txs.length ? `${txs.length} movimiento(s) esperan tu confirmación. No cuentan en tus cifras hasta entonces.` : 'Lo que no esté claro llegará aquí.'}</p>
+        <p>{txs.length ? `${plural(txs.length, 'movimiento espera', 'movimientos esperan')} tu confirmación. No cuentan hasta que los confirmes.` : 'Lo que no esté claro llegará aquí.'}</p>
       </div>
-      {txs.length === 0 ? <p className="notice positive"><Icon name="check" />Todo al día: no tienes movimientos por revisar.</p> : (
+      {txs.length === 0 ? <p className="notice positive"><Icon name="check" />Todo al día. No hay nada por revisar.</p> : (
         <ul className="stack plain" data-testid="review-list">
           {txs.map((t) => {
             const reasons = reviewReasons(t, { ingestionCodes: codes.get(t.id) ?? [], registeredCardLast4: cardLast4, cardId: t.cardId });

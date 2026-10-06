@@ -118,8 +118,8 @@ describe('formatting helpers', () => {
 
   it('error codes map to user text; unknown/internal messages never leak', () => {
     expect(errorText('card_mismatch')).toMatch(/4 dígitos/);
-    expect(errorText('duplicate key value violates unique constraint "x"')).toBe('No se pudo guardar. Intenta de nuevo.');
-    expect(errorText(undefined)).toBe('No se pudo guardar. Intenta de nuevo.');
+    expect(errorText('duplicate key value violates unique constraint "x"')).toBe('No se guardó. Intenta de nuevo.');
+    expect(errorText(undefined)).toBe('No se guardó. Intenta de nuevo.');
   });
 });
 

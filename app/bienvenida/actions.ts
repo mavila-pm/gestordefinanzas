@@ -37,7 +37,7 @@ export async function onboardingAction(_prev: ChatState, form: FormData): Promis
     return { messages: await onboardingConversation(supabase) };
   } catch (e) {
     if ((e as { digest?: string }).digest?.startsWith('NEXT_REDIRECT')) throw e;
-    return { messages: await onboardingConversation(supabase), error: 'Algo falló. Tu progreso está guardado.' };
+    return { messages: await onboardingConversation(supabase), error: 'No pude responder ahora. Lo que me contaste está guardado.' };
   }
 }
 

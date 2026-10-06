@@ -33,7 +33,7 @@ export function parseObligationForm(get: Get): Result<ObligationForm> {
   if (!name || name.length > 60 || /[<>\u0000-\u001f]/.test(name)) return { ok: false, error: 'Ponle un nombre (hasta 60 caracteres).' };
   const kind = (KINDS.includes(get('kind') as ObligationKind) ? get('kind') : 'other') as ObligationKind;
   const currency = cur(get('currency'));
-  if (!currency) return { ok: false, error: 'Moneda no válida.' };
+  if (!currency) return { ok: false, error: 'Elige soles o dólares.' };
   const unknownAmount = get('amountUnknown') === '1' || !str(get('amount'));
   const amountMinor = unknownAmount ? null : parseAmountToMinor(str(get('amount')));
   if (!unknownAmount && amountMinor === null) return { ok: false, error: 'Revisa el monto (por ejemplo 129.90).' };
@@ -50,7 +50,7 @@ export function parseObligationForm(get: Get): Result<ObligationForm> {
   if (dueDayMax !== null && (dueDay === null || dueDayMax <= dueDay || dueDayMax - dueDay > 7)) return { ok: false, error: 'El rango de fechas es de hasta 7 días (por ejemplo del 9 al 10).' };
   if (targetDay !== null && dueDay !== null && targetDay > (dueDayMax ?? dueDay)) return { ok: false, error: 'El día en que quieres pagar debe ser antes del vencimiento.' };
   const cat = str(get('categoryId'));
-  if (cat && !/^[0-9a-f-]{36}$/i.test(cat)) return { ok: false, error: 'Categoría no válida.' };
+  if (cat && !/^[0-9a-f-]{36}$/i.test(cat)) return { ok: false, error: 'Elige una categoría de la lista.' };
   return { ok: true, value: { name, kind, currency, amountMinor, amountStatus, frequency, anchorMonth, dueDay, dueDayMax, targetDay, categoryId: cat || null } };
 }
 
@@ -61,9 +61,9 @@ export interface IncomeForm {
 
 export function parseIncomeForm(get: Get): Result<IncomeForm> {
   const name = str(get('name')).replace(/\s+/g, ' ') || 'Sueldo';
-  if (name.length > 60 || /[<>\u0000-\u001f]/.test(name)) return { ok: false, error: 'Nombre no válido.' };
+  if (name.length > 60 || /[<>\u0000-\u001f]/.test(name)) return { ok: false, error: 'Ponle un nombre (hasta 60 caracteres).' };
   const currency = cur(get('currency'));
-  if (!currency) return { ok: false, error: 'Moneda no válida.' };
+  if (!currency) return { ok: false, error: 'Elige soles o dólares.' };
   const raw = str(get('amount'));
   const amountMinor = raw ? parseAmountToMinor(raw) : null;
   if (raw && amountMinor === null) return { ok: false, error: 'Revisa el monto.' };
@@ -75,7 +75,7 @@ export function parseIncomeForm(get: Get): Result<IncomeForm> {
   if (frequency === 'monthly' && d1 === null) return { ok: false, error: '¿Qué día del mes sueles recibirlo?' };
   if (frequency === 'semimonthly' && (d1 === null || d2 === null || d1 === d2)) return { ok: false, error: 'Indica los dos días del mes.' };
   if ((frequency === 'weekly' || frequency === 'biweekly') && !/^\d{4}-\d{2}-\d{2}$/.test(anchorDate)) return { ok: false, error: 'Indica la fecha de un pago reciente.' };
-  if (dMax !== null && (d1 === null || dMax <= d1 || dMax - d1 > 7)) return { ok: false, error: 'El rango es de hasta 7 días.' };
+  if (dMax !== null && (d1 === null || dMax <= d1 || dMax - d1 > 7)) return { ok: false, error: 'El rango puede ser de hasta 7 días.' };
   return { ok: true, value: {
     name, currency, amountMinor, amountStatus: amountMinor === null ? 'unknown' : 'estimated', frequency,
     dayOfMonth: frequency === 'monthly' || frequency === 'semimonthly' ? d1 : null, dayMax: frequency === 'monthly' ? dMax : null,

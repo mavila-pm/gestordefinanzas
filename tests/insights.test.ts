@@ -139,7 +139,7 @@ describe('commitments (§38, §47, §48)', () => {
     const a = buildAlerts({ txs: [], pendingCount: 0, oldestPendingDays: null, unresolvedEvents30d: 0, now: new Date(), currency: 'PEN',
       commitments: monthCommitments('2026-09', '2026-09-27', fixed, debts) });
     expect(a.map((x) => x.code)).toEqual(['debt_due:d3', 'debt_due:d1']);
-    expect(a[0]!.text).toBe('Última cuota: cuota de S/ 40.00 vence en 1 día(s) (28/09).');
+    expect(a[0]!.text).toBe('Última cuota: cuota de S/ 40.00 vence en 1 día (28 set).');
   });
   it('debt progress', () => {
     expect(debtProgress({ principalMinor: 3000000, balanceMinor: 1800000 })).toEqual({ paidMinor: 1200000, ratio: 0.4 });

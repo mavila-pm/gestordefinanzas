@@ -24,7 +24,7 @@ export function TransactionFields({ types, catalog, values }: { types: readonly 
           {types.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
         </select>
       </label>
-      <p className="muted small">El pago de tu tarjeta y los retiros de efectivo no cuentan como gasto: el gasto se registra con cada compra.</p>
+      <p className="muted small">Pagar la tarjeta o retirar efectivo no es gasto. El gasto es cada compra.</p>
       <div className="grid">
         <label className="stack-sm"><span>Monto</span>
           <input name="amount" required inputMode="decimal" pattern="\d+(\.\d{1,2})?|\d{1,3}(,\d{3})+(\.\d{1,2})?" placeholder="82.50" defaultValue={values.amount} /></label>

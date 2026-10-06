@@ -30,7 +30,7 @@ export default async function Connections() {
             <strong>Reenvío de correos del banco</strong>
             {bridgeActive ? <span className="tag positive-tag">Activo</span> : <span className="tag" data-testid="bridge-status">Aún no disponible</span>}
           </div>
-          <p className="muted small">Una dirección privada a la que reenvías solo las notificaciones de tu banco. No leemos el resto de tu correo.</p>
+          <p className="muted small">Reenvías solo los avisos de tu banco a una dirección privada. No leemos el resto de tu correo.</p>
           {data ? (
             <p className="small" data-testid="bridge-address">Tu dirección: <code>{data.address_local}@{domain ?? '(dominio pendiente)'}</code></p>
           ) : null}

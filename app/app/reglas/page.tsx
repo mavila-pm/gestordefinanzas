@@ -33,7 +33,7 @@ export default async function Rules() {
     <main className="stack narrow-md">
       <div className="page-head">
         <h1>Lo que Velsuno recuerda</h1>
-        <p>Cuando corriges una categoría y marcas “usar la próxima vez”, la recordamos para ese comercio.</p>
+        <p>Si corriges una categoría y marcas “usar la próxima vez”, la recordamos para ese comercio.</p>
       </div>
       {rules.length === 0 ? (
         <p className="muted">Aún no recuerda nada. Aparecerá aquí cuando corrijas la categoría de un comercio.</p>
@@ -90,7 +90,7 @@ export default async function Rules() {
       {(chat.count ?? 0) > 0 && (
         <section className="stack-sm" aria-labelledby="chat-memory" data-testid="onboarding-memory">
           <h2 id="chat-memory">Conversación de bienvenida</h2>
-          <p className="muted small">Lo que ya guardaste como pagos, ingresos o deudas se queda; edítalo en Próximos pagos o Dinero libre.</p>
+          <p className="muted small">Tus pagos, ingresos y deudas guardados se quedan. Edítalos en Próximos pagos o Dinero libre.</p>
           <ActionForm action={forgetOnboardingAction} className="inline" label="Borrar conversación de bienvenida">
             <button type="submit" className="link" style={{ color: 'var(--semantic-error)' }}>Borrar conversación</button>
           </ActionForm>

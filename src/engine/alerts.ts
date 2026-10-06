@@ -3,6 +3,9 @@ import { financialEffect } from '../domain/financial-effect';
 import type { Transaction } from '../domain/types';
 import type { BudgetStatus } from './budgets';
 import type { Commitment } from './commitments';
+import { plural } from '../domain/plural';
+const MON = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
+const dm = (d: string) => `${Number(d.slice(8, 10))} ${MON[Number(d.slice(5, 7)) - 1]}`;
 
 /** Alert engine (spec §46): CRITICAL / IMPORTANT / INFORMATIONAL, few and relevant (no bombarding). */
 export type AlertLevel = 'CRITICAL' | 'IMPORTANT' | 'INFORMATIONAL';
@@ -33,12 +36,12 @@ export function buildAlerts(input: {
   if (input.pendingCount > 0) {
     const stale = input.oldestPendingDays !== null && input.oldestPendingDays > 7;
     out.push({ level: stale ? 'IMPORTANT' : 'INFORMATIONAL', code: 'pending', href: '/app/revisar',
-      text: `${input.pendingCount} movimiento(s) esperan tu revisión${stale ? `; el más antiguo, hace ${input.oldestPendingDays} días` : ''}. No cuentan en tus cifras hasta confirmarlos.` });
+      text: `${plural(input.pendingCount, 'movimiento espera', 'movimientos esperan')} tu revisión${stale ? ` (el más antiguo, de hace ${input.oldestPendingDays} días)` : ''}. No cuentan hasta que los confirmes.` });
   }
   // Debt due soon (spec §46 "deuda próxima"): installments due today or in the next 3 days.
   for (const c of (input.commitments ?? []).filter((c) => c.kind === 'debt' && c.daysUntil >= 0 && c.daysUntil <= 3)) {
     out.push({ level: 'IMPORTANT', code: `debt_due:${c.id}`, href: '/app/compromisos',
-      text: `${c.name}: cuota de ${c.amountMinor !== null ? formatMoney({ amountMinor: c.amountMinor, currency: c.currency }) : 'monto por confirmar'} ${c.daysUntil === 0 ? 'vence hoy' : `vence en ${c.daysUntil} día(s)`} (${c.dueDate.slice(8, 10)}/${c.dueDate.slice(5, 7)}).` });
+      text: `${c.name}: cuota de ${c.amountMinor !== null ? formatMoney({ amountMinor: c.amountMinor, currency: c.currency }) : 'monto por confirmar'} ${c.daysUntil === 0 ? 'vence hoy' : `vence en ${plural(c.daysUntil, 'día', 'días')}`} (${dm(c.dueDate)}).` });
   }
   for (const b of input.budgets ?? []) {
     const m = (v: number) => formatMoney({ amountMinor: v, currency: b.currency });
@@ -52,7 +55,7 @@ export function buildAlerts(input: {
   }
   if (input.unresolvedEvents30d > 0) {
     out.push({ level: 'INFORMATIONAL', code: 'unresolved', href: '/app/movimientos/nuevo',
-      text: `${input.unresolvedEvents30d} mensaje(s) del banco no se pudieron leer. Si eran movimientos, regístralos manualmente.` });
+      text: `No pudimos leer ${plural(input.unresolvedEvents30d, 'mensaje', 'mensajes')} del banco. Si eran movimientos, regístralos a mano.` });
   }
   // Unusual expense in the last 7 days vs the last 90 (confirmed expenses only).
   const since90 = input.now.getTime() - 90 * 86_400_000;

@@ -32,7 +32,7 @@ export default async function Settings() {
               <div className="sheet-body">
                 <ActionForm action={saveProfileAction} label="Perfil">
                   <ProfileFields givenNames={profile.givenNames ?? ''} familyNames={profile.familyNames ?? ''} displayName={profile.displayName ?? ''} />
-                  <small className="muted">Usamos solo el último campo para hablarte. Tus nombres completos quedan guardados tal como los escribas.</small>
+                  <small className="muted">Te llamamos por el último campo. Tus nombres completos se guardan tal cual.</small>
                   <button type="submit" className="wide">Guardar</button>
                 </ActionForm>
               </div>

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { plural } from '../../../../src/domain/plural';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '../../../../components/action-form';
 import { TransactionFields } from '../../../../components/transaction-fields';
@@ -184,7 +185,7 @@ export default async function TransactionDetail({ params, searchParams }: { para
       {cardUnregistered && (
         <section className="card stack">
           <h2>Registrar la tarjeta ****{t.cardLast4}</h2>
-          <p className="muted">Solo guardamos un nombre, el tipo y los últimos 4 dígitos. Nunca ingreses el número completo, CVV ni claves.</p>
+          <p className="muted">Solo guardamos un nombre, el tipo y los últimos 4 dígitos. Nunca escribas el número completo, el CVV ni claves.</p>
           <ActionForm action={createCardAction} label="Registrar tarjeta">
             <input type="hidden" name="back" value={t.id} />
             <input type="hidden" name="last4" value={t.cardLast4 ?? ''} />
@@ -232,7 +233,7 @@ export default async function TransactionDetail({ params, searchParams }: { para
                 <span>
                   <strong>{ACTION_LABEL[a.action] ?? a.action}</strong><br />
                   {a.action === 'split' && (() => { const to = ((a.changes as { allocations?: { to?: unknown[] } }).allocations?.to ?? []).length;
-                    return <small className="muted" style={{ display: 'block' }}>{to ? `Dividido en ${to} parte(s)` : 'División quitada'}</small>; })()}
+                    return <small className="muted" style={{ display: 'block' }}>{to ? `Dividido en ${plural(to, 'parte', 'partes')}` : 'División quitada'}</small>; })()}
                   {a.action === 'correct' && Object.entries(a.changes as Record<string, { from: unknown; to: unknown }>).map(([f, c]) => (
                     <small key={f} className="muted" style={{ display: 'block' }}>{FIELD_LABEL[f] ?? f}: {show(f, c.from, currencyTimeline.get(a.id)?.before ?? t.currency)} → {show(f, c.to, currencyTimeline.get(a.id)?.after ?? t.currency)}</small>
                   ))}
@@ -248,7 +249,7 @@ export default async function TransactionDetail({ params, searchParams }: { para
         <details className="danger-zone" aria-label="Eliminar">
           <summary>Eliminar movimiento</summary>
           <div className="stack-sm" style={{ paddingTop: 8 }}>
-          <p className="muted">Solo los movimientos que registraste tú se pueden eliminar. Queda constancia en tu historial.</p>
+          <p className="muted">Solo puedes eliminar lo que registraste tú. Queda en tu historial.</p>
           <ActionForm action={deleteTransactionAction} label="Eliminar movimiento">
             <input type="hidden" name="id" value={t.id} />
             <label className="check"><input type="checkbox" name="confirmDelete" value="1" /> <span>Confirmo que quiero eliminarlo</span></label>

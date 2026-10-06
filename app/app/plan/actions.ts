@@ -16,7 +16,7 @@ import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSettingsFo
 import { isUuid } from '../../../src/web/transaction-input';
 import type { ActionState } from '../actions';
 
-const SAVE_ERROR = 'No pudimos guardar el cambio. Intenta de nuevo.';
+const SAVE_ERROR = 'No se guardó. Intenta de nuevo.';
 async function session() {
   const supabase = await createSupabaseServerClient();
   const user = await authUser(supabase);

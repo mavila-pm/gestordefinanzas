@@ -1,6 +1,7 @@
 'use server';
 
 import { validStatement } from '../../src/engine/cards';
+import { plural } from '../../src/domain/plural';
 import { revalidatePath } from 'next/cache';
 import { logLearning } from '../../lib/learning';
 import { isReplay, ref } from '../../lib/idempotency';
@@ -76,7 +77,7 @@ export async function correctAction(_prev: ActionState, form: FormData): Promise
   if (error) return dbError(error);
   // Confirming changes the screen (the movement leaves review): show the result on the reloaded detail.
   if (confirm) { revalidatePath('/app', 'layout'); redirect(`/app/movimientos/${id}?ok=${rememberRule ? 'rule' : 'confirmed'}`); }
-  return done(rememberRule ? 'Cambios guardados. Los próximos movimientos de este comercio usarán esta categoría.' : 'Cambios guardados.');
+  return done(rememberRule ? 'Guardado. Usaremos esta categoría para este comercio.' : 'Cambios guardados.');
 }
 
 export async function createManualAction(_prev: ActionState, form: FormData): Promise<ActionState> {
@@ -113,7 +114,7 @@ export async function createCardAction(_prev: ActionState, form: FormData): Prom
     revalidatePath('/app', 'layout');
     redirect(`/app/movimientos/${back}`);
   }
-  return done(typeof linked === 'number' && linked > 0 ? `Tarjeta registrada. ${linked} movimiento(s) asociados.` : 'Tarjeta registrada.');
+  return done(typeof linked === 'number' && linked > 0 ? `Tarjeta registrada. ${plural(linked, 'movimiento asociado', 'movimientos asociados')}.` : 'Tarjeta registrada.');
 }
 
 export async function createAccountAction(_prev: ActionState, form: FormData): Promise<ActionState> {
@@ -164,7 +165,7 @@ export async function changeRuleAction(_prev: ActionState, form: FormData): Prom
   const { data, error } = await supabase.from('merchant_rules').update({ category_id: categoryId }).eq('id', id).select('id');
   if (error || !data?.length) return { error: 'No se guardó. Intenta de nuevo.' };
   await logLearning(supabase, user.id, 'rule', 'corrected', id, { categoryId });
-  return done('Listo. Se usará en los próximos movimientos.');
+  return done('Listo. Se aplica a los próximos movimientos.');
 }
 
 export async function deleteTransactionAction(_prev: ActionState, form: FormData): Promise<ActionState> {
@@ -211,7 +212,7 @@ export async function saveProfileAction(_prev: ActionState, form: FormData): Pro
   const { error } = await supabase.from('profiles').upsert({
     user_id: user.id, given_names: p.givenNames, family_names: p.familyNames, display_name: p.displayName, updated_at: new Date().toISOString(),
   });
-  if (error) return { error: 'No pudimos guardar tus datos. Intenta de nuevo.' };
+  if (error) return { error: 'No se guardó. Intenta de nuevo.' };
   return done(p.displayName ? `Listo, ${p.displayName}.` : 'Guardado.');
 }
 
@@ -295,8 +296,8 @@ export async function debtPaymentAction(_prev: ActionState, form: FormData): Pro
   const { data, error } = await supabase.from('debts')
     .update({ balance_minor: Math.max(0, balance - amount), installments_paid: total === null ? paid : Math.min(paid, total), last_payment_on: new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10) })
     .eq('id', id).eq('balance_minor', balance).select('id');
-  if (error || !data?.length) return { error: 'No se pudo registrar: el saldo cambió. Recarga e intenta de nuevo.' };
-  return done('Pago registrado en la deuda. Recuerda que el movimiento del banco se registra aparte (no se duplica).');
+  if (error || !data?.length) return { error: 'El saldo cambió mientras registrabas. Recarga e intenta de nuevo.' };
+  return done('Pago registrado. Bajó el saldo de la deuda; no se creó otro gasto.');
 }
 
 export async function deactivateCommitmentAction(_prev: ActionState, form: FormData): Promise<ActionState> {
@@ -315,7 +316,7 @@ export async function startTrialAction(_prev: ActionState, _form: FormData): Pro
   if (!user) return { error: errorText('not_authenticated') };
   const { error } = await supabase.rpc('start_plus_trial');
   if (error) return { error: error.message === 'trial_already_used' ? 'Ya usaste tu prueba de Plus.' : error.message === 'already_plus' ? 'Ya tienes Plus.' : errorText(null) };
-  return done('Prueba de Plus activada. No se te cobrará nada: al terminar vuelves a Free automáticamente.');
+  return done('Prueba de Plus activada. Sin cobro: al terminar vuelves a Free.');
 }
 
 /** Dividir gasto: replace the movement's allocations atomically (or remove them), with an optimistic version check. */

@@ -134,7 +134,7 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
         ))}
         {(pending || reading) && (reading
           ? <li className="msg velsuno" role="status"><p className="muted">Leyendo…</p></li>
-          : <li className="msg velsuno typing" aria-label="Velsuno está escribiendo"><span /><span /><span /></li>)}
+          : <li className="msg velsuno typing" aria-label="Escribiendo"><span /><span /><span /></li>)}
       </ol>
       {state.error && (
         <p role="alert" className="chat-error">{state.error}{' '}

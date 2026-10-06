@@ -65,7 +65,7 @@ await runSuite('planning-account', async ({ page, check }) => {
   const debt = (await page.getByTestId('debt').textContent()) ?? '';
   check('debt payment updates balance and installments only', debt.includes('Saldo S/ 17,000.00') && debt.includes('cuota 13/36') && debt.includes('Pagado S/ 13,000.00'), debt);
   await page.goto(`${BASE}/app`);
-  check('dashboard commitments card', ((await page.getByTestId('commitments').textContent()) ?? '').includes('2 pago(s)'));
+  check('dashboard commitments card', ((await page.getByTestId('commitments').textContent()) ?? '').includes('2 pagos'));
   check('dashboard alert: debt due soon', (await page.locator('[data-alert^="debt_due:"]').count()) === 1);
   check('commitments never change expenses (still S/ 400.00)', (await page.getByTestId('expenses-PEN').textContent()) === 'S/ 400.00', (await page.getByTestId('expenses-PEN').textContent()) ?? '');
 

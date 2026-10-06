@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { plural } from '../../../src/domain/plural';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import { monthlySummary } from '../../../src/engine/monthly-summary';
@@ -193,10 +194,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <section data-testid="commitments" aria-label="Compromisos del mes" className="row card">
           <div className="stack-sm" style={{ gap: 2 }}>
             <h2>Pagos del mes</h2>
-            <small className="muted">{Object.entries(commitmentTotals).map(([c, v]) => money(v!, c as Currency)).join(' + ')} en {commitments.length} pago(s)
-              {nextCommitment ? ` · próximo: ${nextCommitment.name} el ${nextCommitment.dueDate.slice(8, 10)}/${nextCommitment.dueDate.slice(5, 7)}` : ''}</small>
+            <small className="muted">{Object.entries(commitmentTotals).map(([c, v]) => money(v!, c as Currency)).join(' + ')} en {plural(commitments.length, 'pago', 'pagos')}
+              {nextCommitment ? ` · próximo: ${nextCommitment.name}, ${shortDate(nextCommitment.dueDate)}` : ''}</small>
           </div>
-          <Link href="/app/compromisos" className="section-link">Ver<Icon name="chevron" size={16} /></Link>
+          <Link href="/app/compromisos" className="section-link">Ver pagos<Icon name="chevron" size={16} /></Link>
         </section>
       )}
 
@@ -233,7 +234,7 @@ function Welcome({ name }: { name: string | null }) {
     <main className="stack narrow-md" data-testid="welcome">
       <div className="page-head">
         <h1>{name ? `Hola, ${name}. Empecemos por lo esencial` : 'Empecemos por lo esencial'}</h1>
-        <p>Velsuno ordena tus movimientos y te dice qué pasa con tu dinero. Nunca te pedirá la clave de tu banco.</p>
+        <p>Ordenamos tus movimientos y te decimos cuánto puedes usar. Nunca te pediremos la clave de tu banco.</p>
       </div>
       {!name && (
         <section className="card stack-sm" aria-label="Tus datos">
@@ -252,12 +253,12 @@ function Welcome({ name }: { name: string | null }) {
         </li>
         <li className="card stack-sm">
           <h2>Pega un mensaje de tu banco</h2>
-          <p className="muted">Copia la notificación del BCP (correo o SMS) y la leemos por ti. Siempre la revisas antes de que cuente.</p>
+          <p className="muted">Copia el correo o SMS del BCP y lo leemos. Tú lo confirmas antes de que cuente.</p>
           <Link href="/app/importar" className="button secondary" style={{ justifySelf: 'start' }}>Pegar mensaje</Link>
         </li>
         <li className="card stack-sm">
           <h2>Reenvío automático de correos</h2>
-          <p className="muted">Pronto podrás reenviar las notificaciones de tu banco a una dirección privada. Aún no está disponible.</p>
+          <p className="muted">Pronto podrás reenviar los avisos de tu banco a una dirección privada.</p>
         </li>
       </ol>
       <p className="muted small">Lo que no esté claro irá a <strong>Por revisar</strong>: nada dudoso se confirma solo.</p>

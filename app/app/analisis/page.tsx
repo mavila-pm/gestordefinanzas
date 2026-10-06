@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { plural } from '../../../src/domain/plural';
 import { Icon } from '../../../components/ui/icon';
 import { mainInsight } from '../../../src/engine/insights';
 import { monthLabel } from '../../../src/web/labels';
@@ -70,7 +71,7 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
               </div>
             </section>
             {cmp.current.pendingCount > 0 && (
-              <p className="notice warning small"><span>{cmp.current.pendingCount} movimiento(s) por revisar aún no cuentan. <Link href="/app/revisar">Revisar</Link></span></p>
+              <p className="notice warning small"><span>{plural(cmp.current.pendingCount, 'movimiento por revisar aún no cuenta', 'movimientos por revisar aún no cuentan')}. <Link href="/app/revisar">Revisar</Link></span></p>
             )}
 
             <section aria-labelledby={`cat-${currency}`}>
@@ -114,7 +115,7 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
           </div>
         );
       })}
-      <p className="muted small">Solo cuentan movimientos confirmados. Los pagos de tarjeta, las transferencias entre tus cuentas y los retiros no son gasto; las devoluciones lo reducen.</p>
+      <p className="muted small">Solo cuenta lo confirmado. Pagar la tarjeta, mover dinero entre tus cuentas o retirar efectivo no es gasto; las devoluciones lo reducen.</p>
     </main>
   );
 }
