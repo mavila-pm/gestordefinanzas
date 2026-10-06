@@ -4,10 +4,10 @@
  * the same number. Nothing links by itself; the person confirms, picks or dismisses.
  * Run: scripts/e2e.sh income-link (seed: scripts/e2e.sh render-seed s13a s13b).
  */
-import { act, apiAs, BASE, login, probe, runSuite } from './lib.ts';
+import { act, apiAs, BASE, fixedId, login, probe, runSuite } from './lib.ts';
 
 const A = probe('s13a');
-const B_INCOME = '00000000-0000-4000-8000-00000000e13b';
+const B_INCOME = fixedId('s13b', 'e13b');
 const MON = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
 const limaDay = (offset: number) => new Date(Date.now() - 5 * 3600_000 + offset * 86_400_000).toISOString().slice(0, 10);
 const short = (d: string) => `${Number(d.slice(8, 10))} ${MON[Number(d.slice(5, 7)) - 1]}`;

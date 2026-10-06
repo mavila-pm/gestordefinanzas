@@ -3,14 +3,30 @@
 Requires network access from the environment to `jeloegnvaxlfqjntbbyy.supabase.co`.
 
 1. `.env.local` with the public values (`.env.example`).
-2. Seed: `E2E_PASSWORD=<random> scripts/e2e.sh render-seed` and run the output with the Supabase SQL tool
-   (or set `E2E_DB_URL` and the script seeds/cleans via psql). `tests/e2e/seed.sql` is idempotent (deletes every
-   `e2e-%@gestordefinanzas.invalid` user first) and creates one A/B pair per suite, so suites never share data.
-   The password is never committed (`__E2E_PASSWORD__` placeholder).
+2. Seed: `E2E_PASSWORD=<random> scripts/e2e.sh render-seed [tags…]` and run the output with the Supabase SQL tool
+   (or set `E2E_DB_URL` and the script seeds/cleans via psql). The seed is **insert-only**: each render gets a fresh
+   run id and creates new users `e2e-<tag>-<run>@gestordefinanzas.invalid` (fixed B ids = `md5('<run>:<name>')`),
+   recorded per tag in `.e2e/runs.json` (the suites read it). So it can run again, and it never depends on an earlier
+   cleanup: leftovers of a previous run cannot collide. One A/B pair per suite; the password is never committed.
+   Guards: the run id must match `^[a-z0-9]{8,20}$` and every email the exact synthetic pattern, or the seed aborts.
 3. `E2E_PASSWORD=<same> scripts/e2e.sh [suite…]`: stops its previous server (PID file, own process group), refuses a
    foreign process on the port, builds only if sources changed, waits for `/login` = 200, runs the suites, prints one
    line per suite + failures with a one-step diagnosis (URL, alerts, page excerpt, server log) and always stops the server.
-4. Cleanup: `tests/e2e/cleanup.sql` with the SQL tool → must return `probe_users = 0` and `orphan_rows = 0`.
+4. Cleanup: `tests/e2e/cleanup.sql` → must return `probe_users = 0` and `orphan_rows = 0`. It deletes only
+   `^e2e-s<n><a|b>(-<run>)?@gestordefinanzas.invalid$` (all runs; rows go through the user_id cascades, all ON DELETE
+   CASCADE) and aborts without deleting if anything matches the prefix but not that pattern, or if the count is
+   implausible (> 400). Verified in `tests/db/e2e-seed.test.ts`: seed → seed again → partial cleanup → seed → cleanup
+   (0|0, real users untouched) → cleanup again → seed.
+
+### Incident 2026-10-06 (duplicate `e2e-s4a`, 60 s timeouts)
+Cause: the old seed began with `delete … ; insert …`. Through the Supabase MCP connector any SQL containing a DELETE
+(top level or inside `DO`, even 1 row) hangs until the connector's 60 s timeout and is not executed, while the same
+DELETE inside `begin … rollback` (EXPLAIN ANALYZE) takes 96 ms, `UPDATE`/`INSERT` are instant, a 5 s `lock_timeout` /
+20 s `statement_timeout` never fire, and Postgres shows no blocker, no long query and no log error. So: not a slow
+operation in the database; the connector does not run DELETE statements in this session (likely an unsurfaced
+confirmation). Earlier separate seed calls then inserted over users that were still there → duplicate key.
+Fix: insert-only seed under a run id (above). Cleanup still needs a DELETE: run it with `E2E_DB_URL` (psql) or when the
+connector executes deletes again; leftovers meanwhile are synthetic, `.invalid`, emailless and harmless.
 
 No email is sent to the probe domain: the tests use existing (confirmed) and unknown addresses only,
 avoiding bounces that could get the project's email sending restricted.

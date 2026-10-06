@@ -1,27 +1,33 @@
--- E2E seed for ALL suites (docs/runbooks/e2e.md). Idempotent: removes every previous probe user first.
+-- E2E seed for ALL suites (docs/runbooks/e2e.md). Insert-only and idempotent: every render gets a fresh run id
+-- (__E2E_RUN__), so probe users are new and deterministic per run (e2e-<tag>-<run>@gestordefinanzas.invalid) and the
+-- seed never depends on a previous cleanup. It never deletes or updates anything: cleanup is tests/e2e/cleanup.sql.
 -- Probe users live on the non-deliverable .invalid domain; one A/B pair per suite, so suites never share data:
 --   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits   s11* cashflow   s12* onboarding   s13* income-link   s14* vels
 -- __E2E_PASSWORD__ is replaced at run time (scripts/e2e.sh render) — the password is never committed.
 -- B rows attacked by id in the suites have fixed ids (see B_TX in tests/e2e/lib.ts).
--- Deleting a user cascades to all of its rows.
-delete from auth.users where email like 'e2e-%@gestordefinanzas.invalid';
+-- Fixed ids are derived from the run (md5('<run>:<name>')), so two runs never collide.
 
 do $$
-declare r record; u uuid; ta uuid;
+declare r record; u uuid; ta uuid; em text;
+  run constant text := '__E2E_RUN__';
   c_food uuid := (select id from public.categories where user_id is null and name = 'Alimentación');
   c_tr uuid := (select id from public.categories where user_id is null and name = 'Transporte');
   c_otros uuid := (select id from public.categories where user_id is null and name = 'Otros');
 begin
+  -- Namespace guard: refuse anything but the synthetic run format (never a real user).
+  if run !~ '^[a-z0-9]{8,20}$' then raise exception 'e2e seed: invalid run id %', run; end if;
   for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b'),('s12a'),('s12b'),('s13a'),('s13b'),('s14a'),('s14b')) v(tag) loop
     u := gen_random_uuid();
+    em := 'e2e-' || r.tag || '-' || run || '@gestordefinanzas.invalid';
+    if em !~ '^e2e-s[0-9]+[ab]-[a-z0-9]{8,20}@gestordefinanzas\.invalid$' then raise exception 'e2e seed: % is outside the synthetic namespace', em; end if;
     insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
       confirmation_token, recovery_token, email_change_token_new, email_change, email_change_token_current, phone_change, phone_change_token, reauthentication_token)
-    values ('00000000-0000-0000-0000-000000000000', u, 'authenticated', 'authenticated', 'e2e-' || r.tag || '@gestordefinanzas.invalid',
+    values ('00000000-0000-0000-0000-000000000000', u, 'authenticated', 'authenticated', em,
       extensions.crypt('__E2E_PASSWORD__', extensions.gen_salt('bf')), now(),
       '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '', '', '', '', '');
     insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
-    values (u::text, u, jsonb_build_object('sub', u::text, 'email', 'e2e-' || r.tag || '@gestordefinanzas.invalid', 'email_verified', true), 'email', now(), now(), now());
+    values (u::text, u, jsonb_build_object('sub', u::text, 'email', em, 'email_verified', true), 'email', now(), now(), now());
 
     if r.tag = 's3a' then
       insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, status, confidence, fingerprint) values
@@ -43,7 +49,7 @@ begin
       insert into public.accounts (user_id, institution_code, alias, currency, last4) values (u, 'BCP', 'E2E Ahorros', 'PEN', '9001');
     elsif r.tag in ('s4b', 's56b') then
       insert into public.transactions (id, user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, status, confidence, fingerprint)
-      values (case r.tag when 's4b' then '00000000-0000-4000-8000-00000000e4b1'::uuid else '00000000-0000-4000-8000-00000000e56b'::uuid end,
+      values (case r.tag when 's4b' then md5(run || ':e4b1')::uuid else md5(run || ':e56b')::uuid end,
         u, '2026-09-14 12:00-05', 'expense', 'outflow', 5000, 'PEN', 'E2E SECRET B', 'review_required', 'medium', 'e2e-b-r');
     elsif r.tag = 's78a' then
       insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint) values
@@ -83,7 +89,7 @@ begin
         (u, '2026-09-13 10:00-05', 'expense', 'outflow', 5000, 'PEN', 'PENDIENTE SPLIT E2E', 'PENDIENTE SPLIT E2E', c_otros, 'review_required', 'medium', 'e2e-s10-2');
     elsif r.tag = 's10b' then
       insert into public.transactions (id, user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint)
-      values ('00000000-0000-4000-8000-00000000e10b', u, '2026-09-12 12:00-05', 'expense', 'outflow', 9900, 'PEN', 'E2E SECRET B', 'E2E SECRET B', c_food, 'confirmed', 'high', 'e2e-s10-b');
+      values (md5(run || ':e10b')::uuid, u, '2026-09-12 12:00-05', 'expense', 'outflow', 9900, 'PEN', 'E2E SECRET B', 'E2E SECRET B', c_food, 'confirmed', 'high', 'e2e-s10-b');
     elsif r.tag = 's11a' then
       -- Cash-flow planning demo (ADR-0005), all synthetic: balance S/ 5,000; salary on the 15th; car 9-10 (pay on the 7th);
       -- card on the 10th; internet amount unknown; phone on the 5th; rent on the 20th; yearly insurance (reserve);
@@ -110,7 +116,7 @@ begin
       insert into public.plan_settlements (user_id, fixed_expense_id, period, transaction_id)
         select u, id, to_char(date_trunc('month', now()) - interval '12 days', 'YYYY-MM'), ta from public.fixed_expenses where user_id = u and name = 'Luz';
     elsif r.tag = 's11b' then
-      insert into public.fixed_expenses (id, user_id, name, currency, amount_minor, due_day) values ('00000000-0000-4000-8000-00000000e11b', u, 'B secreto', 'PEN', 99900, 10);
+      insert into public.fixed_expenses (id, user_id, name, currency, amount_minor, due_day) values (md5(run || ':e11b')::uuid, u, 'B secreto', 'PEN', 99900, 10);
       insert into public.balance_snapshots (user_id, currency, amount_minor) values (u, 'PEN', 777700);
     elsif r.tag = 's12b' then
       -- B for the onboarding suite: its own conversation, usage and planning rows A must never see or consume.
@@ -134,7 +140,7 @@ begin
         (u, now() - interval '1 day' + interval '2 minutes', 'income', 'inflow', 100000, 'PEN', 'PEN MISMO NUMERO', 'PEN MISMO NUMERO', 'confirmed', 'high', 'e2e-s13-pen');
     elsif r.tag = 's13b' then
       insert into public.expected_incomes (id, user_id, name, currency, amount_minor, amount_status, day_of_month)
-        values ('00000000-0000-4000-8000-00000000e13b', u, 'B sueldo secreto', 'PEN', 400000, 'confirmed', 5);
+        values (md5(run || ':e13b')::uuid, u, 'B sueldo secreto', 'PEN', 400000, 'confirmed', 5);
     elsif r.tag = 's14a' then
       -- Vels (ADR-0011): same core as the dashboard. Card with a bank limit, its debt and planned payment.
       insert into public.balance_snapshots (user_id, currency, amount_minor) values (u, 'PEN', 500000);

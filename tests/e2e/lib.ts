@@ -5,15 +5,33 @@
  */
 import { chromium, type Browser, type Page, type Response } from 'playwright-core';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 export const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
 export const ALERT = '[role=alert]:not(#__next-route-announcer__)';
-/** Fixed ids of the B rows the suites attack directly (seed.sql). */
-export const B_TX = { review: '00000000-0000-4000-8000-00000000e4b1', import: '00000000-0000-4000-8000-00000000e56b', split: '00000000-0000-4000-8000-00000000e10b', obligation: '00000000-0000-4000-8000-00000000e11b' } as const;
-
-/** Probe user email for a seed tag (s3a, s4a, ...). */
-export const probe = (tag: string) => `e2e-${tag}@gestordefinanzas.invalid`;
+/**
+ * Seed run per tag (.e2e/runs.json, written by `scripts/e2e.sh render-seed`): each render creates NEW synthetic users
+ * e2e-<tag>-<run>@gestordefinanzas.invalid, so a seed never collides with leftovers of an earlier run.
+ */
+const RUNS: Record<string, string> = (() => { try { return JSON.parse(readFileSync('.e2e/runs.json', 'utf8')); } catch { return {}; } })();
+function runOf(tag: string): string {
+  const run = RUNS[tag];
+  if (!run || !/^[a-z0-9]{8,20}$/.test(run)) throw new Error(`no E2E seed run for ${tag}: render and apply the seed first (scripts/e2e.sh render-seed)`);
+  return run;
+}
+/** Probe user email for a seed tag (s3a, s4a, ...), always in the synthetic namespace. */
+export const probe = (tag: string) => `e2e-${tag}-${runOf(tag)}@gestordefinanzas.invalid`;
+/** Same derivation as seed.sql: md5('<run>:<name>')::uuid. */
+export const fixedId = (tag: string, name: string) => {
+  const h = createHash('md5').update(`${runOf(tag)}:${name}`).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
+/** Ids of the B rows the suites attack directly (seed.sql). */
+export const B_TX = {
+  get review() { return fixedId('s4b', 'e4b1'); }, get import() { return fixedId('s56b', 'e56b'); },
+  get split() { return fixedId('s10b', 'e10b'); }, get obligation() { return fixedId('s11b', 'e11b'); },
+};
 
 export function need(name: string): string {
   const v = process.env[name];

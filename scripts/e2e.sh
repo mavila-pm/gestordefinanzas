@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # E2E orchestrator (docs/runbooks/e2e.md): controlled server lifecycle + health check + suites + guaranteed stop.
 #   scripts/e2e.sh [suite ...]        run the given suites (default: all), e.g. scripts/e2e.sh review-manual
-#   scripts/e2e.sh render-seed        print tests/e2e/seed.sql with E2E_PASSWORD filled in (for the SQL tool)
+#   scripts/e2e.sh render-seed [tags] print an insert-only seed under a NEW run id (all pairs, or just those tags) and
+#                                     record the run per tag in .e2e/runs.json (the suites read it)
 # Env: E2E_PASSWORD (required), NEXT_PUBLIC_SUPABASE_* (from .env.local), E2E_PORT (default 3000),
 #      E2E_DB_URL (optional: seed before and clean after via psql; without it seed/cleanup run through the SQL tool).
 set -euo pipefail
@@ -16,10 +17,25 @@ LOG="$STATE/server.log"
 mkdir -p "$STATE"
 
 : "${E2E_PASSWORD:?E2E_PASSWORD is required}"
-render_seed() { sed "s/__E2E_PASSWORD__/${E2E_PASSWORD//\'/\'\'}/" tests/e2e/seed.sql; }
-# `render-seed s11a s11b …` renders only those probe pairs (delete + recreate just them): smaller paste, same data.
-render_partial() { render_seed | python3 scripts/qa/seed-subset.py "$@"; }
-if [[ "${1:-}" == "render-seed" ]]; then shift; if (($#)); then render_partial "$@"; else render_seed; fi; exit 0; fi
+# Every render = a fresh run id: new synthetic users, so the seed never collides with an earlier run (no delete needed).
+new_run() { printf '%s%s' "$(date -u +%y%m%d%H%M%S)" "$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n')"; }
+render_seed() { sed -e "s/__E2E_PASSWORD__/${E2E_PASSWORD//\'/\'\'}/" -e "s/__E2E_RUN__/$1/" tests/e2e/seed.sql; }
+record_run() { # record_run <run> <tag…>: the suites resolve each tag's probe users from .e2e/runs.json
+  python3 - "$@" <<'PY'
+import json, re, sys, pathlib
+run, tags = sys.argv[1], sys.argv[2:]
+assert re.fullmatch(r"[a-z0-9]{8,20}", run), run
+p = pathlib.Path(".e2e/runs.json"); runs = json.loads(p.read_text()) if p.exists() else {}
+runs.update({t: run for t in tags}); p.write_text(json.dumps(runs, indent=1, sort_keys=True))
+PY
+}
+ALL_TAGS=(s3a s3b s4a s4b s56a s56b s78a s78b s9a s9b s10a s10b s11a s11b s12a s12b s13a s13b s14a s14b)
+if [[ "${1:-}" == "render-seed" ]]; then
+  shift; run="$(new_run)"
+  if (($#)); then render_seed "$run" | python3 scripts/qa/seed-subset.py "$@"; record_run "$run" "$@"
+  else render_seed "$run"; record_run "$run" "${ALL_TAGS[@]}"; fi
+  exit 0
+fi
 
 if [[ -f .env.local ]]; then set -a; source .env.local; set +a; fi
 export E2E_BASE_URL="$BASE"
@@ -75,7 +91,7 @@ done
 echo "server healthy on $BASE (pid $(cat "$PIDFILE"))"
 
 # 4. Seed (idempotent) when a DB URL is available.
-if [[ -n "${E2E_DB_URL:-}" ]]; then render_seed | psql "$E2E_DB_URL" -q -v ON_ERROR_STOP=1 >/dev/null; echo "seeded"; fi
+if [[ -n "${E2E_DB_URL:-}" ]]; then run="$(new_run)"; render_seed "$run" | psql "$E2E_DB_URL" -q -v ON_ERROR_STOP=1 >/dev/null; record_run "$run" "${ALL_TAGS[@]}"; echo "seeded (run $run)"; fi
 
 # 5. Suites: one summary line each; failures and diagnosis are printed in full, passes are not.
 if (($#)); then SUITES=("$@"); else SUITES=("${ALL[@]}"); fi

@@ -63,6 +63,8 @@ await runSuite('review-manual', async ({ page, check }) => {
   await page.goto(`${BASE}/app?month=2026-09`);
   check('expenses = S/ 95.50 (withdrawal excluded)', (await page.getByTestId('expenses-PEN').textContent()) === 'S/ 95.50',
     (await page.getByTestId('expenses-PEN').textContent()) ?? '');
+  // The manual withdrawal is dated today: it shows apart in the current month.
+  await page.goto(`${BASE}/app`);
   check('withdrawal shown apart', (await page.content()).includes('Retiros de efectivo'));
 
   // 5. B's movement through the UI: 404
