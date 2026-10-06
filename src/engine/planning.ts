@@ -366,3 +366,17 @@ export function reminderIntents(plan: Pick<Plan, 'lines'>, today: string): Remin
   }
   return out;
 }
+
+// ── Breakdown for the dashboard bar (pure) ──────────────────────────────────────────────────────────────
+/** Pagos (dated payments/debts/overdue) vs reservado (basics, reserves, cushion); unknown amounts counted apart. */
+export interface PlanBreakdown { committedMinor: number; setAsideMinor: number; freeMinor: number; unknownCount: number }
+export function planBreakdown(p: Pick<Plan, 'lines' | 'freeMinor'>): PlanBreakdown | null {
+  if (p.freeMinor === null) return null;
+  let committedMinor = 0, setAsideMinor = 0, unknownCount = 0;
+  for (const l of p.lines) {
+    if (l.amountMinor === null) { unknownCount++; continue; }
+    if (l.kind === 'payment' || l.kind === 'debt' || l.kind === 'overdue') committedMinor += l.amountMinor;
+    else setAsideMinor += l.amountMinor;
+  }
+  return { committedMinor, setAsideMinor, freeMinor: p.freeMinor, unknownCount };
+}

@@ -378,3 +378,42 @@ form[aria-busy=true] button.link[type=submit]:disabled { background: none; color
   .vels-panel::backdrop { background: transparent; }
 }
 @media (prefers-reduced-motion: reduce) { .vels-panel[open] { animation: none; } .vels-loading span { animation: none; } }
+
+/* ── Resumen: dinero libre first (proposal approved by the PO, 2026-10-06) ─────────────────────────── */
+.hero .hero-top { display: flex; justify-content: space-between; align-items: center; gap: var(--space-8); }
+.hero .until { opacity: .82; }
+.hero .until strong { opacity: 1; }
+.free-bar { display: flex; gap: 2px; height: 10px; border-radius: var(--radius-pill); overflow: hidden; }
+.free-bar .seg { display: block; min-width: 4px; height: 100%; transition: flex-grow var(--duration-standard) var(--ease-standard); }
+.seg.committed, .free-legend i.committed { background: color-mix(in srgb, currentColor 62%, transparent); }
+.seg.set-aside, .free-legend i.set-aside { background: color-mix(in srgb, currentColor 28%, transparent); }
+.seg.free, .free-legend i.free { background: var(--brand-accent); }
+.free-legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-8); margin: 0; }
+.free-legend div { min-width: 0; }
+.free-legend dt { font-size: 12px; line-height: 16px; opacity: .78; display: flex; align-items: center; gap: 6px; }
+.free-legend dt i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.free-legend dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.hero-foot { display: flex; justify-content: space-between; align-items: center; gap: var(--space-12); padding-top: var(--space-12);
+  border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); font-size: 14px; line-height: 20px; }
+.hero-foot span { min-width: 0; }
+.hero-foot a { font-weight: 600; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; }
+.event-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-12); background: var(--surface-default);
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: var(--space-12) var(--space-12) var(--space-12) var(--space-16); }
+.event-row > span { min-width: 0; display: grid; }
+.event-row small { font-size: 13px; line-height: 18px; }
+.coming { padding-top: 4px; padding-bottom: 4px; }
+.coming li { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: var(--space-12); align-items: center; padding: var(--space-12) 0; }
+.coming li + li { border-top: 1px solid var(--border-subtle); }
+.coming .day { display: grid; justify-items: center; font-size: 12px; line-height: 14px; font-weight: 600; color: var(--text-muted); }
+.coming .day b { font-size: 17px; line-height: 22px; color: var(--text-primary); }
+.coming .amount.unknown { color: var(--semantic-warning); font-weight: 600; font-size: 14px; }
+.coming li.horizon { display: block; text-align: center; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted); padding: var(--space-8) 0 var(--space-4); border-top: 1px dashed var(--border-control); }
+.month-row { display: grid; gap: var(--space-8); background: var(--bg-secondary); border-radius: var(--radius-card); padding: var(--space-16); }
+.month-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-8); }
+.month-figures div { display: grid; min-width: 0; }
+.month-figures span { font-size: 12px; line-height: 16px; color: var(--text-muted); font-weight: 500; }
+.month-figures strong { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.month-health summary { font-size: 14px; line-height: 20px; color: var(--text-secondary); cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.month-health .state { display: none; }
+@media (prefers-reduced-motion: reduce) { .free-bar .seg { transition: none; } }

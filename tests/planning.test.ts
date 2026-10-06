@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { monthCommitments } from '../src/engine/commitments';
 import {
-  buildPlan, compareDebtStrategies, detectVariations, nextIncome, nextOccurrence, occurrencesBetween, openOccurrence, reminderIntents,
+  buildPlan, planBreakdown, compareDebtStrategies, detectVariations, nextIncome, nextOccurrence, occurrencesBetween, openOccurrence, reminderIntents,
   simulatePurchase, suggestMatches, type ExpectedIncome, type Obligation, type PlanInput,
 } from '../src/engine/planning';
 import { monthlySummary } from '../src/engine/monthly-summary';
@@ -215,5 +215,21 @@ describe('estimated basics keep the plan "estimado" (estimated ≠ confirmed)', 
     expect(base.status).toBe('confirmed');
     expect(est.status).toBe('partial');
     expect(est.lines.find((l) => l.kind === 'essentials')?.note).toContain('estimaste');
+  });
+});
+
+describe('planBreakdown (dashboard bar)', () => {
+  it('pagos + reservado + libre = base; unknown counted apart, never as 0', () => {
+    const lines = [
+      { kind: 'payment' as const, label: 'Carro', amountMinor: 95000, date: '2026-10-07', dateMax: null, note: null },
+      { kind: 'overdue' as const, label: 'Luz', amountMinor: 12900, date: '2026-09-18', dateMax: null, note: null },
+      { kind: 'payment' as const, label: 'Internet', amountMinor: null, date: '2026-10-13', dateMax: null, note: null },
+      { kind: 'essentials' as const, label: 'Básicos', amountMinor: 38000, date: null, dateMax: null, note: null },
+      { kind: 'cushion' as const, label: 'Colchón', amountMinor: 40000, date: null, dateMax: null, note: null },
+    ];
+    const b = planBreakdown({ lines, freeMinor: 314100 })!;
+    expect(b).toEqual({ committedMinor: 107900, setAsideMinor: 78000, freeMinor: 314100, unknownCount: 1 });
+    expect(b.committedMinor + b.setAsideMinor + b.freeMinor).toBe(500000);
+    expect(planBreakdown({ lines, freeMinor: null })).toBeNull();
   });
 });

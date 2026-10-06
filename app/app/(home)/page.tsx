@@ -19,6 +19,7 @@ import { ActionForm } from '../../../components/action-form';
 import { ProfileFields } from '../../../components/profile-fields';
 import { saveProfileAction } from '../actions';
 import { Icon } from '../../../components/ui/icon';
+import { ComingUp, FreeHero } from '../../../components/free-hero';
 import { limaDayLabel, monthLabel } from '../../../src/web/labels';
 
 const CURRENCIES: Currency[] = ['PEN', 'USD'];
@@ -87,6 +88,45 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const free = month === currentMonth ? planFor(planning, 'PEN') : null;
   const incomePlan = month === currentMonth && planning.recentIncome?.currency === 'PEN' ? planFor(planning, 'PEN', { transactionId: planning.recentIncome.transactionId }) : null;
 
+  const healthBlock = (
+    <div data-testid="data-health" className="stack-sm" style={{ gap: 6 }}>
+      <span className={`state ${health.level.toLowerCase()}`}>{HEALTH_LABEL[health.level]}</span>
+      <small style={{ opacity: .82 }}>
+        {pen.savingsLabel === 'confirmed' ? 'Ahorro confirmado' : 'Ahorro estimado'}
+        {health.reasons.length > 0 && <>: {health.reasons.join('; ')}</>}
+      </small>
+    </div>
+  );
+  const withdrawals = pen.cashWithdrawalsMinor > 0 && <small style={{ opacity: .82 }}>Retiros de efectivo: {money(pen.cashWithdrawalsMinor, 'PEN')}. No cuentan como gasto hasta que sepas en qué se usaron.</small>;
+  // Closed months (and the current one without a plan) keep the month as the main figure.
+  const monthHero = (
+    <section className="hero" aria-label="Resumen en soles">
+      <span className="label">Flujo neto del mes</span>
+      <p className="figure" data-testid="net-PEN">{pen.netCashFlowMinor < 0 ? '−' : ''}{money(pen.netCashFlowMinor, 'PEN')}</p>
+      {healthBlock}
+      <div className="split">
+        <div><span className="label">Ingresos</span><p className="value" data-testid="income-PEN">{money(pen.incomeMinor, 'PEN')}</p></div>
+        <div><span className="label">Gastos</span><p className="value" data-testid="expenses-PEN">{money(pen.expensesMinor, 'PEN')}</p></div>
+      </div>
+      {withdrawals}
+    </section>
+  );
+  // Current month with a plan: the month is context, in one compact row; its data status on demand.
+  const monthRow = (
+    <section className="month-row" aria-label="Tu mes en soles">
+      <div className="month-figures">
+        <div><span>Ingresos</span><strong data-testid="income-PEN">{money(pen.incomeMinor, 'PEN')}</strong></div>
+        <div><span>Gastos</span><strong data-testid="expenses-PEN">{money(pen.expensesMinor, 'PEN')}</strong></div>
+        <div><span>Flujo</span><strong data-testid="net-PEN">{pen.netCashFlowMinor < 0 ? '−' : ''}{money(pen.netCashFlowMinor, 'PEN')}</strong></div>
+      </div>
+      <details className="month-health">
+        <summary>{HEALTH_LABEL[health.level]} · ¿qué significa?</summary>
+        {healthBlock}
+      </details>
+      {withdrawals}
+    </section>
+  );
+
   return (
     <main className="stack">
       {deleted === '1' && <p role="status" className="notice positive">Movimiento eliminado.</p>}
@@ -103,50 +143,18 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
       {milestone && <section className="milestone" data-testid="milestone" aria-label="Cierre de mes"><p>{milestone.text}</p></section>}
 
-      <section className="hero" aria-label="Resumen en soles">
-        <span className="label">Flujo neto del mes</span>
-        <p className="figure" data-testid="net-PEN">{pen.netCashFlowMinor < 0 ? '−' : ''}{money(pen.netCashFlowMinor, 'PEN')}</p>
-        <div data-testid="data-health" className="stack-sm" style={{ gap: 6 }}>
-          <span className={`state ${health.level.toLowerCase()}`}>{HEALTH_LABEL[health.level]}</span>
-          <small style={{ opacity: .82 }}>
-            {pen.savingsLabel === 'confirmed' ? 'Ahorro confirmado' : 'Ahorro estimado'}
-            {health.reasons.length > 0 && <>: {health.reasons.join('; ')}</>}
-          </small>
-        </div>
-        <div className="split">
-          <div><span className="label">Ingresos</span><p className="value" data-testid="income-PEN">{money(pen.incomeMinor, 'PEN')}</p></div>
-          <div><span className="label">Gastos</span><p className="value" data-testid="expenses-PEN">{money(pen.expensesMinor, 'PEN')}</p></div>
-        </div>
-        {pen.cashWithdrawalsMinor > 0 && <small style={{ opacity: .82 }}>Retiros de efectivo: {money(pen.cashWithdrawalsMinor, 'PEN')}. No cuentan como gasto hasta que sepas en qué se usaron.</small>}
-      </section>
-
-      {free && (
-        <Link href="/app/plan" className="free-row" data-testid="free-summary">
-          {free.freeMinor !== null ? (
-            <>
-              <span className="setting-text">
-                <span className="muted small">{free.status === 'confirmed' ? 'Dinero libre' : 'Dinero libre estimado'}{free.nextIncome ? ` hasta el ${shortDate(free.nextIncome.date)}` : ''}</span>
-                <strong className="big">{free.freeMinor < 0 ? 'Faltan ' : ''}{money(free.freeMinor, 'PEN')}</strong>
-                <small className="muted">Ya descontamos {money(free.reservedMinor, 'PEN')} en próximos pagos.{free.missing.length ? ` ${free.missing.length === 1 ? 'Falta 1 dato' : `Faltan ${free.missing.length} datos`} por confirmar.` : ''}</small>
-              </span>
-              <Icon name="chevron" />
-            </>
-          ) : (
-            <>
-              <span className="setting-text"><strong>¿Cuánto puedes gastar sin tocar lo que debes pagar?</strong><small className="muted">Calcula tu dinero libre con dos datos.</small></span>
-              <Icon name="chevron" />
-            </>
+      {free ? (
+        <>
+          <FreeHero p={free} />
+          {incomePlan && incomePlan.base && planning.recentIncome && (
+            <div className="event-row" data-testid="income-event">
+              <span>Entraron <strong>{money(incomePlan.base.amountMinor, 'PEN')}</strong><small className="muted">{planning.recentIncome.merchant ?? 'Ingreso'} · {shortDate(planning.recentIncome.date)}</small></span>
+              <Link href={`/app/plan?ingreso=${planning.recentIncome.transactionId}`} className="button">Repartir</Link>
+            </div>
           )}
-        </Link>
-      )}
-
-      {incomePlan && incomePlan.base && planning.recentIncome && (
-        <p className="notice positive" data-testid="income-event">
-          <span>Entraron <strong>{money(incomePlan.base.amountMinor, 'PEN')}</strong> el {shortDate(planning.recentIncome.date)}.
-{' '}
-            <Link href={`/app/plan?ingreso=${planning.recentIncome.transactionId}`}>Ver distribución</Link></span>
-        </p>
-      )}
+          <ComingUp p={free} />
+        </>
+      ) : monthHero}
 
       {others.map((s) => (
         <section key={s.currency} className="card" aria-label={`Resumen ${s.currency}`}>
@@ -178,6 +186,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           {insight && <p className="insight muted" data-testid="insight" style={{ paddingTop: 8 }}>{insight.estimated ? 'Estimado: ' : ''}{insight.text}</p>}
         </section>
       )}
+
+      {free && monthRow}
 
       {commitments.length > 0 && (
         <section data-testid="commitments" aria-label="Compromisos del mes" className="row card">

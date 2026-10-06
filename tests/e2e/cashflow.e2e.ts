@@ -12,10 +12,17 @@ const minor = (s: string) => Math.round(Number(s.replace(/[^\d.]/g, '')) * 100);
 await runSuite('cashflow', async ({ browser, page, check }) => {
   await login(page, A);
   await page.goto(`${BASE}/app`);
-  const row = (await page.getByTestId('free-summary').textContent()) ?? '';
-  check('Resumen shows free money as an estimate (data missing), with what was already set aside', row.includes('Dinero libre estimado') && row.includes('Ya descontamos'), row);
+  const row = ((await page.getByTestId('free-summary').textContent()) ?? '').replace(/\s+/g, ' ');
+  check('Resumen opens with free money marked "Estimado", the next income and what is missing', row.includes('Dinero libre') && row.includes('Estimado') && row.includes('Hasta tu próximo ingreso') && /Falta(n)? \d* ?dato/.test(row), row);
+  const part = async (id: string) => minor((await page.getByTestId(id).textContent()) ?? '');
+  const freeShown = await part('free-summary-amount');
+  check('the bar adds up: pagos + reservado + libre = the declared balance (S/ 5,000)', (await part('free-committed')) + (await part('free-set-aside')) + freeShown === 500000,
+    JSON.stringify([await part('free-committed'), await part('free-set-aside'), freeShown]));
+  const coming = await page.getByTestId('coming-up').locator('li').allTextContents();
+  check('"Lo que viene" ends with the expected income, after the horizon line', coming.some((t) => t.includes('Tu próximo ingreso')) && (coming.at(-1) ?? '').includes('Esperado'), JSON.stringify(coming));
+  check('the month stays as context (income, expenses, flow)', (await page.getByTestId('net-PEN').count()) === 1 && (await page.getByTestId('income-PEN').count()) === 1);
   const event = (await page.getByTestId('income-event').textContent()) ?? '';
-  check('income event: "Entraron S/ 4,000.00" with a way to see the distribution (no modal)', event.includes('Entraron S/ 4,000.00') && event.includes('Ver distribución'), event);
+  check('income event: "Entraron S/ 4,000.00" with a Repartir action (no modal)', event.includes('Entraron S/ 4,000.00') && event.includes('Repartir'), event);
 
   await page.goto(`${BASE}/app/plan`);
   const hero = (await page.getByTestId('free-PEN').textContent()) ?? '';

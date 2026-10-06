@@ -32,11 +32,14 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Aplicar plan: saved reservations per currency (supersede / quitar / history), paid only via real settlements, stale-tab guard, Vels confirm (033, ADR-0013) | VERIFIED | — |
 | Card statements: billed / minimum / due / used, post-cut from real purchases, usable = min(plan, bank room), minimum-only carry + interest; Tarjetas + Vels (034, ADR-0014) | VERIFIED | Camera read of statements (key) |
 | Month-end bug: 'cuota vence pronto' now sees the first days of next month (was silent on the 29–31) (035) | VERIFIED | — |
+| E2E harness: insert-only seed under a run id (no collisions, no cleanup dependency), exact-namespace guarded cleanup, harness DB test (036) | VERIFIED | Real-project cleanup blocked: the MCP connector does not run DELETE (see runbook incident); 41 synthetic users pending |
+| Resumen redesign: Dinero libre first + bar (pagos/reservado/libre), state chip, 'Lo que viene' to next income, month as context (037) | VERIFIED | PO walkthrough on a phone |
 | Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Statement camera read needs the AI provider (key) |
 
 ## Blockers / decisions (external)
 - AI provider (DeepSeek and/or Gemini) + server key → then `scripts/ai-bench.ts` against the local baseline (synthetic data only).
 - Email Bridge real integration; billing provider/price/periodicity; custom SMTP before launch; leaked-password protection (plan).
+- Known test debt: `analysis-dashboard` and `planning-account` (budget, milestone, alerts) use fixtures pinned to September 2026 (suite header: "Assumes the Lima date is 2026-09-27..30"); since October they fail on dates, not on the product. Fix: date-relative fixtures.
 - Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); plan limits enforcement.
 
 ## Next work (no external decision needed)
