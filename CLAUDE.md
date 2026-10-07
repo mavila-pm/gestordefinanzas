@@ -1,14 +1,19 @@
 # CLAUDE.md — Velsuno (gestordefinanzas)
 
-Personal finance SaaS (Free + Plus), Peru-first. Binding spec: `docs/product/MOTHER_DOCUMENT.md` (read by section, never whole).
+Personal finance SaaS (Free + Plus), Peru-first: bank events/manual entries → deduplicated movements → "Dinero libre"
+until the next income + Vels assistant. Next.js 16 App Router + Supabase (Postgres/Auth/RLS) on Vercel (Preview only).
+Binding spec: `docs/product/MOTHER_DOCUMENT.md` (read by section, never whole). Human overview: `README.md`.
 Product Owner: Mauro. Spec deviations need a Change Request (Anexo A) before implementation.
 
 ## Where things live (read on demand, not up front)
-- Current state, checkpoint, blockers, next work: `docs/status.md` ← start every session here.
+- Current state, checkpoint, blockers, next work: `docs/status.md` ← start every session here. MVP gap (P0–P3): `docs/MVP.md`.
+- Module map (where each responsibility lives + its tests): `docs/architecture/structure.md`. Layers: `src/` pure
+  (domain → ingestion → engine, ai) · `lib/` server-only (Supabase, queries, `ai.ts`) · `app/` routes + server actions.
 - How to verify (N0–N4, commands): `docs/qa.md` · Autonomy, stop conditions, sessions, handoff: `docs/agent-workflow.md`.
-- Decisions: `docs/decisions/ADR-*.md` · Operations: `docs/runbooks/` · Layout: `docs/architecture/structure.md`.
+- Decisions: `docs/decisions/ADR-*.md` · Operations: `docs/runbooks/` (e2e, migrations, Vercel preview, acceptance).
 - Path rules load automatically from `.claude/rules/` (financial, database, frontend, auth-security).
-- Skills: `verify` (pick + run the right checks), `task-close` (close a block), `financial-safety` (money-affecting diffs), `ux-writing`
+- Skills: `verify` (pick + run the right checks), `task-close` (close a block), `financial-safety` (money-affecting diffs),
+  `add-feature` (end-to-end recipe), `debug` (evidence + known failure causes), `deploy` (Preview, env, migrations), `ux-writing`
   (third-party UI copy guide, MIT; Velsuno's copy rules in `.claude/rules/frontend.md` and Spanish es-PE win over it).
   Motion (iart-ai/web-animation-skills, MIT): `micro-interaction`, `page-transition-animation`, `60fps-animation`,
   `accessible-animation`, `gsap-web`. Frontend rules win (motion only when it explains, reduced motion); GSAP/Motion
@@ -24,6 +29,7 @@ Product Owner: Mauro. Spec deviations need a Change Request (Anexo A) before imp
 `npm install` · `npm run check` (typecheck + unit; before every push) · `npm run test:db` (throwaway Postgres: migrations,
 RLS, A/B) · `npm run build` · `scripts/e2e.sh [suite…]` (real project; seed/cleanup per `docs/runbooks/e2e.md`) ·
 `scripts/qa/risk.sh` (diff → required level) · `scripts/qa/run.sh <label> -- <cmd>` (full log to `.qa/`, summary + real exit code).
+No lint script (typecheck is the static gate). CI: `.github/workflows/ci.yml` runs check + test:db + build on every push.
 
 ## Non-negotiable (details in the path rules)
 - SOURCE → NORMALIZED EVENT → FINANCIAL ENGINE. Bank/provider-specific code only in `src/ingestion/adapters/`.

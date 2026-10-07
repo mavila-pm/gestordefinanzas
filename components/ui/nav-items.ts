@@ -24,6 +24,5 @@ export const MOBILE: Item[] = [
   { href: '/app/mas', match: '/app/mas', label: 'Más', icon: 'more' },
 ];
 /** Destinations reached through "Más" on mobile, so that tab stays active on them. */
-export const UNDER_MORE = [...PRIMARY.slice(4), ...SETUP].map((i) => i.match).concat('/app/importar');
-
 export const MORE_ITEMS = [...PRIMARY.slice(4), ...SETUP];
+export const UNDER_MORE = MORE_ITEMS.map((i) => i.match).concat('/app/importar');
