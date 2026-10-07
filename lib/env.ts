@@ -12,8 +12,8 @@ export function supabasePublicEnv(): { url: string; key: string } {
 
 /**
  * Base URL for auth email links. Explicit NEXT_PUBLIC_SITE_URL wins; on a Vercel preview it falls back to the
- * stable branch URL (then the deployment URL) — Vercel system variables, never request input — so preview links
- * never point at localhost.
+ * stable branch URL (then the deployment URL), on production to the production domain — Vercel system variables,
+ * never request input — so auth links never point at localhost.
  */
 export function siteUrl(env: Record<string, string | undefined> = process.env): string {
   if (env.NEXT_PUBLIC_SITE_URL) return env.NEXT_PUBLIC_SITE_URL.replace(/\/+$/, '');
@@ -21,6 +21,8 @@ export function siteUrl(env: Record<string, string | undefined> = process.env): 
     const host = env.VERCEL_BRANCH_URL || env.VERCEL_URL;
     if (host) return `https://${host}`;
   }
+  // Production: the project's production domain (Vercel system variable), never a branch or per-deploy URL.
+  if (env.VERCEL_ENV === 'production' && env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`;
   return 'http://localhost:3000';
 }
 

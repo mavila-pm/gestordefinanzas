@@ -6,7 +6,7 @@
 Dinero libre, y nada de eso expone datos de otra persona.* Cambiar esta definición es decisión del PO.
 
 **Evidencia del estado** (2026-10-07): `docs/status.md` (40 bloques, casi todos VERIFIED), unit 310, DB 108,
-E2E 10 suites (237/237 en las 8 no fechadas), build OK, CI agregado en este bloque. Sin producción, sin dominio.
+E2E 10 suites en verde por partes (237/237 + 55/55), build OK, CI en verde. Sin producción, sin dominio.
 
 Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2** después del MVP · **P3** futuro.
 
@@ -15,7 +15,8 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Estado: solo Vercel Preview desde la rama de trabajo; `main` sin merge; sin dominio.
   - Falta: merge aprobado a `main`, dominio, env vars de Production, Redirect URLs de Supabase para el dominio, smoke test.
   - Archivos: `docs/runbooks/vercel-preview.md` (base para un runbook de producción), `lib/env.ts` (`siteUrl`).
-  - Depende de: PO (dominio, aprobación). Riesgo: alto (links de auth apuntando a localhost si falta `NEXT_PUBLIC_SITE_URL`).
+  - Hecho (2026-10-07): `siteUrl()` usa el dominio de producción de Vercel (`VERCEL_PROJECT_PRODUCTION_URL`) si falta `NEXT_PUBLIC_SITE_URL` (test `site-url`).
+  - Depende de: PO (dominio, aprobación). Riesgo: medio.
   - Terminado cuando: la URL de producción sirve `/`, signup → email → `/auth/confirm` → `/bienvenida` funciona allí.
 - [ ] **P0 — Emails de autenticación confiables (SMTP propio)**
   - Estado: SMTP por defecto de Supabase (límite bajo de envíos, no apto para usuarios reales); plantillas `token_hash` pendientes.
@@ -28,8 +29,9 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Depende de: PO (pegar mensajes reales en `/app/importar` o compartir copias anonimizadas). Riesgo: alto — release blocker §75 "parser que genera datos falsos".
   - Terminado cuando: cada plantilla soportada tiene ≥ 1 muestra real que parsea monto, moneda, tipo y tarjeta correctos (`bcp-samples` en verde).
 - [ ] **P0 — Regresión completa en verde sobre el candidato a release**
-  - Estado: `analysis-dashboard` y `planning-account` fallan por fixtures fijadas a sept-2026 (deuda de tests).
-  - Falta: fixtures relativas a la fecha (Lima) en `tests/e2e/seed.sql` + esas suites; luego N4 (`scripts/e2e.sh` completo) + cleanup.
+  - Hecho (2026-10-07): fixtures relativas al mes de Lima; `analysis-dashboard` 32/32 y `planning-account` 23/23 (antes fallaban
+    por fecha; un texto de test desactualizado por la pasada de copy 038 corregido). Las otras 8 suites: 237/237 (2026-10-06).
+  - Falta: una corrida N4 única (`scripts/e2e.sh` completo) sobre el commit candidato + cleanup (requiere vía con DELETE, ver P1).
   - Depende de: nada externo. Riesgo: medio (sin N4 no se puede afirmar "flujo principal no roto").
   - Terminado cuando: `scripts/e2e.sh` (todas las suites) pasa en cualquier fecha y cleanup devuelve `0 | 0`.
 - [ ] **P0 — Política de privacidad y términos**

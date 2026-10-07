@@ -18,7 +18,11 @@ describe('siteUrl (auth email link base)', () => {
   it('Vercel preview without a branch URL falls back to the deployment URL, not localhost', () => {
     expect(siteUrl({ VERCEL_ENV: 'preview', VERCEL_URL: PREVIEW.VERCEL_URL })).toBe(`https://${PREVIEW.VERCEL_URL}`);
   });
-  it('outside a preview it never uses Vercel vars; defaults to localhost', () => {
+  it('production uses the production domain, never a branch URL; explicit NEXT_PUBLIC_SITE_URL still wins', () => {
+    expect(siteUrl({ VERCEL_ENV: 'production', VERCEL_BRANCH_URL: 'x.vercel.app', VERCEL_PROJECT_PRODUCTION_URL: 'velsuno.pe' })).toBe('https://velsuno.pe');
+    expect(siteUrl({ VERCEL_ENV: 'production', VERCEL_PROJECT_PRODUCTION_URL: 'velsuno.pe', NEXT_PUBLIC_SITE_URL: 'https://app.velsuno.pe' })).toBe('https://app.velsuno.pe');
+  });
+  it('without Vercel vars it defaults to localhost', () => {
     expect(siteUrl({ VERCEL_ENV: 'production', VERCEL_BRANCH_URL: 'x.vercel.app' })).toBe('http://localhost:3000');
     expect(siteUrl({})).toBe('http://localhost:3000');
   });

@@ -9,6 +9,10 @@
 
 do $$
 declare r record; u uuid; ta uuid; em text;
+  -- Dated fixtures are relative to the Lima calendar (month m0 = this month, clamped to today), never pinned to a date.
+  lt constant date := (now() at time zone 'America/Lima')::date;
+  m0 constant date := date_trunc('month', lt)::date;
+  dd constant int := extract(day from lt)::int;
   run constant text := '__E2E_RUN__';
   c_food uuid := (select id from public.categories where user_id is null and name = 'Alimentación');
   c_tr uuid := (select id from public.categories where user_id is null and name = 'Transporte');
@@ -53,23 +57,23 @@ begin
         u, '2026-09-14 12:00-05', 'expense', 'outflow', 5000, 'PEN', 'E2E SECRET B', 'review_required', 'medium', 'e2e-b-r');
     elsif r.tag = 's78a' then
       insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint) values
-        (u, '2026-06-01 09:00-05', 'income', 'inflow', 500000, 'PEN', 'SUELDO', 'SUELDO', null, 'confirmed', 'high', 'e2e-1'),
-        (u, '2026-06-15 12:00-05', 'expense', 'outflow', 400000, 'PEN', 'GASTOS JUNIO', 'GASTOS JUNIO', c_otros, 'confirmed', 'high', 'e2e-2'),
-        (u, '2026-07-01 09:00-05', 'income', 'inflow', 500000, 'PEN', 'SUELDO', 'SUELDO', null, 'confirmed', 'high', 'e2e-3'),
-        (u, '2026-07-15 12:00-05', 'expense', 'outflow', 400000, 'PEN', 'GASTOS JULIO', 'GASTOS JULIO', c_otros, 'confirmed', 'high', 'e2e-4'),
-        (u, '2026-08-01 09:00-05', 'income', 'inflow', 500000, 'PEN', 'SUELDO', 'SUELDO', null, 'confirmed', 'high', 'e2e-5'),
-        (u, '2026-08-10 12:00-05', 'expense', 'outflow', 50000, 'PEN', 'RESTAURANTE E2E', 'RESTAURANTE E2E', c_food, 'confirmed', 'high', 'e2e-6'),
-        (u, '2026-08-11 12:00-05', 'expense', 'outflow', 20000, 'PEN', 'UBER E2E', 'UBER E2E', c_tr, 'confirmed', 'high', 'e2e-7'),
-        (u, '2026-08-12 12:00-05', 'expense', 'outflow', 330000, 'PEN', 'ALQUILER E2E', 'ALQUILER E2E', c_otros, 'confirmed', 'high', 'e2e-8'),
-        (u, '2026-09-01 09:00-05', 'income', 'inflow', 550000, 'PEN', 'SUELDO', 'SUELDO', null, 'confirmed', 'high', 'e2e-9'),
-        (u, '2026-09-05 12:00-05', 'credit_card_purchase', 'outflow', 81000, 'PEN', 'RESTAURANTE E2E', 'RESTAURANTE E2E', c_food, 'confirmed', 'high', 'e2e-10'),
-        (u, '2026-09-06 12:00-05', 'expense', 'outflow', 40000, 'PEN', 'UBER E2E', 'UBER E2E', c_tr, 'confirmed', 'high', 'e2e-11'),
-        (u, '2026-09-07 12:00-05', 'credit_card_payment', 'outflow', 100000, 'PEN', 'PAGO VISA', 'PAGO VISA', null, 'confirmed', 'high', 'e2e-12'),
-        (u, '2026-09-08 12:00-05', 'withdrawal', 'outflow', 20000, 'PEN', 'CAJERO', 'CAJERO', null, 'confirmed', 'high', 'e2e-13'),
-        (u, '2026-09-09 12:00-05', 'expense', 'outflow', 1000, 'PEN', '=HYPERLINK("http://evil")', 'HYPERLINK HTTP EVIL', c_otros, 'confirmed', 'high', 'e2e-14'),
-        (u, '2026-09-25 12:00-05', 'expense', 'outflow', 300000, 'PEN', 'TIENDA RARA E2E', 'TIENDA RARA E2E', c_otros, 'confirmed', 'high', 'e2e-15'),
-        (u, '2026-09-20 12:00-05', 'expense', 'outflow', 5000, 'PEN', 'PENDIENTE E2E', 'PENDIENTE E2E', c_otros, 'review_required', 'medium', 'e2e-16'),
-        (u, '2026-09-21 12:00-05', 'expense', 'outflow', 2000, 'USD', 'AMAZON E2E', 'AMAZON E2E', c_otros, 'confirmed', 'high', 'e2e-17');
+        (u, (((m0 - interval '3 months')::date + 0) + time '09:00') at time zone 'America/Lima', 'income', 'inflow', 500000, 'PEN', 'SUELDO', 'SUELDO', null, 'confirmed', 'high', 'e2e-1'),
+        (u, (((m0 - interval '3 months')::date + 14) + time '12:00') at time zone 'America/Lima', 'expense', 'outflow', 400000, 'PEN', 'GASTOS JUNIO', 'GASTOS JUNIO', c_otros, 'confirmed', 'high', 'e2e-2'),
+        (u, (((m0 - interval '2 months')::date + 0) + time '09:00') at time zone 'America/Lima', 'income', 'inflow', 500000, 'PEN', 'SUELDO', 'SUELDO', null, 'confirmed', 'high', 'e2e-3'),
+        (u, (((m0 - interval '2 months')::date + 14) + time '12:00') at time zone 'America/Lima', 'expense', 'outflow', 400000, 'PEN', 'GASTOS JULIO', 'GASTOS JULIO', c_otros, 'confirmed', 'high', 'e2e-4'),
+        (u, (((m0 - interval '1 months')::date + 0) + time '09:00') at time zone 'America/Lima', 'income', 'inflow', 500000, 'PEN', 'SUELDO', 'SUELDO', null, 'confirmed', 'high', 'e2e-5'),
+        (u, (((m0 - interval '1 months')::date + 9) + time '12:00') at time zone 'America/Lima', 'expense', 'outflow', 50000, 'PEN', 'RESTAURANTE E2E', 'RESTAURANTE E2E', c_food, 'confirmed', 'high', 'e2e-6'),
+        (u, (((m0 - interval '1 months')::date + 10) + time '12:00') at time zone 'America/Lima', 'expense', 'outflow', 20000, 'PEN', 'UBER E2E', 'UBER E2E', c_tr, 'confirmed', 'high', 'e2e-7'),
+        (u, (((m0 - interval '1 months')::date + 11) + time '12:00') at time zone 'America/Lima', 'expense', 'outflow', 330000, 'PEN', 'ALQUILER E2E', 'ALQUILER E2E', c_otros, 'confirmed', 'high', 'e2e-8'),
+        (u, least(((m0 + least(1, dd) - 1) + time '09:00') at time zone 'America/Lima', now() - interval '1 minute'), 'income', 'inflow', 550000, 'PEN', 'SUELDO', 'SUELDO', null, 'confirmed', 'high', 'e2e-9'),
+        (u, least(((m0 + least(5, dd) - 1) + time '12:00') at time zone 'America/Lima', now() - interval '1 minute'), 'credit_card_purchase', 'outflow', 81000, 'PEN', 'RESTAURANTE E2E', 'RESTAURANTE E2E', c_food, 'confirmed', 'high', 'e2e-10'),
+        (u, least(((m0 + least(6, dd) - 1) + time '12:00') at time zone 'America/Lima', now() - interval '1 minute'), 'expense', 'outflow', 40000, 'PEN', 'UBER E2E', 'UBER E2E', c_tr, 'confirmed', 'high', 'e2e-11'),
+        (u, least(((m0 + least(7, dd) - 1) + time '12:00') at time zone 'America/Lima', now() - interval '1 minute'), 'credit_card_payment', 'outflow', 100000, 'PEN', 'PAGO VISA', 'PAGO VISA', null, 'confirmed', 'high', 'e2e-12'),
+        (u, least(((m0 + least(8, dd) - 1) + time '12:00') at time zone 'America/Lima', now() - interval '1 minute'), 'withdrawal', 'outflow', 20000, 'PEN', 'CAJERO', 'CAJERO', null, 'confirmed', 'high', 'e2e-13'),
+        (u, least(((m0 + least(9, dd) - 1) + time '12:00') at time zone 'America/Lima', now() - interval '1 minute'), 'expense', 'outflow', 1000, 'PEN', '=HYPERLINK("http://evil")', 'HYPERLINK HTTP EVIL', c_otros, 'confirmed', 'high', 'e2e-14'),
+        (u, least(((m0 + least(25, dd) - 1) + time '12:00') at time zone 'America/Lima', now() - interval '1 minute'), 'expense', 'outflow', 300000, 'PEN', 'TIENDA RARA E2E', 'TIENDA RARA E2E', c_otros, 'confirmed', 'high', 'e2e-15'),
+        (u, least(((m0 + least(20, dd) - 1) + time '12:00') at time zone 'America/Lima', now() - interval '1 minute'), 'expense', 'outflow', 5000, 'PEN', 'PENDIENTE E2E', 'PENDIENTE E2E', c_otros, 'review_required', 'medium', 'e2e-16'),
+        (u, least(((m0 + least(21, dd) - 1) + time '12:00') at time zone 'America/Lima', now() - interval '1 minute'), 'expense', 'outflow', 2000, 'USD', 'AMAZON E2E', 'AMAZON E2E', c_otros, 'confirmed', 'high', 'e2e-17');
       insert into public.transaction_sources (user_id, transaction_id, channel, external_event_id, parser_version, received_at)
         select user_id, id, 'manual', 'm-' || fingerprint, 'MANUAL', now() from public.transactions where user_id = u;
     elsif r.tag = 's78b' then
@@ -77,11 +81,11 @@ begin
       values (u, '2026-09-10 12:00-05', 'expense', 'outflow', 7777, 'PEN', 'E2E SECRET B', 'E2E SECRET B', c_otros, 'confirmed', 'high', 'e2e-b');
     elsif r.tag = 's9a' then
       insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint)
-      values (u, '2026-09-10 12:00-05', 'expense', 'outflow', 40000, 'PEN', 'MERCADO E2E', 'MERCADO E2E', c_food, 'confirmed', 'high', 'e2e-s9'),
+      values (u, least(((m0 + least(10, dd) - 1) + time '12:00') at time zone 'America/Lima', now() - interval '1 minute'), 'expense', 'outflow', 40000, 'PEN', 'MERCADO E2E', 'MERCADO E2E', c_food, 'confirmed', 'high', 'e2e-s9'),
         -- recurring (TASK-016): outside September so this month's figures stay S/ 400.00
-        (u, '2026-06-05 12:00-05', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n6'),
-        (u, '2026-07-05 12:00-05', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n7'),
-        (u, '2026-08-06 12:00-05', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n8');
+        (u, (((m0 - interval '3 months')::date + 4) + time '12:00') at time zone 'America/Lima', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n6'),
+        (u, (((m0 - interval '2 months')::date + 4) + time '12:00') at time zone 'America/Lima', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n7'),
+        (u, (((m0 - interval '1 months')::date + 5) + time '12:00') at time zone 'America/Lima', 'expense', 'outflow', 4490, 'PEN', 'NETFLIX E2E', 'NETFLIX E2E', c_otros, 'confirmed', 'high', 'e2e-s9-n8');
     elsif r.tag = 's10a' then
       -- splits (TASK-020): S/ 180.00 confirmed restaurant this month + S/ 50 pending (not splittable)
       insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint) values

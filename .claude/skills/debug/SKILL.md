@@ -16,7 +16,8 @@ smallest change → re-run the same check. A second attempt needs new evidence.
 | Symptom | Cause → fix |
 |---|---|
 | E2E check fails after an earlier partial run | suites mutate their probe users → reseed the pairs: `scripts/e2e.sh render-seed s13a s13b` |
-| `analysis-dashboard` / `planning-account` fail since October | fixtures pinned to Sept 2026 (test debt, not product) |
+| E2E text check fails after a copy change | suites assert visible copy: grep the old string in `tests/e2e/` and update it in the same change |
+| A dated E2E check fails near a month boundary | seed rows are relative to the Lima month (`m0`, clamped to today); keep new fixtures relative, never pinned |
 | `duplicate key … users_email_partial_key` on an e2e user | stale seed; seeds are run-scoped (`render-seed` = new run id). Fix the harness, never delete by hand |
 | MCP `execute_sql` hangs ~60 s | the connector does not run `DELETE`; use `E2E_DB_URL` + psql for cleanup |
 | Auth email link opens localhost / Site URL | Redirect URL must equal `<base>/auth/confirm` exactly; base from `siteUrl()` in `lib/env.ts` |

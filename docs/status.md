@@ -43,7 +43,6 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 ## Blockers / decisions (external)
 - AI provider (OpenRouter integrated; Gemini/DeepSeek alternatives) + server key → `/app/prueba-ia`, then `scripts/ai-bench.ts` (synthetic data only). MVP priorities: `docs/MVP.md`.
 - Email Bridge real integration; billing provider/price/periodicity; custom SMTP before launch; leaked-password protection (plan).
-- Known test debt: `analysis-dashboard` and `planning-account` (budget, milestone, alerts) use fixtures pinned to September 2026 (suite header: "Assumes the Lima date is 2026-09-27..30"); since October they fail on dates, not on the product. Fix: date-relative fixtures.
 - Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); plan limits enforcement.
 
 ## Next work (no external decision needed)

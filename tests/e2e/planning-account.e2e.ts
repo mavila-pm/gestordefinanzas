@@ -34,7 +34,7 @@ await runSuite('planning-account', async ({ page, check }) => {
 
   // ── Commitments ─────────────────────────────────────────────────────────────────────────────────────
   await page.goto(`${BASE}/app/compromisos`);
-  check('Free: recurring detection offered as Plus, nothing computed', ((await page.getByTestId('recurring').textContent()) ?? '').includes('Disponible en Plus')
+  check('Free: recurring detection offered as Plus, nothing computed', ((await page.getByTestId('recurring').textContent()) ?? '').includes('En Plus: detectamos los cobros')
     && (await page.getByTestId('recurring-list').count()) === 0);
   await page.getByRole('button', { name: 'Agregar pago' }).first().click();
   const ff = 'form[aria-label="Agregar pago"]';

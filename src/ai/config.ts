@@ -45,7 +45,7 @@ const textDefault = (p: Exclude<ProviderName, 'none'>, env: Env) => (p === 'open
 export function appUrl(env: Env): string {
   const explicit = env.APP_URL || env.NEXT_PUBLIC_SITE_URL;
   if (explicit) return explicit.replace(/\/+$/, '');
-  const host = env.VERCEL_BRANCH_URL || env.VERCEL_URL;
+  const host = env.VERCEL_ENV === 'production' ? env.VERCEL_PROJECT_PRODUCTION_URL : env.VERCEL_BRANCH_URL || env.VERCEL_URL;
   return host ? `https://${host}` : 'http://localhost:3000';
 }
 const int = (v: string | undefined, d: number, min: number, max: number) => { const n = Number(v); return Number.isInteger(n) && n >= min && n <= max ? n : d; };
