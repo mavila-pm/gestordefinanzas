@@ -14,6 +14,7 @@ export default function Home() {
           <Link href="/signup" className="button wide">Crear cuenta</Link>
           <Link href="/login" className="button secondary wide">Entrar</Link>
         </div>
+        <p className="auth-links"><Link href="/privacidad">Privacidad</Link><Link href="/terminos">Términos</Link></p>
       </div>
     </main>
   );

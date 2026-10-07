@@ -16,6 +16,7 @@ export default function SignupPage() {
           { name: 'password', label: 'Contraseña', type: 'password', autoComplete: 'new-password', hint: 'Mínimo 8 caracteres.', minLength: 8 },
         ]}
       />
+      <p className="muted" style={{ fontSize: 14 }}>Al crear tu cuenta aceptas los <Link href="/terminos">Términos</Link> y la <Link href="/privacidad">Política de privacidad</Link>.</p>
       <p className="auth-links"><span className="muted" style={{ display: 'inline-flex', alignItems: 'center' }}>¿Ya tienes cuenta?</span><Link href="/login">Entrar</Link></p>
     </AuthScreen>
   );

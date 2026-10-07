@@ -35,8 +35,9 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Depende de: nada externo. Riesgo: medio (sin N4 no se puede afirmar "flujo principal no roto").
   - Terminado cuando: `scripts/e2e.sh` (todas las suites) pasa en cualquier fecha y cleanup devuelve `0 | 0`.
 - [ ] **P0 — Política de privacidad y términos**
-  - Estado: no existen páginas (la app guarda datos financieros personales; Ley 29733 de protección de datos en Perú).
-  - Falta: texto aprobado por el PO (idealmente revisado legalmente) y rutas públicas enlazadas desde `/signup`.
+  - Hecho (2026-10-07): `/privacidad` y `/terminos` (borrador basado en lo que el código realmente guarda y envía),
+    enlazadas desde `/` y `/signup`; contacto desde `SUPPORT_EMAIL` (`components/legal-page.tsx`). Revisadas a 375 px.
+  - Falta: aprobación del PO / revisión legal del texto, `SUPPORT_EMAIL` en Vercel, y registro del banco de datos ante la ANPD si aplica.
   - Depende de: PO / asesoría legal. Riesgo: alto (legal y de confianza).
   - Terminado cuando: `/privacidad` y `/terminos` publicadas, enlazadas en signup, con retención de emails/eventos definida (§78).
 
