@@ -14,7 +14,7 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
 - [ ] **P0 — Producción desplegada**
   - Estado: solo Vercel Preview desde la rama de trabajo; `main` sin merge; sin dominio.
   - Falta: merge aprobado a `main`, dominio, env vars de Production, Redirect URLs de Supabase para el dominio, smoke test.
-  - Archivos: `docs/runbooks/vercel-preview.md` (base para un runbook de producción), `lib/env.ts` (`siteUrl`).
+  - Archivos: `docs/runbooks/production.md` (procedimiento completo: dominio, SMTP, env, merge, smoke test, rollback), `lib/env.ts` (`siteUrl`).
   - Hecho (2026-10-07): `siteUrl()` usa el dominio de producción de Vercel (`VERCEL_PROJECT_PRODUCTION_URL`) si falta `NEXT_PUBLIC_SITE_URL` (test `site-url`).
   - Depende de: PO (dominio, aprobación). Riesgo: medio.
   - Terminado cuando: la URL de producción sirve `/`, signup → email → `/auth/confirm` → `/bienvenida` funciona allí.

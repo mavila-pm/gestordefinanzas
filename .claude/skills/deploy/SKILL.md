@@ -18,5 +18,5 @@ change production env, or apply a migration outside `jeloegnvaxlfqjntbbyy` — t
 4. **Smoke (Preview)**: branch URL in `docs/runbooks/vercel-preview.md`. Check `/` and `/login` load; sign in with a synthetic
    or PO account (never modify PO data); `/app` renders Dinero libre; `/app/prueba-ia` shows whether AI is active.
    Optional: `scripts/e2e.sh` suites against a local prod build (`docs/runbooks/e2e.md`).
-5. **Production** (not yet set up): the P0 items in `docs/MVP.md` (domain, SMTP, Supabase Redirect URLs for the domain,
+5. **Production** (PO executes `docs/runbooks/production.md`; never the agent): the P0 items in `docs/MVP.md` (domain, SMTP, Supabase Redirect URLs for the domain,
    `NEXT_PUBLIC_SITE_URL`, privacy/terms) + full E2E (N4) + PO approval of the merge.
