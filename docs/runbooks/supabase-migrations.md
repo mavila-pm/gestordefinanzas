@@ -9,7 +9,9 @@
 ## Applying a migration
 1. Write `supabase/migrations/<timestamp>_<name>.sql`; `npm run test:db` must pass locally.
 2. Product Owner approval for changes to the real project.
-3. Apply the exact file content with `apply_migration` (name = file suffix). Supabase records its own
+3. Apply the exact file content with `apply_migration` (name = file suffix). A migration whose SQL contains `DELETE`
+   cannot go through the connector (it waits for a confirmation it cannot show and times out): the PO pastes it in the
+   Supabase SQL Editor instead; then verify with a read-only query. Supabase records its own
    version timestamp; the mapping is below.
 4. Verify: security advisors = 0 lints; RLS probe (below); performance advisors without WARN.
 
@@ -42,6 +44,7 @@
 | 20260929000025_plan_applications.sql | plan_applications | 2026-09-29 |
 | 20260929000026_card_statements.sql | card_statements | 2026-09-29 |
 | 20260929000027_replay_hardening.sql | replay_hardening | 2026-09-29 |
+| 20261007000028_delete_account.sql | **PENDING — PO applies it** (the MCP connector hangs on SQL containing DELETE): Supabase → SQL Editor → paste the file → Run | — |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

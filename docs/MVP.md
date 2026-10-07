@@ -58,8 +58,12 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Depende de: PO (clave, privacidad). Riesgo: bajo (la app funciona sin IA; respuestas deterministas cuestan 0).
   - Terminado cuando: benchmark registrado en `docs/ai/provider-evaluation.md` y `AI_PROVIDER` decidido para Preview/Production.
 - [ ] **P1 — Eliminar mi cuenta / exportar mis datos**
-  - Estado: exportación CSV existe (`/app/exportar`); no hay borrado de cuenta (§61 lo audita; Ley 29733 derecho de cancelación).
-  - Falta: flujo de borrado con confirmación, registro en `audit_events`, borrado en cascada probado.
+  - Hecho (2026-10-07): `public.delete_my_account('ELIMINAR')` (solo `auth.uid()`, cascada en todas las tablas; test DB A/B
+    `tests/db/delete-account.test.ts` 2/2), acción `deleteAccount` + hoja en Ajustes, aviso en `/`, suite E2E `account-delete` (s15*).
+  - Falta: **el PO aplica `supabase/migrations/20261007000028_delete_account.sql` en el SQL Editor** (el conector no ejecuta SQL
+    con DELETE); luego correr `scripts/e2e.sh account-delete` con un seed nuevo. Hasta entonces la UI responde "No pudimos eliminar tu cuenta".
+  - Notas de seguridad (revisión independiente, no bloqueantes): otra sesión abierta queda vacía hasta que expire su token (≤ 1 h);
+    el historial de auditoría se va con la cuenta (solo queda un log anónimo `account_deleted`).
   - Riesgo: medio. Terminado cuando: el usuario borra su cuenta y un test DB prueba que no quedan filas suyas y las de otros siguen intactas.
 - [ ] **P1 — Adaptador BBVA (+ scaffold Interbank)**
   - Estado: no existe (spec §51 los lista en la beta crítica).

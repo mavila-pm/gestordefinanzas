@@ -3,7 +3,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { authCallbackUrl } from '../../lib/env';
-import { createSupabaseServerClient } from '../../lib/supabase/server';
+import { authUser, createSupabaseServerClient } from '../../lib/supabase/server';
 import { AUTH_NEXT_COOKIE, authNextCookieOptions, parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
 import { passwordResetOutcome, signupOutcome } from '../../src/web/password-reset';
 
@@ -79,4 +79,23 @@ export async function logout(): Promise<void> {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
   redirect('/login');
+}
+
+/**
+ * "Eliminar mi cuenta" (privacy policy, MVP P1): the SQL function deletes only the signed-in person (auth.uid()) and
+ * every row of theirs cascades. Typed confirmation on both sides. Then the local session is cleared (no network call:
+ * the user no longer exists) and the person lands on the home page.
+ */
+export async function deleteAccount(_prev: FormState, form: FormData): Promise<FormState> {
+  if (String(form.get('confirm') ?? '').trim() !== 'ELIMINAR') return { error: 'Escribe ELIMINAR, en mayúsculas, para confirmar.' };
+  const supabase = await createSupabaseServerClient();
+  if (!(await authUser(supabase))) redirect('/login');
+  const { error } = await supabase.rpc('delete_my_account', { p_confirm: 'ELIMINAR' });
+  if (error) {
+    console.warn(JSON.stringify({ event: 'account_delete_failed', code: error.code ?? null }));
+    return { error: 'No pudimos eliminar tu cuenta. Intenta de nuevo en unos minutos.' };
+  }
+  console.info(JSON.stringify({ event: 'account_deleted' })); // anonymous trace only: no id, no email
+  await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+  redirect('/?cuenta=eliminada');
 }

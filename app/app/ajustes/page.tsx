@@ -7,7 +7,7 @@ import { ThemeControl } from '../../../components/ui/theme-control';
 import { loadProfile } from '../../../lib/queries';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { shortFullName } from '../../../src/domain/profile';
-import { logout } from '../../auth/actions';
+import { deleteAccount, logout } from '../../auth/actions';
 import { saveProfileAction } from '../actions';
 
 export const metadata = { title: 'Ajustes' };
@@ -64,6 +64,20 @@ export default async function Settings() {
             <Icon name="chevron" size={18} />
           </Link>
           <form action={logout} className="setting"><button type="submit" className="link" style={{ paddingLeft: 0 }}>Cerrar sesión</button></form>
+          <div className="setting">
+            <span className="setting-text"><strong>Eliminar mi cuenta</strong><small className="muted">Borra tu cuenta y todos tus datos</small></span>
+            <Sheet label="Eliminar" triggerClassName="link" title="Eliminar mi cuenta" testId="delete-account-sheet" triggerLabel="Eliminar mi cuenta">
+              <div className="sheet-body">
+                <ActionForm action={deleteAccount} label="Eliminar cuenta">
+                  <p>Se borran tu cuenta, tus movimientos, planes y conversaciones. No se puede deshacer.</p>
+                  <p className="muted">Si quieres conservar algo, primero <a href="/app/exportar?month=all">descarga tus movimientos</a>.</p>
+                  <label htmlFor="confirm-delete">Escribe ELIMINAR para confirmar</label>
+                  <input id="confirm-delete" name="confirm" autoComplete="off" autoCapitalize="characters" required />
+                  <button type="submit" className="wide danger">Eliminar mi cuenta</button>
+                </ActionForm>
+              </div>
+            </Sheet>
+          </div>
         </div>
       </section>
     </main>
