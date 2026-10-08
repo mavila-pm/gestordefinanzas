@@ -50,6 +50,8 @@ describe.skipIf(!DATABASE_URL)('registration', () => {
       expect(await errorCode(c, complete(await lima(c, 0, 1)))).toBe('22023');
       expect(await errorCode(c, complete(await lima(c, 30), '2020-01-01'))).toBe('22023'); // not the current version
       expect(await errorCode(c, complete(await lima(c, 30), '2026-10-08', '2026-10-08', '987654321'))).toBe('22023'); // not E.164
+      expect(await errorCode(c, complete(await lima(c, 30), '2026-10-08', '2026-10-08', '+34612345678'))).toBe('22023'); // Peru only (036)
+      expect(await errorCode(c, complete(await lima(c, 30), '2026-10-08', '2026-10-08', '+51187654321'))).toBe('22023'); // not a mobile
       expect((await c.query('select count(*)::int n from public.legal_acceptances')).rows[0].n).toBe(0);
       expect(await errorCode(c, complete(await lima(c, 18)))).toBeNull();
     });
