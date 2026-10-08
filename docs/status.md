@@ -2,7 +2,7 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20261008000030` (`…028` delete_account PENDING, PO applies in SQL Editor).
+migrations applied through `20261008000031` (`…028` delete_account PENDING, PO applies in SQL Editor).
 
 ## Checkpoint (2026-09-29)
 Last full regression: unit 302 · DB 104 · E2E 289/289 (10 suites; 1 month-end bug found and fixed, re-run 23/23) · visual 162 shots, 0 overflow, 0 UX issues · perf probe 8/8 · cleanup 0|0.
@@ -39,6 +39,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | OpenRouter provider (OPENROUTER_API_KEY / OPENROUTER_MODEL=openrouter/free / APP_URL) + generic `generateAIResponse` (lib/ai.ts, same quota door) + test route POST /api/ai/chat and page /app/prueba-ia (auth, same-origin JSON, `message` ≤ 1000, off on production unless AI_TEST_ENDPOINT=1); unpriced models refused (040) | IMPLEMENTED · unit VERIFIED | Real call NOT VERIFIED (key not in this environment); Vels/onboarding use it only with AI_PROVIDER=openrouter (PO privacy decision: free routes may log prompts) |
 | Repo docs + agent layer: README rewritten (product, architecture, setup, env, endpoints, flow, limits), `docs/MVP.md` (P0–P3 checklist), structure map refreshed (migrations 019–027, lib/, AI, Vels), skills `add-feature` / `debug` / `deploy`, CLAUDE.md map, `.env.example` email-bridge vars, CI workflow (check + test:db + build), nav dead export consolidated (041) | VERIFIED (N1/N2 local; CI run on GitHub) | — |
 | Auth/registration redo: email-first signup (Supabase link) → password (12+, letters+numbers, show/hide) → profile (names, E.164 phone, DOB 18+ in SQL) → versioned Terms/Privacy acceptance (legal_acceptances) → bienvenida; gate on pages + proxy POST 403; new login/recovery copy; branded email templates; Terms + Privacy rewritten with index/version/placeholders; auth layout with brand panel (042) | VERIFIED (unit 314, DB 114, E2E registration 32/32 + auth-dashboard 12/12 + visual 162/0/0) | SMTP + templates pasted in Supabase (PO); legal review; video not integrated (license/source unreachable from this environment) |
+| Auth emails: 4 Velsuno templates (signup, magic link, recovery, email change) verified rendered 375/640 with no technical words; real Brevo delivery of signup + recovery to Gmail inbox; token_hash links verified cross-browser (valid → steps, reused → error); password step now recorded by a trigger on real password change (031) (043) | VERIFIED (live) | PO pastes templates in Supabase; Brevo domain + tracking off |
 | Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Statement camera read needs the AI provider (key) |
 
 ## Blockers / decisions (external)

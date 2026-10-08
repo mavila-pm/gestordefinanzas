@@ -4,7 +4,7 @@
   email → `signInWithOtp` (Supabase signs, expires and single-uses the link; no custom tokens) → `/auth/confirm` →
   `/crear-cuenta` → password (12+, letters + numbers, ≤ 72 bytes) → profile (names, E.164 phone, birth date 18+,
   Terms + Privacy acceptance of the current versions) → `/bienvenida`. Steps are decided in SQL (`my_registration`,
-  `mark_password_set`, `complete_registration`, migration 029); `lib/registration.ts` gates `/app` and `/bienvenida`
+  `complete_registration`, migration 029; the password step by the trigger `on_auth_password_changed`, 031); `lib/registration.ts` gates `/app` and `/bienvenida`
   pages and `lib/supabase/proxy.ts` refuses POSTs from unfinished accounts (403). Accounts created before
   2026-10-08 05:00 UTC are grandfathered. Emails, SMTP and dashboard settings: `docs/runbooks/auth-email.md`.
 - Session: `@supabase/ssr` cookies. `proxy.ts` refreshes the session on every request and redirects

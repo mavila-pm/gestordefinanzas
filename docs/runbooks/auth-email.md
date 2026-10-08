@@ -13,7 +13,11 @@ allow-listed callback the app sends), so the same template works on localhost, P
 | Magic Link | `supabase/templates/magic-link.html` | Tu enlace para continuar · Velsuno |
 | Reset Password | `supabase/templates/reset-password.html` | Restablece tu contraseña · Velsuno |
 | Change Email Address | `supabase/templates/change-email.html` | Confirma tu nuevo correo · Velsuno |
-Until they are pasted, Supabase's default templates still work in the same browser (PKCE `code`), not across devices.
+Until they are pasted, Supabase's default (English) templates still work in the same browser (PKCE `code`), not across devices.
+Verified 2026-10-08 on the real project with Brevo SMTP: a NEW address receives "Confirm signup"; an existing one
+receives "Magic Link"; recovery receives "Reset Password". The `token_hash` link format of these templates was
+opened in a fresh browser (other-device case): signup → password → profile → bienvenida, recovery → new password →
+login; a reused link → `/login?error=link`.
 
 ## 2. Settings (Authentication → Sign In / Providers → Email, and URL Configuration)
 - Email provider enabled · Confirm email ON · Secure email change ON.
@@ -22,7 +26,12 @@ Until they are pasted, Supabase's default templates still work in the same brows
 - Redirect URLs: `http://localhost:3000/auth/confirm`, `https://<preview-branch-url>/auth/confirm`, `https://<domain>/auth/confirm`.
 - Site URL: production domain when it exists.
 
-## 3. SMTP (Authentication → Emails → SMTP Settings) — required before inviting people
+## 3. SMTP (Authentication → Emails → SMTP Settings) — connected (Brevo, 2026-10-08)
+Pending on Brevo: authenticate the domain and send from `no-reply@<domain>` (today the sender is the shared
+`…@…brevosend.com`), sender name `Velsuno`, and **turn off click and open tracking for transactional email** (Brevo
+rewrites the sign-in link through its tracking redirect and adds a pixel: the security link passes through a third
+party and some filters distrust it).
+Original notes:
 Built-in email is rate-limited (≈ 2–3 emails/hour project-wide) and may only deliver to team addresses.
 Fill with the chosen provider (Resend, Postmark, Amazon SES, Brevo…): host, port 465/587, user, password (secret, only
 in Supabase), sender `no-reply@<domain>`, sender name `Velsuno`. Add the provider's SPF/DKIM (and DMARC) DNS records

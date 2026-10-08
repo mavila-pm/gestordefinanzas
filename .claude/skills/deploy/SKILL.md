@@ -9,7 +9,7 @@ change production env, or apply a migration outside `jeloegnvaxlfqjntbbyy` — t
 1. **Before push**: `npm run check` (+ `npm run test:db` for SQL) + `npm run build`; `scripts/qa/secrets.sh` when config
    or env code changed. CI (`.github/workflows/ci.yml`) re-runs check + test:db + build on every push.
 2. **Migrations**: test locally (`npm run test:db`) → apply with the Supabase MCP `apply_migration` (content = the file, name = its suffix) → record it in `docs/runbooks/supabase-migrations.md` → one compact verify query (RLS + grants) + `get_advisors`.
-   Apply BEFORE pushing code that depends on it (Preview uses the same database). SQL containing `DELETE` hangs in the
+   Apply BEFORE pushing code that depends on it (Preview uses the same database). SQL containing `DELETE` or `DROP` hangs in the
    connector: hand that file to the PO for the Supabase SQL Editor and make the code degrade gracefully until it exists.
 3. **Env vars** (Vercel → Settings → Environment Variables, scope Preview first; link to project `gestordefinanzas`):
    public `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; server secrets (type Secret) `OPENROUTER_API_KEY`,

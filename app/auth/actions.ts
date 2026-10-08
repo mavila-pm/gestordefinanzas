@@ -61,8 +61,7 @@ export async function createPassword(_prev: FormState, form: FormData): Promise<
     console.warn(JSON.stringify({ event: 'registration_password_failed', status: error.status ?? null, code: error.code ?? null }));
     return { error: newPasswordError(error) };
   }
-  const marked = await supabase.rpc('mark_password_set');
-  if (marked.error) return { error: 'No pudimos guardar tu contraseña. Intenta de nuevo.' };
+  // The step is recorded by the database when Supabase Auth changes the password (trigger, migration 031).
   redirect('/crear-cuenta/perfil');
 }
 

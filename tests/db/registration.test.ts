@@ -17,6 +17,12 @@ describe.skipIf(!DATABASE_URL)('registration', () => {
 
   const lima = async (c: pg.PoolClient, years: number, days = 0) =>
     (await c.query(`select ((now() at time zone 'America/Lima')::date - make_interval(years => $1) + make_interval(days => $2))::date::text d`, [years, days])).rows[0].d as string;
+  /** What Supabase Auth does on updateUser({ password }): a new hash on auth.users (done here as the owner, in the same tx). */
+  const setPassword = async (user: string, c: pg.PoolClient) => {
+    await c.query('reset role');
+    await c.query(`update auth.users set encrypted_password = 'hash-' || gen_random_uuid() where id = $1`, [user]);
+    await c.query('set local role authenticated');
+  };
   const status = async (c: pg.PoolClient) => (await c.query('select * from public.my_registration()')).rows[0];
   const complete = (birth: string, terms = '2026-10-08', privacy = '2026-10-08', phone = '+51987654321') =>
     `select public.complete_registration('Ana María', 'Pérez Soto', '${phone}', '${birth}', '${terms}', '${privacy}')`;
@@ -25,7 +31,8 @@ describe.skipIf(!DATABASE_URL)('registration', () => {
     await asRole(pool, 'authenticated', USER_A, async (c) => {
       expect(await status(c)).toMatchObject({ required: true, password_done: false, completed: false });
       expect(await errorCode(c, complete(await lima(c, 30)))).toBe('22023'); // password step first
-      await c.query('select public.mark_password_set()');
+      expect(await errorCode(c, 'select public.mark_password_set()')).toBe('42501'); // not executable: cannot be faked
+      await setPassword(USER_A, c);
       expect(await status(c)).toMatchObject({ required: true, password_done: true });
       await c.query(complete(await lima(c, 30)));
       expect(await status(c)).toMatchObject({ required: false, completed: true });
@@ -38,7 +45,7 @@ describe.skipIf(!DATABASE_URL)('registration', () => {
 
   it('18+: exactly 18 today passes; one day short is refused; future or malformed data refused', async () => {
     await asRole(pool, 'authenticated', USER_A, async (c) => {
-      await c.query('select public.mark_password_set()');
+      await setPassword(USER_A, c);
       expect(await errorCode(c, complete(await lima(c, 18, 1)))).toBe('22023');
       expect(await errorCode(c, complete(await lima(c, 0, 1)))).toBe('22023');
       expect(await errorCode(c, complete(await lima(c, 30), '2020-01-01'))).toBe('22023'); // not the current version
@@ -50,7 +57,7 @@ describe.skipIf(!DATABASE_URL)('registration', () => {
 
   it('the client cannot mark steps itself, write consents, or see another person', async () => {
     await asRole(pool, 'authenticated', USER_A, async (c) => {
-      await c.query('select public.mark_password_set()');
+      await setPassword(USER_A, c);
       expect(await errorCode(c, `update public.profiles set registration_completed_at = now()`)).toBe('42501');
       expect(await errorCode(c, `update public.profiles set birth_date = '2015-01-01'`)).toBe('42501');
       expect(await errorCode(c, `insert into public.legal_acceptances (user_id, kind, version) values ($1, 'terms', '2026-10-08')`, [USER_A])).toBe('42501');
@@ -74,11 +81,15 @@ describe.skipIf(!DATABASE_URL)('registration', () => {
     });
   });
 
-  it('password step refuses an account without a password; legacy accounts are not required to register', async () => {
-    await pool.query(`update auth.users set encrypted_password = '' where id = $1`, [USER_B]);
+  it('the password step is recorded only when the auth password really changes; legacy accounts are not required', async () => {
     await asRole(pool, 'authenticated', USER_B, async (c) => {
-      expect(await errorCode(c, 'select public.mark_password_set()')).toBe('22023');
+      expect(await errorCode(c, `update auth.users set encrypted_password = 'x'`)).toBe('42501'); // the client cannot touch auth
+      expect(await status(c)).toMatchObject({ password_done: false });
     });
+    await pool.query(`update auth.users set email = 'b2@test.local' where id = $1`, [USER_B]); // other changes do not count
+    await asRole(pool, 'authenticated', USER_B, async (c) => { expect(await status(c)).toMatchObject({ password_done: false }); });
+    await pool.query(`update auth.users set encrypted_password = 'new-hash' where id = $1`, [USER_B]); // as Supabase Auth does
+    await asRole(pool, 'authenticated', USER_B, async (c) => { expect(await status(c)).toMatchObject({ password_done: true }); });
     await asRole(pool, 'authenticated', '00000000-0000-4000-8000-0000000000cc', async (c) => {
       expect(await status(c)).toMatchObject({ required: false, completed: false });
     });

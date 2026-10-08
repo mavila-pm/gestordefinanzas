@@ -19,7 +19,8 @@ smallest change → re-run the same check. A second attempt needs new evidence.
 | E2E text check fails after a copy change | suites assert visible copy: grep the old string in `tests/e2e/` and update it in the same change |
 | A dated E2E check fails near a month boundary | seed rows are relative to the Lima month (`m0`, clamped to today); keep new fixtures relative, never pinned |
 | `duplicate key … users_email_partial_key` on an e2e user | stale seed; seeds are run-scoped (`render-seed` = new run id). Fix the harness, never delete by hand |
-| MCP `execute_sql` hangs ~60 s | the connector does not run `DELETE`; use `E2E_DB_URL` + psql for cleanup |
+| MCP `execute_sql`/`apply_migration` hangs ~60 s | the connector waits for a confirmation on `DELETE`/`DROP`; write the migration without them (revoke instead of drop) or hand the SQL to the PO |
+| Registration step looks done without a password | Supabase gives email-link accounts a random password: only the `on_auth_password_changed` trigger (migration 031) records the step |
 | Auth email link opens localhost / Site URL | Redirect URL must equal `<base>/auth/confirm` exactly; base from `siteUrl()` in `lib/env.ts` |
 | Route returns 200 instead of 404 | a `loading.tsx` above a `notFound()` streams the response |
 | Vels/onboarding say "todavía no está activa" | `aiConfig()` → provider `none`: `AI_PROVIDER` unset, key missing, or unpriced `OPENROUTER_MODEL` (`src/ai/config.ts`) |
