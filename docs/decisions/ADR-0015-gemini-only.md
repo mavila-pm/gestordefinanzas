@@ -13,6 +13,8 @@ Date: 2026-10-08 · Status: accepted (PO request) · Supersedes the provider cho
   friendly fallback with suggested questions.
 - Same door as before (ADR-0006): ai_reserve → provider → ai_record; ≤ 1 retry (timeout, 5xx, 429); 4xx/empty/invalid final;
   SDK retries off. Errors never carry the provider's text. No prompt or answer is logged.
+- Gemini 3.x request shape: thinkingLevel LOW minimum (MINIMAL is refused), no sampling parameters, maxOutputTokens floor
+  1024 because thinking counts inside it (caps 1024–8192 per operation). Failures log only kind, status, model, latency.
 - Unpriced model → costed at `UNPRICED_CEILING` (a guard, not a price) until `AI_PRICES` carries the published rate.
 
 ## Consequences

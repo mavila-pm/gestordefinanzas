@@ -4,7 +4,7 @@ import { infer } from '../lib/ai';
 import { answer, compactView, type View } from '../src/ai/assistant';
 import { aiConfig, GEMINI_DEFAULT_MODEL, providerFor } from '../src/ai/config';
 import { estimateCostMicroUsd, UNPRICED_CEILING } from '../src/ai/pricing';
-import { geminiProvider, type GeminiModels } from '../src/ai/providers/gemini';
+import { geminiError, geminiProvider, GEMINI_MIN_OUTPUT_TOKENS, type GeminiModels } from '../src/ai/providers/gemini';
 import { amountToMinor, replyGrounded, validateVelsRoute, VELS_ROUTE_SCHEMA, VELS_ROUTE_SYSTEM } from '../src/ai/vels-route';
 import { parseAIChatInput, aiTestEnabled, AI_CHAT_MAX_CHARS } from '../src/web/ai-chat-input';
 
@@ -47,13 +47,66 @@ describe('Gemini adapter (official SDK)', () => {
     const seen: Params[] = [];
     const r = await geminiProvider({ models: stub('{"intent":"free"}', seen) }).complete(req);
     expect(r).toMatchObject({ text: '{"intent":"free"}', usage: { input: 50, output: 10 } });
-    expect(seen[0]).toMatchObject({ model: 'gemini-3.8-flash', config: { systemInstruction: VELS_ROUTE_SYSTEM, responseMimeType: 'application/json', responseJsonSchema: VELS_ROUTE_SCHEMA, maxOutputTokens: 300 } });
+    expect(seen[0]).toMatchObject({ model: 'gemini-3.8-flash', config: { systemInstruction: VELS_ROUTE_SYSTEM, responseMimeType: 'application/json', responseJsonSchema: VELS_ROUTE_SCHEMA, maxOutputTokens: GEMINI_MIN_OUTPUT_TOKENS } });
     expect(JSON.stringify(seen[0])).not.toContain('apiKey');
   });
   it('empty answer → invalid_output (not retried); timeout → typed timeout', async () => {
     await expect(geminiProvider({ models: stub('  ') }).complete(req)).rejects.toMatchObject({ kind: 'invalid_output', retryable: false });
     const hang: GeminiModels = { generateContent: (p) => new Promise((_r, reject) => p.config!.abortSignal!.addEventListener('abort', () => reject(new Error('aborted')))) };
     await expect(geminiProvider({ models: hang }).complete({ ...req, timeoutMs: 20 })).rejects.toMatchObject({ kind: 'timeout', retryable: true });
+  });
+});
+
+describe('Gemini 3.8 compatibility (regression: Preview calls refused with 4xx before generating)', () => {
+  const base = { operation: 'assistant_answer' as const, model: 'gemini-3.8-flash', system: 's', messages: [{ role: 'user' as const, content: 'hola' }], json: true, maxOutputTokens: 300, timeoutMs: 1000 };
+  it('never sends MINIMAL thinking: off/low → LOW, high → HIGH', async () => {
+    for (const [reasoning, level] of [['off', 'LOW'], ['low', 'LOW'], ['high', 'HIGH']] as const) {
+      const seen: Params[] = [];
+      await geminiProvider({ models: stub('{"intent":"free"}', seen) }).complete({ ...base, reasoning });
+      expect(seen[0]!.config!.thinkingConfig).toEqual({ thinkingLevel: level });
+      expect(JSON.stringify(seen[0])).not.toContain('MINIMAL');
+    }
+  });
+  it('sends no temperature / topP / topK, even when the caller asks for one', async () => {
+    const seen: Params[] = [];
+    await geminiProvider({ models: stub('{"intent":"free"}', seen) }).complete({ ...base, reasoning: 'off', temperature: 0.3 });
+    expect(seen[0]!.config).not.toHaveProperty('temperature');
+    expect(seen[0]!.config).not.toHaveProperty('topP');
+    expect(seen[0]!.config).not.toHaveProperty('topK');
+  });
+  it('a short answer gets room to think and reply: the 300-token request is raised to the floor, within the config cap', async () => {
+    const seen: Params[] = [];
+    await geminiProvider({ models: stub('{"intent":"free"}', seen) }).complete({ ...base, reasoning: 'off' });
+    expect(seen[0]!.config!.maxOutputTokens).toBe(GEMINI_MIN_OUTPUT_TOKENS);
+    expect(GEMINI_MIN_OUTPUT_TOKENS).toBeLessThanOrEqual(aiConfig({}).maxOutput.assistant_answer);
+    expect(aiConfig({ AI_MAX_OUTPUT_ASSISTANT_ANSWER: '300' }).maxOutput.assistant_answer).toBe(1024);
+    // Through the door: the route asks for 300; Gemini receives the floor, never above the cap.
+    const f = fakeDb();
+    const seen2: Params[] = [];
+    await infer(f.db, { operation: 'assistant_answer', system: 's', json: false, messages: [{ role: 'user', content: 'hola' }], maxOutputTokens: 300, temperature: 0.3 },
+      undefined, aiConfig({ GEMINI_API_KEY: 'k' }), () => geminiProvider({ models: stub('Hola, soy Vels.', seen2) }));
+    expect(seen2[0]!.config!.maxOutputTokens).toBe(1024);
+  });
+  it('400 / 401 / 404 permanent, 429 rate limit (retryable), 5xx retryable; status kept, provider text dropped', () => {
+    const err = (status: number) => geminiError(Object.assign(new Error('Thinking level MINIMAL is not supported for this model: <prompt echo>'), { status }), false);
+    expect(err(400)).toMatchObject({ kind: 'http', retryable: false, status: 400 });
+    expect(err(401)).toMatchObject({ kind: 'http', retryable: false, status: 401 });
+    expect(err(404)).toMatchObject({ kind: 'http', retryable: false, status: 404 });
+    expect(err(429)).toMatchObject({ kind: 'rate_limited', retryable: true, status: 429 });
+    expect(err(500)).toMatchObject({ kind: 'http', retryable: true, status: 500 });
+    expect(err(503)).toMatchObject({ kind: 'http', retryable: true, status: 503 });
+    expect(err(400).message).not.toMatch(/MINIMAL|prompt/);
+  });
+  it('a failure logs only kind, status, model, latency and attempt (no prompt, no answer, no key)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const f = fakeDb();
+    const failing = geminiProvider({ models: stub(() => { throw Object.assign(new Error('bad request about S/ 850 saldo'), { status: 400 }); }) });
+    await infer(f.db, { operation: 'assistant_answer', system: 'SYSTEM-SECRET', json: true, messages: [{ role: 'user', content: 'ESTADO: saldo S/ 2,400' }] },
+      undefined, aiConfig({ GEMINI_API_KEY: 'key-123' }), () => failing);
+    const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
+    warn.mockRestore();
+    expect(JSON.parse(logged)).toEqual({ event: 'ai_call_failed', kind: 'http', status: 400, model: 'gemini-3.8-flash', latency_ms: expect.any(Number), attempt: 1 });
+    for (const leak of ['SYSTEM-SECRET', '2,400', '850', 'key-123', 'bad request']) expect(logged).not.toContain(leak);
   });
 });
 

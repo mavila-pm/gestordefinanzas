@@ -11,12 +11,21 @@ export interface GeminiModels {
   }>;
 }
 
-const THINKING: Record<AIRequest['reasoning'], ThinkingLevel> = { off: ThinkingLevel.MINIMAL, low: ThinkingLevel.LOW, high: ThinkingLevel.HIGH };
+/**
+ * Gemini 3.x accepts thinkingLevel LOW | MEDIUM | HIGH only (MINIMAL is refused with a 400, which is what broke the
+ * first Preview calls). "off" in our config means "as little as the model allows": LOW.
+ */
+export const THINKING: Record<AIRequest['reasoning'], ThinkingLevel> = { off: ThinkingLevel.LOW, low: ThinkingLevel.LOW, high: ThinkingLevel.HIGH };
+/**
+ * Thinking tokens count inside maxOutputTokens on Gemini 3.x: below this floor a short answer can come back empty
+ * (all budget spent thinking). Cost stays bounded by the per-operation cap in config.ts and the SQL budgets.
+ */
+export const GEMINI_MIN_OUTPUT_TOKENS = 1024;
 
 /**
  * Gemini adapter on the official SDK (@google/genai). Server only: the key comes from the caller (config.ts reads
  * GEMINI_API_KEY) and is never logged or returned. Structured output via responseJsonSchema when the request has a
- * schema. The SDK's own retries are off: lib/ai.ts decides retries (at most one, each reserved and recorded).
+ * schema. Thinking LOW at least, no sampling parameters (Gemini 3.x). The SDK's own retries are off: lib/ai.ts decides retries (at most one, each reserved and recorded).
  * Usage from usageMetadata (thinking billed as output; image tokens split out of the prompt count).
  */
 export function geminiProvider(opts: { apiKey?: string; models?: GeminiModels }): AIProvider {
@@ -39,8 +48,8 @@ export function geminiProvider(opts: { apiKey?: string; models?: GeminiModels })
           contents,
           config: {
             systemInstruction: req.system,
-            maxOutputTokens: req.maxOutputTokens,
-            temperature: req.temperature ?? 0,
+            // No temperature / topP / topK: Gemini 3.x recommends the defaults and may refuse sampling overrides.
+            maxOutputTokens: Math.max(req.maxOutputTokens, GEMINI_MIN_OUTPUT_TOKENS),
             thinkingConfig: { thinkingLevel: THINKING[req.reasoning] },
             ...(req.json ? { responseMimeType: 'application/json' } : {}),
             ...(req.schema ? { responseJsonSchema: req.schema } : {}),
@@ -67,7 +76,7 @@ export function geminiProvider(opts: { apiKey?: string; models?: GeminiModels })
 export function geminiError(e: unknown, aborted: boolean): AIProviderError {
   if (aborted || (e as Error)?.name === 'AbortError') return new AIProviderError('timeout', 'provider timeout', true);
   const status = e instanceof ApiError ? e.status : typeof (e as { status?: unknown })?.status === 'number' ? (e as { status: number }).status : null;
-  if (status === 429) return new AIProviderError('rate_limited', 'provider rate limited', true);
-  if (status !== null) return new AIProviderError('http', `provider http ${status}`, status >= 500);
+  if (status === 429) return new AIProviderError('rate_limited', 'provider rate limited', true, null, 429);
+  if (status !== null) return new AIProviderError('http', `provider http ${status}`, status >= 500, null, status);
   return new AIProviderError('http', 'provider unreachable', true);
 }

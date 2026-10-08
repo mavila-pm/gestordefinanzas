@@ -35,7 +35,7 @@ describe('provider adapters (§26, §32): usage exactly as the provider reports 
     expect(providerFor('gemini', { GEMINI_API_KEY: 'x' })?.name).toBe('gemini');
     expect(aiConfig({ AI_PROVIDER: 'fixture', AI_ALLOW_FIXTURE: '1', VERCEL_ENV: 'production' }).provider).toBe('none');
     expect(aiConfig({ AI_PROVIDER: 'fixture', AI_ALLOW_FIXTURE: '1' }).provider).toBe('fixture');
-    expect(aiConfig({ AI_MAX_OUTPUT_ASSISTANT_ANSWER: '999999' }).maxOutput.assistant_answer).toBe(300);
+    expect(aiConfig({ AI_MAX_OUTPUT_ASSISTANT_ANSWER: '999999' }).maxOutput.assistant_answer).toBe(1024);
   });
 
   it('cost estimate: cached input at the cached rate; unknown models at the cost ceiling (fail safe)', () => {

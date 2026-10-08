@@ -18,6 +18,14 @@ export type InferResult = { ok: true; text: string; usage: AIUsage; provider: st
 const RESERVE_ERRORS: readonly AIStop[] = ['ai_quota', 'camera_quota', 'ai_rate', 'ai_budget', 'too_many_images'];
 const OUTCOME: Record<string, 'error' | 'timeout' | 'invalid_output'> = { timeout: 'timeout', invalid_output: 'invalid_output' };
 
+/**
+ * Safe diagnostic for a failed call: normalized kind, HTTP status, model, latency, attempt. Never the provider's
+ * message, the prompt, the answer, account data or the key.
+ */
+export function diagnose(d: { kind: string; status: number | null; model: string; latencyMs: number; attempt: number }): void {
+  console.warn(JSON.stringify({ event: 'ai_call_failed', kind: d.kind, status: d.status, model: d.model.slice(0, 80), latency_ms: d.latencyMs, attempt: d.attempt }));
+}
+
 export async function infer(
   supabase: SupabaseClient,
   req: { operation: Operation; system: string; messages: AIMessage[]; images?: AIImage[]; json: boolean; schema?: Record<string, unknown>; temperature?: number; maxOutputTokens?: number },
@@ -55,18 +63,21 @@ export async function infer(
     try {
       const r = await provider.complete({ operation: req.operation, model, system: req.system, messages, images: req.images, json: req.json, schema: req.schema,
         // A caller may ask for less output or more variety, never more than the configured cap.
-        maxOutputTokens: Math.min(Math.max(req.maxOutputTokens ?? Infinity, 50), cfg.maxOutput[req.operation]),
+        maxOutputTokens: Math.min(req.maxOutputTokens ?? Infinity, cfg.maxOutput[req.operation]),
         temperature: Math.min(Math.max(req.temperature ?? 0, 0), 1), reasoning: cfg.reasoning, timeoutMs: cfg.timeoutMs });
       if (!validate(r.text)) {
         // A malformed answer is recorded (it cost tokens) but not retried: a retry would double the cost (§62).
         await settle(r.usage, 'invalid_output', r.latencyMs);
+        diagnose({ kind: 'invalid_output', status: null, model, latencyMs: r.latencyMs, attempt });
         return { ok: false, reason: 'failed' };
       }
       await settle(r.usage, 'ok', r.latencyMs);
       return { ok: true, text: r.text, usage: r.usage, provider: provider.name, model: r.model };
     } catch (e) {
       const err = e instanceof AIProviderError ? e : new AIProviderError('http', 'unexpected', false);
-      await settle(err.usage ?? ZERO_USAGE, OUTCOME[err.kind] ?? 'error', Date.now() - started);
+      const latencyMs = Date.now() - started;
+      await settle(err.usage ?? ZERO_USAGE, OUTCOME[err.kind] ?? 'error', latencyMs);
+      diagnose({ kind: err.kind, status: err.status, model, latencyMs, attempt });
       if (!err.retryable) break; // permanent (4xx, unsupported, empty answer): a retry would fail the same way
     }
   }

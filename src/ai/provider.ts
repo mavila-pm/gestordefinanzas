@@ -33,9 +33,11 @@ export class AIProviderError extends Error {
   readonly kind: AIFailure;
   readonly retryable: boolean;
   readonly usage: AIUsage | null;
-  constructor(kind: AIFailure, message: string, retryable = false, usage: AIUsage | null = null) {
+  /** HTTP status from the provider, when there was one (diagnostics only; never the provider's message). */
+  readonly status: number | null;
+  constructor(kind: AIFailure, message: string, retryable = false, usage: AIUsage | null = null, status: number | null = null) {
     super(message);
-    this.kind = kind; this.retryable = retryable; this.usage = usage;
+    this.kind = kind; this.retryable = retryable; this.usage = usage; this.status = status;
   }
 }
 

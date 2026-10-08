@@ -42,11 +42,12 @@ export function aiConfig(env: Env = process.env): AIConfig {
     timeoutMs: int(env.AI_TIMEOUT_MS, 15000, 1000, 60000),
     reasoning: env.AI_REASONING === 'low' || env.AI_REASONING === 'high' ? env.AI_REASONING : 'off',
     maxInputChars: int(env.AI_MAX_INPUT_CHARS, 6000, 500, 40000),
-    // Short answers are the UX and the cost control at once (§40-§41).
+    // Caps per call. On Gemini 3.x thinking counts inside them, so they leave room for LOW thinking + a short answer;
+    // the answer itself stays short through the prompts, and the SQL budgets cap the spend (§40-§45).
     maxOutput: {
-      onboarding_extract: int(env.AI_MAX_OUTPUT_ONBOARDING_EXTRACT, 500, 50, 4000),
-      assistant_answer: int(env.AI_MAX_OUTPUT_ASSISTANT_ANSWER, 300, 50, 4000),
-      vision_extract: int(env.AI_MAX_OUTPUT_VISION_EXTRACT, 400, 50, 4000),
+      onboarding_extract: int(env.AI_MAX_OUTPUT_ONBOARDING_EXTRACT, 2048, 1024, 8192),
+      assistant_answer: int(env.AI_MAX_OUTPUT_ASSISTANT_ANSWER, 1024, 1024, 8192),
+      vision_extract: int(env.AI_MAX_OUTPUT_VISION_EXTRACT, 2048, 1024, 8192),
     },
   };
 }
