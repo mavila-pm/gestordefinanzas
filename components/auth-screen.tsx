@@ -5,7 +5,7 @@ import authPhoto from '../public/auth/velsuno-acceso.webp';
 /**
  * Access screens (signup, login, recovery, registration steps).
  * Mobile/tablet: brand line, then the form (no photo). Desktop (≥ 1024 px): the photo fills the side
- * panel with the slogan over a dark gradient. Decorative only (alt=""), optimized and lazy: the form renders first.
+ * panel with a short line over a dark gradient; the slogan stays under the logo at every width. Decorative only (alt=""), optimized and lazy: the form renders first.
  */
 export function AuthScreen({ title, lead, step, children }: { title: string; lead?: string; step?: string; children: React.ReactNode }) {
   return (
@@ -14,7 +14,6 @@ export function AuthScreen({ title, lead, step, children }: { title: string; lea
         <Image src={authPhoto} alt="" fill sizes="(min-width: 1024px) 50vw, 1px" placeholder="blur" quality={70} className="auth-art-photo" />
         <div className="auth-art-shade" />
         <div className="auth-art-copy">
-          <p className="auth-slogan">Tu dinero, más claro.</p>
           <p className="auth-sub">Organiza tus gastos y entiende mejor tus finanzas.</p>
         </div>
       </aside>

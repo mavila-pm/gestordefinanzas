@@ -44,11 +44,12 @@
 | 20260929000025_plan_applications.sql | plan_applications | 2026-09-29 |
 | 20260929000026_card_statements.sql | card_statements | 2026-09-29 |
 | 20260929000027_replay_hardening.sql | replay_hardening | 2026-09-29 |
-| 20261007000028_delete_account.sql | **PENDING — PO applies it** (the MCP connector hangs on SQL containing DELETE): Supabase → SQL Editor → paste the file → Run | — |
+| 20261007000028_delete_account.sql | **WITHDRAWN** — never applied; file removed (self-service deletion out of scope, 2026-10-08) | — |
 | 20261008000029_registration.sql | registration | 2026-10-08 |
 | 20261008000030_profiles_upsert_grant.sql | profiles_upsert_grant | 2026-10-08 |
 | 20261008000031_password_step_trigger.sql | password_step_trigger | 2026-10-08 |
 | 20261008000032_plan_auto_limits.sql | plan_auto_limits | 2026-10-08 |
+| 20261008000033_login_throttle.sql | login_throttle | 2026-10-08 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

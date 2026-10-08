@@ -53,13 +53,13 @@ const SECTIONS: LegalSection[] = [
     <P>Estos proveedores tratan los datos por encargo nuestro y con medidas de seguridad. Algunos están fuera del Perú, por lo que tus datos pueden transferirse al extranjero con las garantías que exige la ley.</P>
   </> },
   { id: 'conservacion', title: 'Cuánto tiempo los conservamos', body: <>
-    <P>Mientras tengas una cuenta. Si dejas el plan Plus, no borramos tu información. Si eliminas tu cuenta desde Ajustes, borramos tus datos de nuestra base de datos; las copias de seguridad de nuestros proveedores, si existen, se eliminan en sus plazos habituales. Podemos conservar lo que la ley nos obligue a mantener.</P>
+    <P>Mientras tengas una cuenta. Si dejas el plan Plus, no borramos tu información. Si nos pides eliminar tu cuenta, borramos tus datos de nuestra base de datos; las copias de seguridad de nuestros proveedores, si existen, se eliminan en sus plazos habituales. Podemos conservar lo que la ley nos obligue a mantener.</P>
   </> },
   { id: 'seguridad', title: 'Cómo protegemos tus datos', body: <>
     <P>Conexiones cifradas, contraseñas cifradas por el proveedor de autenticación, separación estricta en la base de datos para que cada persona vea solo sus datos, acceso mínimo para nuestros sistemas, y registros de seguridad sin contraseñas ni enlaces de acceso. Ninguna medida es infalible: si ocurre un incidente que te afecte, te lo informaremos según la ley.</P>
   </> },
   { id: 'derechos', title: 'Tus derechos', body: <>
-    <P>Puedes acceder a tus datos, rectificarlos, cancelarlos (eliminarlos), oponerte a su tratamiento y revocar tu consentimiento cuando corresponda. Desde la app puedes descargar tus movimientos (Ajustes → Descargar mis movimientos), corregir tu información y eliminar tu cuenta. Para otras solicitudes, escríbenos al contacto de privacidad. Si no quedas conforme, puedes acudir a la Autoridad Nacional de Protección de Datos Personales.</P>
+    <P>Puedes acceder a tus datos, rectificarlos, cancelarlos (eliminarlos), oponerte a su tratamiento y revocar tu consentimiento cuando corresponda. Desde la app puedes descargar tus movimientos (Ajustes → Descargar mis movimientos), y corregir tu información. Para eliminar tu cuenta u otras solicitudes, escríbenos al contacto de privacidad. Si no quedas conforme, puedes acudir a la Autoridad Nacional de Protección de Datos Personales.</P>
   </> },
   { id: 'cookies', title: 'Cookies y almacenamiento en tu navegador', body: <>
     <P>Usamos solo lo necesario para que la app funcione: cookies de sesión para mantenerte conectado, una cookie temporal para completar el acceso desde un enlace de correo (dura 1 hora) y una cookie con tu preferencia de tema claro u oscuro. No usamos cookies de publicidad ni de seguimiento de terceros.</P>

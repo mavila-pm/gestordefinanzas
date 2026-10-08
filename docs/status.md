@@ -2,7 +2,7 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20261008000032` (`…028` delete_account PENDING, PO applies in SQL Editor).
+migrations applied through `20261008000033` (`…028` delete_account withdrawn: never applied, file removed; deletion only on request, by an admin).
 
 ## Checkpoint (2026-09-29)
 Last full regression: unit 302 · DB 104 · E2E 289/289 (10 suites; 1 month-end bug found and fixed, re-run 23/23) · visual 162 shots, 0 overflow, 0 UX issues · perf probe 8/8 · cleanup 0|0.
@@ -43,6 +43,7 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Statement camera read needs the AI provider (key) |
 | Plan limits in SQL (spec §81): Free capped at `free_auto_movements_per_month` automatic movements per Lima month and `free_institutions` automated bank(s), enforced inside `import_insert_transaction` via `assert_auto_allowance` (not client-callable); trial/Plus uncapped; manual never capped; Importar shows what + action (044) | VERIFIED (unit 314, DB 117, applied live: owner app_writer, no client execute) | Email Bridge write path must call the same check when it goes live; Free 3-month history not yet enforced |
 | Free history window (spec §81): Inicio, Análisis and Movimientos show the current month + `free_history_months - 1` previous (older month → first visible one, no 'Mes anterior' at the edge, list query bounded, notice with Plus link); data kept; export keeps full history; Plus/trial full (045) | VERIFIED (unit 316, E2E analysis-dashboard 35/35) | Vels and Presupuestos only read recent months (no change needed) |
+| Login: approved messages (invalid = unknown email, unconfirmed only after password match, server error), progressive lockout in SQL (033: 3 tries → 5/15/30 min, email + IP (20) hashed keys, reserved before the password check, reset on success, 24 h decay), slogan under the logo at every width, Terms · Privacy links; self-service account deletion withdrawn from scope (UI, action, unapplied 028 removed; legal text says deletion on request) (046) | VERIFIED (unit 321, DB 121 incl. 6 lockout tests with controlled clock + 10 parallel requests, E2E auth-dashboard 19/19 + registration 32/32, applied live: RLS on, anon cannot read/reset) | Direct calls to Supabase Auth bypass the app lockout: Supabase Auth rate limits (PO) |
 
 ## Blockers / decisions (external)
 - AI provider (OpenRouter integrated; Gemini/DeepSeek alternatives) + server key → `/app/prueba-ia`, then `scripts/ai-bench.ts` (synthetic data only). MVP priorities: `docs/MVP.md`.

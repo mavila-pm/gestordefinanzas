@@ -237,6 +237,8 @@ details[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
 .auth-form label, .auth-form .field > label { font-size: 14px; line-height: 20px; font-weight: 600; }
 .auth-links { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-16); font-size: 14px; }
 .auth-links a { min-height: 44px; display: inline-flex; align-items: center; }
+.auth-legal { font-size: 13px; line-height: 20px; color: var(--text-muted); }
+.auth-legal a { color: var(--text-secondary); display: inline-flex; min-height: 44px; align-items: center; }
 .password-field { position: relative; }
 .password-field input { width: 100%; padding-right: 52px; }
 .password-field .reveal { position: absolute; top: 50%; right: 2px; transform: translateY(-50%); width: 44px; height: 44px; min-height: 44px;
@@ -262,10 +264,8 @@ input.readonly { background: var(--bg-secondary); color: var(--text-secondary); 
   .auth-art-shade { position: absolute; inset: 0; z-index: -1;
     background: linear-gradient(to top, color-mix(in srgb, var(--brand-primary) 88%, transparent) 0%, color-mix(in srgb, var(--brand-primary) 55%, transparent) 38%, transparent 70%); }
   .auth-art-copy { display: grid; gap: var(--space-12); max-width: 440px; }
-  .auth-slogan { font-size: 40px; line-height: 48px; font-weight: 600; letter-spacing: -.01em; }
-  .auth-sub { font-size: 17px; line-height: 26px; color: color-mix(in srgb, var(--brand-secondary) 72%, transparent); }
+  .auth-sub { font-size: 24px; line-height: 32px; font-weight: 600; color: var(--brand-secondary); max-width: 20ch; }
   .auth-panel { align-self: center; justify-self: center; padding: var(--space-48) var(--space-32); }
-  .auth-panel > .auth-tagline { display: none; }
 }
 
 /* ── Legal pages ─────────────────────────────────────────────────────────────────────────────── */

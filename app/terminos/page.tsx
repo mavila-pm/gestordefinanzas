@@ -57,7 +57,7 @@ const SECTIONS: LegalSection[] = [
     <P>Velsuno se encuentra en etapa beta. Trabajamos para que funcione bien, pero puede tener interrupciones, errores o cambios. Podemos modificar, agregar o retirar funciones; si un cambio es importante para ti, te avisaremos con anticipación razonable.</P>
   </> },
   { id: 'terminacion', title: 'Suspensión y cierre de la cuenta', body: <>
-    <P>Puedes dejar de usar Velsuno y eliminar tu cuenta desde Ajustes en cualquier momento. Podemos suspender o cerrar una cuenta que incumpla estos Términos o que ponga en riesgo el servicio o a otras personas, informándote cuando sea posible.</P>
+    <P>Puedes dejar de usar Velsuno en cualquier momento y pedirnos que eliminemos tu cuenta escribiendo a nuestro contacto. Podemos suspender o cerrar una cuenta que incumpla estos Términos o que ponga en riesgo el servicio o a otras personas, informándote cuando sea posible.</P>
   </> },
   { id: 'responsabilidad', title: 'Limitación de responsabilidad', body: <>
     <P>En la medida permitida por la ley aplicable, Velsuno no responde por decisiones tomadas con base en información incompleta o incorrecta proporcionada por ti o por terceros, ni por daños indirectos derivados del uso del servicio. Nada de lo indicado limita los derechos que la ley de protección al consumidor u otras normas te reconocen y que no pueden excluirse.</P>

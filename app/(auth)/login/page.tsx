@@ -25,6 +25,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         ]}
       />
       <p className="auth-links"><Link href="/forgot-password">¿Olvidaste tu contraseña?</Link><Link href="/signup">Crear cuenta</Link></p>
+      <p className="auth-legal"><Link href="/terminos">Términos y condiciones</Link><span aria-hidden="true"> · </span><Link href="/privacidad">Política de privacidad</Link></p>
     </AuthScreen>
   );
 }

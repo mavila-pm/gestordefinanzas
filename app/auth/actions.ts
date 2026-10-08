@@ -1,12 +1,13 @@
 'use server';
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { authCallbackUrl } from '../../lib/env';
 import { authUser, createSupabaseServerClient } from '../../lib/supabase/server';
 import { AUTH_NEXT_COOKIE, authNextCookieOptions, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
 import { PRIVACY_VERSION, TERMS_VERSION } from '../../src/web/legal';
 import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError } from '../../src/web/password-reset';
+import { clientIp, LOGIN_INVALID, LOGIN_SERVER, lockoutMessage, loginOutcome } from '../../src/web/login';
 
 /** Remembers where the email link should land (the callback URL itself stays query-free). */
 async function rememberAuthNext(path: '/crear-cuenta' | '/reset-password') {
@@ -20,16 +21,28 @@ export interface FormState {
   sent?: true;
 }
 
-// Messages never reveal whether an account exists (anti-enumeration, §86).
-const GENERIC_LOGIN_ERROR = 'Correo o contraseña incorrectos, o cuenta sin confirmar.';
-
 export async function login(_prev: FormState, form: FormData): Promise<FormState> {
   const email = parseEmail(form.get('email'));
   const password = form.get('password');
-  if (!email || typeof password !== 'string' || !password) return { error: GENERIC_LOGIN_ERROR };
+  if (!email || typeof password !== 'string' || !password) return { error: LOGIN_INVALID };
   const supabase = await createSupabaseServerClient();
+  const ip = clientIp(await headers());
+  // Progressive lockout (migration 033): the attempt is reserved in the database before the password is checked.
+  const { data: gate, error: gateError } = await supabase.rpc('login_attempt', { p_email: email, p_ip: ip });
+  const g = Array.isArray(gate) ? gate[0] : null;
+  if (gateError || !g) {
+    console.warn(JSON.stringify({ event: 'login_gate_failed', code: gateError?.code ?? null }));
+    return { error: LOGIN_SERVER };
+  }
+  if (!g.allowed) return { error: lockoutMessage(g.wait_seconds) };
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: error.status === 429 ? 'Demasiados intentos. Espera unos minutos.' : GENERIC_LOGIN_ERROR };
+  if (error) {
+    const outcome = loginOutcome(error, g.wait_seconds);
+    if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
+    return { error: outcome.message };
+  }
+  const { error: resetError } = await supabase.rpc('login_succeeded', { p_ip: ip });
+  if (resetError) console.warn(JSON.stringify({ event: 'login_reset_failed', code: resetError.code ?? null }));
   redirect(safeNextPath(form.get('next')));
 }
 
@@ -112,23 +125,4 @@ export async function logout(): Promise<void> {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
   redirect('/login');
-}
-
-/**
- * "Eliminar mi cuenta" (privacy policy, MVP P1): the SQL function deletes only the signed-in person (auth.uid()) and
- * every row of theirs cascades. Typed confirmation on both sides. Then the local session is cleared (no network call:
- * the user no longer exists) and the person lands on the home page.
- */
-export async function deleteAccount(_prev: FormState, form: FormData): Promise<FormState> {
-  if (String(form.get('confirm') ?? '').trim() !== 'ELIMINAR') return { error: 'Escribe ELIMINAR, en mayúsculas, para confirmar.' };
-  const supabase = await createSupabaseServerClient();
-  if (!(await authUser(supabase))) redirect('/login');
-  const { error } = await supabase.rpc('delete_my_account', { p_confirm: 'ELIMINAR' });
-  if (error) {
-    console.warn(JSON.stringify({ event: 'account_delete_failed', code: error.code ?? null }));
-    return { error: 'No pudimos eliminar tu cuenta. Intenta de nuevo en unos minutos.' };
-  }
-  console.info(JSON.stringify({ event: 'account_deleted' })); // anonymous trace only: no id, no email
-  await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
-  redirect('/?cuenta=eliminada');
 }

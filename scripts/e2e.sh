@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account splits cashflow onboarding income-link vels account-delete registration)
+ALL=(auth-dashboard review-manual import-learning analysis-dashboard planning-account splits cashflow onboarding income-link vels registration)
 PORT="${E2E_PORT:-3000}"
 BASE="http://localhost:${PORT}"
 STATE=.e2e
@@ -29,7 +29,7 @@ p = pathlib.Path(".e2e/runs.json"); runs = json.loads(p.read_text()) if p.exists
 runs.update({t: run for t in tags}); p.write_text(json.dumps(runs, indent=1, sort_keys=True))
 PY
 }
-ALL_TAGS=(s3a s3b s4a s4b s56a s56b s78a s78b s9a s9b s10a s10b s11a s11b s12a s12b s13a s13b s14a s14b s15a s15b s16a s16b)
+ALL_TAGS=(s3a s3b s4a s4b s56a s56b s78a s78b s9a s9b s10a s10b s11a s11b s12a s12b s13a s13b s14a s14b s16a s16b)
 if [[ "${1:-}" == "render-seed" ]]; then
   shift; run="$(new_run)"
   if (($#)); then render_seed "$run" | python3 scripts/qa/seed-subset.py "$@"; record_run "$run" "$@"

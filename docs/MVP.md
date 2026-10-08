@@ -60,14 +60,10 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Falta: clave en Preview, prueba en `/app/prueba-ia`, `scripts/ai-bench.ts` con datos sintéticos, decidir proveedor y retención de datos.
   - Depende de: PO (clave, privacidad). Riesgo: bajo (la app funciona sin IA; respuestas deterministas cuestan 0).
   - Terminado cuando: benchmark registrado en `docs/ai/provider-evaluation.md` y `AI_PROVIDER` decidido para Preview/Production.
-- [ ] **P1 — Eliminar mi cuenta / exportar mis datos**
-  - Hecho (2026-10-07): `public.delete_my_account('ELIMINAR')` (solo `auth.uid()`, cascada en todas las tablas; test DB A/B
-    `tests/db/delete-account.test.ts` 2/2), acción `deleteAccount` + hoja en Ajustes, aviso en `/`, suite E2E `account-delete` (s15*).
-  - Falta: **el PO aplica `supabase/migrations/20261007000028_delete_account.sql` en el SQL Editor** (el conector no ejecuta SQL
-    con DELETE); luego correr `scripts/e2e.sh account-delete` con un seed nuevo. Hasta entonces la UI responde "No pudimos eliminar tu cuenta".
-  - Notas de seguridad (revisión independiente, no bloqueantes): otra sesión abierta queda vacía hasta que expire su token (≤ 1 h);
-    el historial de auditoría se va con la cuenta (solo queda un log anónimo `account_deleted`).
-  - Riesgo: medio. Terminado cuando: el usuario borra su cuenta y un test DB prueba que no quedan filas suyas y las de otros siguen intactas.
+- [x] **P1 — Exportar mis datos** (Movimientos → Exportar CSV, historial completo).
+  - Autoeliminación de cuenta **retirada del alcance** por decisión del PO (2026-10-08): sin botón, acción ni RPC; la migración 028
+    nunca se aplicó y se eliminó. Las solicitudes de supresión (Ley 29733) se atienden por el contacto de privacidad y un
+    administrador desde Supabase (Auth → Users), con borrado en cascada.
 - [ ] **P1 — Adaptador BBVA (+ scaffold Interbank)**
   - Estado: no existe (spec §51 los lista en la beta crítica).
   - Falta: `src/ingestion/adapters/bbva/` con fixtures sintéticas versionadas y registro en `adapter-registry.ts`; Interbank solo scaffold.
