@@ -26,9 +26,3 @@ export function loginOutcome(error: { status?: number; code?: string }, lockSeco
   }
   return { message: LOGIN_SERVER, diagnostic: { event: 'login_failed', status, code } };
 }
-
-/** Client IP as set by the hosting proxy (Vercel: x-real-ip / first x-forwarded-for); null if missing or malformed. */
-export function clientIp(h: { get(name: string): string | null }): string | null {
-  const raw = (h.get('x-real-ip') ?? h.get('x-forwarded-for')?.split(',')[0] ?? '').trim();
-  return /^[0-9a-fA-F:.]{2,64}$/.test(raw) ? raw : null;
-}

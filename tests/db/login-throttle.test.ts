@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import { asRole, DATABASE_URL, errorCode, makePool, USER_A } from './helpers';
 
-/** Login lockout (migration 033): 3 tries → 5 / 15 / 30 min, committed state, parallel-safe, reset on success. */
+/** Login lockout (migrations 033–035): 3 tries per email → 5 / 15 / 30 min, committed state, parallel-safe, reset on success. */
 describe.skipIf(!DATABASE_URL)('login throttle', () => {
   let pool: pg.Pool;
   beforeAll(() => { pool = makePool(); });
@@ -57,13 +57,20 @@ describe.skipIf(!DATABASE_URL)('login throttle', () => {
     expect(results.filter((r) => r.allowed)).toHaveLength(3);
   });
 
-  it('one IP trying many emails is stopped after 20 tries; unknown and known emails count the same', async () => {
-    for (let i = 0; i < 20; i++) expect((await attempt(`x${i}@test.local`, '181.0.0.9')).allowed).toBe(true);
-    expect((await attempt('ana@test.local', '181.0.0.9')).allowed).toBe(false);
-    expect((await attempt('ana@test.local', '181.0.0.10')).allowed).toBe(true);
+  it('a caller-supplied IP is ignored: nobody can lock a shared IP (security review of 033)', async () => {
+    for (let i = 0; i < 30; i++) expect((await attempt(`x${i}@test.local`, '181.0.0.9')).allowed).toBe(true);
+    expect((await attempt('ana@test.local', '181.0.0.9')).allowed).toBe(true);
   });
 
-  it('a successful sign-in resets the person and the IP; only the signed-in person, never another email', async () => {
+  it('old idle rows are purged; active counters and locks are kept (035)', async () => {
+    await attempt('viejo@test.local'); for (let i = 0; i < 3; i++) await attempt('bloqueado@test.local');
+    await pool.query(`update public.login_throttle set updated_at = now() - interval '25 hours'`);
+    await attempt('nuevo@test.local');
+    await pool.query('select public.login_throttle_purge_now()');
+    expect((await pool.query('select count(*)::int n from public.login_throttle')).rows[0].n).toBe(2); // locked + new
+  });
+
+  it('a successful sign-in resets only the signed-in person, never another email', async () => {
     await attempt(); await attempt(); await attempt('bob@test.local'); await attempt('bob@test.local');
     await asRole(pool, 'authenticated', USER_A, async (c) => {
       await c.query('select public.login_succeeded($1)', ['190.0.0.1']);
@@ -71,7 +78,7 @@ describe.skipIf(!DATABASE_URL)('login throttle', () => {
     });
     const rows = (await pool.query('select attempts, stage, locked_until from public.login_throttle order by attempts desc')).rows;
     expect(rows[0]).toMatchObject({ attempts: 2 }); // bob's email key keeps its count
-    expect(rows.filter((r) => r.attempts === 0 && r.stage === 0 && r.locked_until === null)).toHaveLength(2);
+    expect(rows.filter((r) => r.attempts === 0 && r.stage === 0 && r.locked_until === null)).toHaveLength(1);
     // After 24 h without attempts a key starts again from the first step.
     for (let i = 0; i < 3; i++) await attempt('carla@test.local', null);
     await expireLocks();

@@ -1,13 +1,13 @@
 'use server';
 
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { authCallbackUrl } from '../../lib/env';
 import { authUser, createSupabaseServerClient } from '../../lib/supabase/server';
 import { AUTH_NEXT_COOKIE, authNextCookieOptions, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
 import { PRIVACY_VERSION, TERMS_VERSION } from '../../src/web/legal';
 import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError } from '../../src/web/password-reset';
-import { clientIp, LOGIN_INVALID, LOGIN_SERVER, lockoutMessage, loginOutcome } from '../../src/web/login';
+import { LOGIN_INVALID, LOGIN_SERVER, lockoutMessage, loginOutcome } from '../../src/web/login';
 
 /** Remembers where the email link should land (the callback URL itself stays query-free). */
 async function rememberAuthNext(path: '/crear-cuenta' | '/reset-password') {
@@ -26,9 +26,9 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
   const password = form.get('password');
   if (!email || typeof password !== 'string' || !password) return { error: LOGIN_INVALID };
   const supabase = await createSupabaseServerClient();
-  const ip = clientIp(await headers());
-  // Progressive lockout (migration 033): the attempt is reserved in the database before the password is checked.
-  const { data: gate, error: gateError } = await supabase.rpc('login_attempt', { p_email: email, p_ip: ip });
+  // Progressive lockout (migrations 033/034): reserved in the database before the password is checked, keyed on the email.
+  // No IP: this RPC is public, so a caller-supplied IP could lock a shared carrier IP for everyone behind it.
+  const { data: gate, error: gateError } = await supabase.rpc('login_attempt', { p_email: email, p_ip: null });
   const g = Array.isArray(gate) ? gate[0] : null;
   if (gateError || !g) {
     console.warn(JSON.stringify({ event: 'login_gate_failed', code: gateError?.code ?? null }));
@@ -41,7 +41,7 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
     if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
     return { error: outcome.message };
   }
-  const { error: resetError } = await supabase.rpc('login_succeeded', { p_ip: ip });
+  const { error: resetError } = await supabase.rpc('login_succeeded', { p_ip: null });
   if (resetError) console.warn(JSON.stringify({ event: 'login_reset_failed', code: resetError.code ?? null }));
   redirect(safeNextPath(form.get('next')));
 }

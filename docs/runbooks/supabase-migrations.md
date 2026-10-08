@@ -50,6 +50,8 @@
 | 20261008000031_password_step_trigger.sql | password_step_trigger | 2026-10-08 |
 | 20261008000032_plan_auto_limits.sql | plan_auto_limits | 2026-10-08 |
 | 20261008000033_login_throttle.sql | login_throttle | 2026-10-08 |
+| 20261008000034_login_throttle_email_only.sql | login_throttle_email_only | 2026-10-08 |
+| 20261008000035_login_throttle_purge.sql | **PENDING — PO applies it** (contains DELETE): Supabase → SQL Editor → paste the file → Run | — |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
