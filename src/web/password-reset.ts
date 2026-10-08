@@ -59,6 +59,7 @@ export function newPasswordError(error: { status?: number; code?: string }): str
 export function registrationError(message: string | undefined): string {
   if (!message) return 'No pudimos guardar tus datos. Intenta de nuevo.';
   if (message.includes('under_age')) return 'Velsuno es para personas mayores de 18 años.';
+  if (message.includes('phone_taken')) return 'Ese número ya está registrado en otra cuenta. Usa otro número o entra con esa cuenta.';
   if (message.includes('invalid_phone')) return 'Escribe tu celular de 9 dígitos. Empieza con 9.';
   if (message.includes('invalid_birth_date')) return 'Revisa tu fecha de nacimiento.';
   if (message.includes('invalid_name')) return 'Revisa tu nombre y apellidos.';

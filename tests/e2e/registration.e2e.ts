@@ -9,6 +9,9 @@ import { ALERT, BASE, act, apiAs, login, probe, runSuite } from './lib.ts';
 const A = probe('s16a');
 const B = probe('s16b');
 const NEW_PW = `nueva clave ${Date.now().toString(36)} 2026`;
+// One number per account (migration 037): each run registers a fresh mobile; 987654321 is already taken by earlier runs.
+const PHONE = `9${String(Date.now()).slice(-8)}`;
+const TAKEN = '987654321';
 
 await runSuite('registration', async ({ page, check }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -104,7 +107,12 @@ await runSuite('registration', async ({ page, check }) => {
   await page.evaluate(() => { (document.querySelector('input[name=phone]') as HTMLInputElement).value = '+34612345678'; });
   await submit();
   check('foreign / tampered phone → refused by the server', (await alertText()).includes('9 dígitos'), await alertText());
-  await page.fill('input[name=phone]', '987654321');
+  await page.fill('input[name=phone]', TAKEN);
+  await page.fill('input[name=birthDate]', iso(lima.getUTCFullYear() - 30, 4, 20));
+  await page.check('input[name=accept]');
+  await submit();
+  check('a number already used by another account is refused', (await alertText()).includes('ya está registrado en otra cuenta'), await alertText());
+  await page.fill('input[name=phone]', PHONE);
   await page.fill('input[name=birthDate]', iso(lima.getUTCFullYear() - 30, 4, 20));
   await page.check('input[name=accept]');
   await Promise.all([page.waitForURL(/\/bienvenida/, { timeout: 20000 }).catch(() => undefined), page.click('main button[type=submit]')]);
@@ -114,7 +122,7 @@ await runSuite('registration', async ({ page, check }) => {
   const sa = await apiAs(A, NEW_PW);
   const prof = (await sa.from('profiles').select('given_names, family_names, display_name, phone_e164, birth_date, registration_completed_at').single()).data;
   const acc = (await sa.from('legal_acceptances').select('kind, version')).data ?? [];
-  check('profile saved (E.164, display name from first given name, completed)', prof?.phone_e164 === '+51987654321' && prof?.display_name === 'Diego' && !!prof?.registration_completed_at, JSON.stringify(prof));
+  check('profile saved (E.164, display name from first given name, completed)', prof?.phone_e164 === `+51${PHONE}` && prof?.display_name === 'Diego' && !!prof?.registration_completed_at, JSON.stringify(prof));
   check('Terms + Privacy acceptance recorded with version', acc.length === 2 && acc.every((x) => x.version === '2026-10-08'), JSON.stringify(acc));
   const tamper = await sa.from('profiles').update({ birth_date: '2015-01-01' }).eq('display_name', 'Diego').select();
   check('client cannot rewrite the birth date', !!tamper.error, JSON.stringify(tamper.error?.code));

@@ -53,6 +53,7 @@
 | 20261008000034_login_throttle_email_only.sql | login_throttle_email_only | 2026-10-08 |
 | 20261008000035_login_throttle_purge.sql | **PENDING — PO applies it** (contains DELETE): Supabase → SQL Editor → paste the file → Run | — |
 | 20261008000036_registration_peru_phone.sql | registration_peru_phone | 2026-10-08 |
+| 20261008000037_unique_phone.sql | unique_phone (one number per account for every new write; trigger + advisory lock; function not callable by anon/authenticated; existing duplicates untouched) | 2026-10-08 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

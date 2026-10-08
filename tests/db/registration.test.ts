@@ -57,6 +57,41 @@ describe.skipIf(!DATABASE_URL)('registration', () => {
     });
   });
 
+  /** Like asRole, but COMMITS (the uniqueness rule is about other people's committed rows). */
+  const committed = async <T>(user: string, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> => {
+    const c = await pool.connect();
+    try {
+      await c.query('begin');
+      await c.query('set local role authenticated');
+      await c.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: user, role: 'authenticated' })]);
+      const r = await fn(c);
+      await c.query('commit');
+      return r;
+    } catch (e) { await c.query('rollback'); throw e; } finally { c.release(); }
+  };
+
+  it('one number per account (037): a number already used by another profile is refused; keeping your own is fine', async () => {
+    await committed(USER_A, async (c) => { await setPassword(USER_A, c); await c.query(complete(await lima(c, 30))); });
+    await committed(USER_B, async (c) => {
+      await setPassword(USER_B, c);
+      expect(await errorCode(c, complete(await lima(c, 30)))).toBe('23505'); // same +51987654321 as A
+      expect((await c.query('select count(*)::int n from public.legal_acceptances')).rows[0].n).toBe(0); // nothing half-saved
+      expect(await errorCode(c, complete(await lima(c, 30), '2026-10-08', '2026-10-08', '+51912345678'))).toBeNull();
+    });
+    // A completes again with the same number (idempotent re-submit): allowed.
+    await committed(USER_A, async (c) => { expect(await errorCode(c, complete(await lima(c, 30)))).toBeNull(); });
+    // Any other write path (owner, bypassing the function) is refused too.
+    expect(await pool.query(`update public.profiles set phone_e164 = '+51912345678' where user_id = $1`, [USER_A]).then(() => null, (e: { code: string }) => e.code)).toBe('23505');
+    expect((await pool.query(`select count(*)::int n from public.profiles where phone_e164 = '+51912345678'`)).rows[0].n).toBe(1);
+  });
+
+  it('concurrent registrations with the same number: exactly one wins', async () => {
+    const run = (user: string) => committed(user, async (c) => { await setPassword(user, c); return errorCode(c, complete(await lima(c, 30), '2026-10-08', '2026-10-08', '+51955555555')); });
+    const codes = await Promise.all([run(USER_A), run(USER_B)]);
+    expect(codes.filter((x) => x === null)).toHaveLength(1);
+    expect(codes.filter((x) => x === '23505')).toHaveLength(1);
+  });
+
   it('the client cannot mark steps itself, write consents, or see another person', async () => {
     await asRole(pool, 'authenticated', USER_A, async (c) => {
       await setPassword(USER_A, c);

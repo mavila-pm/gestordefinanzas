@@ -116,6 +116,7 @@ describe('signup (email only): same answer for new and registered addresses; err
     expect(newPasswordError({ status: 422, code: 'weak_password' })).toMatch(/fácil de adivinar/);
     expect(newPasswordError({ status: 401 })).toMatch(/enlace venció/);
     expect(registrationError('under_age')).toBe('Velsuno es para personas mayores de 18 años.');
+    expect(registrationError('phone_taken')).toBe('Ese número ya está registrado en otra cuenta. Usa otro número o entra con esa cuenta.');
     expect(registrationError('duplicate key value violates something internal')).toBe('No pudimos guardar tus datos. Intenta de nuevo.');
   });
 });
