@@ -98,10 +98,10 @@ await runSuite('onboarding', async ({ page, check }) => {
   await page.goto(`${BASE}/app/preguntar`);
   await send(page, '¿Cuánto tengo libre?');
   v = await lastVelsuno(page);
-  check('asks for the missing balance instead of guessing', v.includes('necesito'), v);
+  check('asks only for the missing balance, in plain words', v === 'Claro. Primero dime cuánto tienes hoy disponible en tu cuenta.', v);
   await send(page, '3,000');
   v = await lastVelsuno(page);
-  check('balance answer is saved and free money recalculated deterministically', v.includes('Saldo guardado') && /libres|Te faltan/.test(v), v);
+  check('balance answer is saved and free money recalculated deterministically', v.startsWith('Entendido: tienes S/ 3,000 disponibles.') && /libres|Te faltan/.test(v), v);
   await send(page, '¿Puedo gastar S/ 100?');
   v = await lastVelsuno(page);
   check('"¿puedo gastar?" answered by the planner', /^(Sí\.|No te alcanza)/.test(v), v);

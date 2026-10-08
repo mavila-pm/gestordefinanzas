@@ -3,7 +3,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { answer, compactView, detectIntent, velsSuggestions, type Answer, type View } from '../src/ai/assistant';
 import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
-import { findAmounts, fold } from '../src/ai/text';
+import { fold } from '../src/ai/text';
+import { ask, asDraft, asResume, COLLECT_PENDING, gapFor, readReply, saidBalance, saidIncome, type CollectPending, type Draft, type Resume } from '../src/ai/vels-collect';
+import { interpret } from '../src/ai/interpreter';
 import { money } from '../src/ai/draft';
 import { validateVelsRoute, VELS_ROUTE_SCHEMA, VELS_ROUTE_SYSTEM } from '../src/ai/vels-route';
 import { sanitizeUserText } from '../src/ai/sanitize';
@@ -83,19 +85,17 @@ export async function assistantTurn(supabase: SupabaseClient, userId: string, ra
   const history = loaded.at(-1)?.role === 'user' && loaded.at(-1)?.body === text ? loaded.slice(0, -1) : loaded;
   const last = [...history].reverse().find((m) => m.role === 'velsuno');
 
-  // A bare amount answers the pending question (e.g. "¿Cuánto tienes ahora?" → "3,200"): deterministic write.
-  const amount = findAmounts(fold(text))[0];
-  if (last?.card?.pending === 'balance' && amount) {
-    const { error } = await supabase.from('balance_snapshots').insert({ user_id: userId, currency: amount.currency ?? 'PEN', amount_minor: amount.minor });
-    if (error) { await say(supabase, userId, 'velsuno', 'No pude guardar tu saldo. Intenta de nuevo.'); return; }
-    const a = answer({ k: 'free' }, await view(supabase))!;
-    await say(supabase, userId, 'velsuno', `Saldo guardado. ${a.text}`, toCard(a));
-    await prune(supabase);
-    return;
-  }
+  // The answer to Vels's last question (balance, next income…): read deterministically, stored, then the next step.
+  const pending = last?.card?.pending as CollectPending | undefined;
+  if (pending && COLLECT_PENDING.includes(pending) && await collectTurn(supabase, userId, text, pending, last!.card!, v)) { await prune(supabase); return; }
+  // Volunteered income while none is registered ("me pagan 4500 el 15"): same path, no question needed first.
+  if (!pending && gapFor(v, null) === 'income' && detectIntent(text).k === 'unknown' && interpret(text).patches.some((p) => p.t === 'income')
+    && await collectTurn(supabase, userId, text, 'income', {}, v)) { await prune(supabase); return; }
   if (isSmallTalk(text)) { await say(supabase, userId, 'velsuno', '¿Algo más en lo que te ayude?'); return; }
 
-  const a = answer(detectIntent(text), v);
+  const intent = detectIntent(text);
+  if (await askIfMissing(supabase, userId, intent, v)) { await prune(supabase); return; }
+  const a = answer(intent, v);
   if (a) { await say(supabase, userId, 'velsuno', a.text, toCard(a)); await prune(supabase); return; }
 
   // Not recognised locally → Gemini interprets (structured, validated) → the engine answers. The model never computes money.
@@ -104,6 +104,7 @@ export async function assistantTurn(supabase: SupabaseClient, userId: string, ra
   const r = await infer(supabase, { operation: 'assistant_answer', system: VELS_ROUTE_SYSTEM, json: true, schema: VELS_ROUTE_SCHEMA,
     messages: [...recent, { role: 'user', content: `ESTADO:\n${ctx.state}\n\nPREGUNTA:\n${text}` }] }, (t) => validateVelsRoute(t, ctx) !== null);
   const route = r.ok ? validateVelsRoute(r.text, ctx) : null;
+  if (route?.kind === 'intent' && await askIfMissing(supabase, userId, route.intent, v)) { await prune(supabase); return; }
   const routed = route?.kind === 'intent' ? answer(route.intent, v) : null;
   if (routed) await say(supabase, userId, 'velsuno', routed.text, toCard(routed));
   else if (route?.kind === 'reply') await say(supabase, userId, 'velsuno', route.text.slice(0, 600));
@@ -114,6 +115,68 @@ export async function assistantTurn(supabase: SupabaseClient, userId: string, ra
     await say(supabase, userId, 'velsuno', r.reason === 'failed' ? `No pude entender eso ahora. ${FALLBACK}` : `Todavía no sé responder eso. ${FALLBACK}`, { replies: FALLBACK_REPLIES });
   } else await say(supabase, userId, 'velsuno', STOP_TEXT[r.reason], { stop: true });
   await prune(supabase);
+}
+
+/** A money question without today's balance or the next income: ask for the first missing fact, nothing else. */
+async function askIfMissing(supabase: SupabaseClient, userId: string, intent: unknown, v: View): Promise<boolean> {
+  const resume = asResume(intent);
+  const gap = resume ? gapFor(v, resume) : null;
+  if (!resume || !gap) return false;
+  const q = ask(gap, resume, true);
+  await say(supabase, userId, 'velsuno', q.text, { pending: q.pending, resume });
+  return true;
+}
+
+const usesUsd = (v: View) => v.plans.some((p) => p.currency === 'USD' && (p.base || p.lines.length)) || v.debts.some((d) => d.currency === 'USD') || v.obligations.some((o) => o.currency === 'USD');
+
+/**
+ * One step of the progressive conversation: read the reply, store what it says through the usual tables (a snapshot
+ * for the balance, an expected income with a one-time client_ref), then ask the next missing fact or let the engine
+ * answer the question that started it. Never overwrites an income that exists. Returns false to let the normal
+ * flow handle a message that is really a new question.
+ */
+async function collectTurn(supabase: SupabaseClient, userId: string, text: string, pending: CollectPending, card: MessageCard, v: View): Promise<boolean> {
+  // A new question ("¿me alcanza para 300?") is never read as the answer, even if it carries a number.
+  if (detectIntent(text).k !== 'unknown') return false;
+  const resume: Resume | null = asResume(card.resume);
+  const r = readReply(pending, asDraft(card.draft), text, v.today, usesUsd(v));
+  if (r.kind === 'none') {
+    const again = pending === 'balance' || pending === 'currency' ? 'No alcancé a leer el monto. ¿Cuánto tienes disponible hoy? Un aproximado me sirve.'
+      : '¿Qué día recibes tu próximo ingreso y de cuánto será? Por ejemplo: "el 15, 4500".';
+    await say(supabase, userId, 'velsuno', again, { pending, resume, draft: card.draft as Draft });
+    return true;
+  }
+  if (r.kind === 'ask') { await say(supabase, userId, 'velsuno', r.text, { pending: r.pending, resume, draft: r.draft, ...(r.replies ? { replies: r.replies } : {}) }); return true; }
+  let said = '';
+  if (r.kind === 'balance') {
+    const { error } = await supabase.from('balance_snapshots').insert({ user_id: userId, currency: r.currency, amount_minor: r.minor });
+    if (error) { await say(supabase, userId, 'velsuno', 'No pude guardar tu saldo. Intenta de nuevo.', { pending: 'balance', resume }); return true; }
+    said = saidBalance(r.minor, r.currency);
+  } else {
+    const i = r.income;
+    // An income that already exists is never replaced from the chat (ask, don't overwrite).
+    const plan = v.plans.find((p) => p.currency === i.currency);
+    if (plan?.nextIncome) {
+      await say(supabase, userId, 'velsuno', `Ya tengo un ingreso el ${Number(plan.nextIncome.date.slice(8))}. Si cambió, edítalo en Dinero libre para no duplicarlo.`, { links: [{ label: 'Ver Dinero libre', href: '/app/plan' }] });
+      return true;
+    }
+    const { error } = await supabase.from('expected_incomes').insert({
+      user_id: userId, name: 'Ingreso', currency: i.currency, amount_minor: i.amountMinor,
+      amount_status: i.amountMinor === null ? 'unknown' : i.approx ? 'estimated' : 'confirmed',
+      frequency: i.secondDay ? 'semimonthly' : 'monthly', day_of_month: i.day, second_day: i.secondDay, client_ref: `vels:${crypto.randomUUID()}`,
+    });
+    if (error) { await say(supabase, userId, 'velsuno', 'No pude guardar tu ingreso. Intenta de nuevo.', { pending: 'income', resume }); return true; }
+    await logLearning(supabase, userId, 'income', 'accepted', null, { source: 'vels', day: i.day, currency: i.currency });
+    said = saidIncome(i);
+  }
+  const v2 = await view(supabase);
+  const next = resume ?? { k: 'free' as const };
+  const gap = gapFor(v2, next);
+  if (gap) { const q = ask(gap, next, false, said); await say(supabase, userId, 'velsuno', q.text, { pending: q.pending, resume: next }); return true; }
+  // Everything the question needs is stored: the engine answers.
+  const a = answer(next, v2)!;
+  await say(supabase, userId, 'velsuno', `${said} ${a.text}`, toCard(a));
+  return true;
 }
 
 /** Buttons in assistant answers: deterministic domain writes, never inference (§55). */

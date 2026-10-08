@@ -18,8 +18,12 @@ export interface MessageCard {
   vision?: Patch[];
   /** Idempotency fingerprint of the photos read (never the image itself); server-side only. */
   readKey?: string;
-  /** Assistant: a bare value in the next message answers this. */
-  pending?: 'balance' | 'income_amount';
+  /** Assistant: what the next message answers (src/ai/vels-collect.ts); re-validated on read, rows are client-insertable. */
+  pending?: 'balance' | 'currency' | 'income' | 'income_date' | 'income_amount' | 'income_days';
+  /** Assistant: the question to answer once the pending facts are in (validated by asResume). */
+  resume?: unknown;
+  /** Assistant: what the person already said in this exchange (validated by asDraft). */
+  draft?: unknown;
   stop?: boolean;
 }
 export interface ChatMessage { id: string; role: 'user' | 'velsuno'; body: string; card: MessageCard | null }

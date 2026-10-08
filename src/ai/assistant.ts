@@ -85,7 +85,7 @@ export type Action =
   | { type: 'link'; label: string; href: string }
   | { type: 'act'; label: string; act: AssistantAct; fields: Record<string, string> }
   | { type: 'reply'; label: string };
-export interface Answer { title?: string; text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' | 'income_amount' }
+export interface Answer { title?: string; text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' }
 
 const dm = (d: string) => `${Number(d.slice(8, 10))} ${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'][Number(d.slice(5, 7)) - 1]}`;
 const primary = (v: View) => v.plans.find((p) => p.base) ?? v.plans[0] ?? null;
@@ -184,7 +184,7 @@ export function answer(intent: Intent, v: View): Answer | null {
           actions: [{ type: 'act', label: 'Sí, es ese', act: 'link_income', fields: { incomeId: m.incomeId, transactionId: m.transactionId, period: m.period } }, PLAN_LINK],
         };
       }
-      return { text: '¡Bien! ¿Cuánto tienes ahora en tu cuenta? Con eso recalculo lo que tienes libre.', pending: 'balance' };
+      return { text: 'Qué bien. ¿Cuánto tienes ahora disponible? Con eso recalculo lo que tienes libre.', pending: 'balance' };
     }
     case 'income_changed':
       return { text: 'Lo actualizo desde Dinero libre para que no cambie un ingreso por error.', actions: [{ type: 'link', label: 'Editar ingreso', href: '/app/plan' }] };
@@ -206,7 +206,7 @@ export function answer(intent: Intent, v: View): Answer | null {
       const want = intent.target === 'deuda' ? null : intent.target;
       const debt = debts.find((d) => want && fold(d.name).includes(want)) ?? (debts.length === 1 ? debts[0] : want === 'tarjeta' || want === 'visa' ? debts.find((d) => d.obligationId) : undefined);
       if (!debt) return { text: debts.length ? `¿A cuál? ${debts.map((d) => d.name).join(', ')}.` : 'No tengo deudas registradas.', actions: [{ type: 'link', label: 'Ver deudas', href: '/app/compromisos' }] };
-      if (!input?.base) return { text: 'Me falta tu saldo de hoy para simularlo.', pending: 'balance' };
+      if (!input?.base) return { text: 'Para simularlo necesito saber cuánto tienes disponible hoy. ¿Cuánto es?', pending: 'balance' };
       const r = payDebt(input, debt, intent.amountMinor)!;
       const d = r.debt!;
       return { text: `Si pagas ${money(Math.min(intent.amountMinor, d.balanceBeforeMinor), 'PEN')} a ${debt.name}: ${freeText(r)}`,
@@ -216,9 +216,9 @@ export function answer(intent: Intent, v: View): Answer | null {
     case 'what_delay': {
       const input = v.inputs?.PEN;
       if (intent.days === null) return { text: '¿Cuántos días se retrasaría?', actions: [{ type: 'reply', label: 'Retraso de 3 días' }, { type: 'reply', label: 'Retraso de 7 días' }, { type: 'reply', label: 'Retraso de 15 días' }] };
-      if (!input?.base) return { text: 'Me falta tu saldo de hoy para simularlo.', pending: 'balance' };
+      if (!input?.base) return { text: 'Para simularlo necesito saber cuánto tienes disponible hoy. ¿Cuánto es?', pending: 'balance' };
       const r = delayIncome(input, intent.days);
-      if (!r || r.until === null) return { text: 'Me falta tu próximo ingreso para simularlo.', actions: [PLAN_LINK] };
+      if (!r || r.until === null) return { text: 'Para simularlo necesito saber cuándo recibes tu próximo ingreso. Pregúntame cuánto tienes libre y lo vemos.', actions: [PLAN_LINK] };
       return { text: `Si tu ingreso llega ${intent.days} días después: ${freeText(r)}`, rows: r.uncovered.length ? [{ label: 'No alcanzaría para', value: r.uncovered.join(', ') }] : undefined, actions: [PLAN_LINK] };
     }
     case 'what_bill': {
@@ -264,7 +264,7 @@ export function answer(intent: Intent, v: View): Answer | null {
       const input = v.inputs?.PEN;
       const card = (v.debtLinks ?? []).find((d) => d.currency === 'PEN' && (d.obligationId || /tarjeta|visa|mastercard|amex/i.test(d.name)));
       if (!card) return { text: '¿De qué tarjeta? No tengo una deuda de tarjeta registrada.', actions: [{ type: 'link', label: 'Agregar deuda', href: '/app/compromisos' }] };
-      if (!input?.base) return { text: 'Me falta tu saldo de hoy para responderte.', pending: 'balance' };
+      if (!input?.base) return { text: 'Para responderte necesito saber cuánto tienes disponible hoy. ¿Cuánto es?', pending: 'balance' };
       // With a statement on file, "total" is what was billed (post-cut purchases go to the next statement).
       const st = (v.cards ?? []).find((c) => c.currency === 'PEN' && c.position?.billed?.amountMinor != null)?.position ?? null;
       if (st?.billed && st.billed.amountMinor !== null) {
