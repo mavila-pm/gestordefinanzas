@@ -9,7 +9,9 @@ import { interpret } from '../src/ai/interpreter';
 import { money } from '../src/ai/draft';
 import { validateVelsRoute, VELS_ROUTE_SCHEMA, VELS_ROUTE_SYSTEM } from '../src/ai/vels-route';
 import { sanitizeUserText } from '../src/ai/sanitize';
-import { socialKind, socialReply, type Social } from '../src/ai/vels-social';
+import { greeting, socialKind, socialReply, type Social } from '../src/ai/vels-social';
+import { preferredName } from '../src/domain/profile';
+import { loadProfile } from './queries';
 import { infer, STOP_TEXT } from './ai';
 import { logLearning } from './learning';
 import { isReplay } from './idempotency';
@@ -99,7 +101,9 @@ export async function assistantTurn(supabase: SupabaseClient, userId: string, ra
     await prune(supabase); return;
   }
   if (social) {
-    const s = socialReply(social, text, history.length);
+    // The name opens a conversation; it is not repeated. A thread with no messages already showed the named welcome.
+    const named = social === 'greeting' && history.length > 0 && !history.some((m) => m.role === 'velsuno' && m.card?.social === 'greeting');
+    const s = socialReply(social, text, history.length, named ? preferredName(await loadProfile(supabase)) : null);
     const keep = pending && COLLECT_PENDING.includes(pending) ? { pending, resume: last!.card!.resume, draft: last!.card!.draft } : {};
     await say(supabase, userId, 'velsuno', s.text, { social, ...keep, ...(s.link ? { links: [s.link] } : {}) });
     await prune(supabase); return;
@@ -325,7 +329,8 @@ export async function clearAssistant(supabase: SupabaseClient) {
 }
 
 /** Opening Vels (bubble or page): recent conversation + up to 3 openers from the real state and the current screen. */
-export async function velsOpen(supabase: SupabaseClient, path: string): Promise<{ messages: Awaited<ReturnType<typeof loadMessages>>; suggestions: string[] }> {
-  const [messages, v] = await Promise.all([loadMessages(supabase, 'assistant', KEEP), view(supabase)]);
-  return { messages, suggestions: velsSuggestions(v, path) };
+export async function velsOpen(supabase: SupabaseClient, path: string): Promise<{ messages: Awaited<ReturnType<typeof loadMessages>>; suggestions: string[]; greeting: string }> {
+  const [messages, v, profile] = await Promise.all([loadMessages(supabase, 'assistant', KEEP), view(supabase), loadProfile(supabase)]);
+  // Shown only when the thread is empty (start of a conversation); the opener varies by day, not by reload.
+  return { messages, suggestions: velsSuggestions(v, path), greeting: greeting(preferredName(profile), Number(v.today.slice(8, 10))) };
 }

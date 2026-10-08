@@ -48,6 +48,6 @@ export async function clearAssistantAction() {
 export async function velsOpenAction(path: string) {
   const supabase = await createSupabaseServerClient();
   const user = await authUser(supabase);
-  if (!user) return { messages: [], suggestions: [] };
+  if (!user) return { messages: [], suggestions: [], greeting: 'Hola. ¿Qué vemos hoy?' };
   return velsOpen(supabase, typeof path === 'string' ? path.slice(0, 80) : '/app');
 }

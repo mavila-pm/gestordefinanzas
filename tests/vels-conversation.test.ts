@@ -9,6 +9,7 @@ import { readReply, relativeDate } from '../src/ai/vels-collect';
  */
 const TODAY = '2026-10-08';
 type Row = Record<string, unknown>;
+const profile = { name: 'Mauro' as string | null };
 const store = { messages: [] as Array<{ id: string; role: 'user' | 'velsuno'; body: string; card: Row | null }>, balances: [] as Row[], incomes: [] as Row[], debtsUsd: false };
 const gemini = { text: null as string | null };
 
@@ -36,6 +37,7 @@ vi.mock('../lib/planning', () => ({
   planTimeline: () => [],
 }));
 vi.mock('../lib/cards', () => ({ loadCardViews: async () => [] }));
+vi.mock('../lib/queries', () => ({ loadProfile: async () => ({ displayName: profile.name, givenNames: profile.name, familyNames: 'Ávila' }) }));
 vi.mock('../lib/learning', () => ({ logLearning: async () => undefined }));
 vi.mock('../lib/plan-applications', () => ({ applyPlan: async () => ({ ok: false, error: 'x' }) }));
 vi.mock('../lib/onboarding', () => ({ loadMessages: async () => store.messages.slice(-8), readImages: async () => [] }));
@@ -69,7 +71,7 @@ async function engineAnswer(intent: Parameters<typeof answer>[0]) {
 }
 const questions = (s: string) => (s.match(/\?/g) ?? []).length;
 
-beforeEach(() => { store.messages = []; store.balances = []; store.incomes = []; store.debtsUsd = false; gemini.text = null; });
+beforeEach(() => { profile.name = 'Mauro'; store.messages = []; store.balances = []; store.incomes = []; store.debtsUsd = false; gemini.text = null; });
 
 describe('Vels asks for one missing fact at a time, then the engine answers', () => {
   it('A: "¿Cuánto tengo libre?" without a balance → asks only the balance', async () => {
@@ -256,6 +258,31 @@ describe('voice: social turns stay social, money answers stay short', () => {
     const m = await turn('no sé');
     expect(m.body).toBe('Empecemos por lo que tienes disponible ahora. ¿Cuánto tienes hoy?');
     expect(m.card).toMatchObject({ pending: 'balance', resume: { k: 'organize' } });
+  });
+});
+
+describe('greetings: short, natural, with the name only at the start', () => {
+  const APPROVED = ['Hola, Mauro. ¿Qué ordenamos hoy?', 'Hola, Mauro. ¿Qué vemos hoy?', 'Hola, Mauro. ¿Por dónde empezamos?', 'Hola, Mauro. Cuéntame, ¿qué quieres revisar?'];
+  it('opening greeting (panel / page, empty thread) uses the name and an approved line', async () => {
+    const { greeting } = await import('../src/ai/vels-social');
+    for (let d = 1; d <= 31; d++) expect(APPROVED).toContain(greeting('Mauro', d));
+    expect(greeting(null, 1)).toBe('Hola. ¿Qué vemos hoy?');
+    expect(greeting('<script>', 1)).toBe('Hola. ¿Qué vemos hoy?');
+    for (let d = 1; d <= 4; d++) expect(greeting('Mauro', d)).not.toMatch(/ayudarte|asistirte|Bienvenid|Puedo/);
+  });
+  it('first "Hola" of a returning conversation uses the name; the next greeting does not repeat it', async () => {
+    store.messages.push({ id: 'old', role: 'velsuno', body: 'Tienes S/ 100 libres hasta el 15 de octubre.', card: null });
+    const first = await turn('Hola');
+    expect(APPROVED).toContain(first.body);
+    const again = await turn('hola');
+    expect(again.body).toMatch(/^Hola\. /);
+    expect(again.body).not.toContain('Mauro');
+  });
+  it('right after the named welcome (empty thread), "Hola" does not repeat the name; no name in the profile → neutral', async () => {
+    expect((await turn('Hola')).body).not.toContain('Mauro');
+    store.messages = [{ id: 'old', role: 'user', body: 'x', card: null }];
+    profile.name = null;
+    expect((await turn('Hola')).body).toMatch(/^Hola\. /);
   });
 });
 

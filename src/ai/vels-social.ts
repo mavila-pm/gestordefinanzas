@@ -39,11 +39,24 @@ export function socialKind(message: string, lastVelsSocial: Social | null): Soci
   return null;
 }
 
+const OPENERS = ['¿Qué ordenamos hoy?', '¿Qué vemos hoy?', '¿Por dónde empezamos?', 'Cuéntame, ¿qué quieres revisar?'];
+/** Only a short, plain first name goes into a greeting (it is the person's own profile text, still checked). */
+const safeName = (name: string | null | undefined) => (name && /^[\p{L}' -]{1,30}$/u.test(name.trim()) ? name.trim() : null);
+
+/**
+ * Greeting at the start of a conversation: "Hola, Mauro. ¿Qué vemos hoy?". The name goes only here, never on
+ * every turn; without a name, "Hola. ¿Qué vemos hoy?". Never "¿Cómo puedo ayudarte?" or "Bienvenido".
+ */
+export function greeting(name: string | null | undefined, seed: number): string {
+  const n = safeName(name);
+  return `Hola${n ? `, ${n}` : ''}. ${pick(OPENERS, seed)}`;
+}
+
 /** The reply. No figures, no lists, at most one short question; `seed` varies the wording along the thread. */
-export function socialReply(kind: Social, message: string, seed: number): { text: string; link?: { label: string; href: string } } {
+export function socialReply(kind: Social, message: string, seed: number, name: string | null = null): { text: string; link?: { label: string; href: string } } {
   const t = fold(message);
   switch (kind) {
-    case 'greeting': return { text: pick(['Hola. ¿Qué vemos hoy?', 'Hola. ¿Qué revisamos?', 'Hola. Aquí estoy. ¿Qué vemos?', 'Hola. Cuéntame, ¿qué quieres ordenar?'], seed) };
+    case 'greeting': return { text: greeting(name, seed) };
     case 'how': return { text: pick(['Todo en orden por aquí. ¿Y tú?', 'Bien por aquí. ¿Y tú?', 'Aquí, lista para ayudarte. ¿Y tú?'], seed) };
     case 'how_reply': return { text: /\b(mal|cansad|preocupad|estresad|regular|mas o menos)/.test(t) ? 'Vaya. Si algo de tu dinero te preocupa, lo vemos con calma.' : pick(['Me alegra.', 'Qué bueno.'], seed) };
     case 'follow_up': return { text: pick(['Solo una forma de decir que estoy lista para ayudarte.', 'Es una forma de decir que todo está en orden por aquí.'], seed) };

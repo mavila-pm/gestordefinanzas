@@ -11,7 +11,6 @@ import { Icon } from './ui/icon';
 const loadChat = () => import('./chat').then((m) => m.Chat);
 const Chat = dynamic(loadChat, { ssr: false, loading: () => <div className="vels-loading" role="status" aria-label="Abriendo Vels"><span /><span /><span /></div> });
 
-const HELLO: ChatMessage = { id: 'vels-hello', role: 'velsuno', body: 'Hola, soy Vels. ¿En qué te ayudo?', card: null };
 
 /**
  * Vels, always at hand (ADR-0011): a floating button on every /app screen. The panel opens at once (native
@@ -24,7 +23,7 @@ export function VelsBubble() {
   const [state, setState] = useState<{ messages: ChatMessage[]; suggestions: string[]; n: number } | null>(null);
   const load = useCallback((p: string) => startTransition(async () => {
     const r = await velsOpenAction(p);
-    setState((s) => ({ messages: r.messages.length ? r.messages : [HELLO], suggestions: r.suggestions, n: (s?.n ?? 0) + 1 }));
+    setState((s) => ({ messages: r.messages.length ? r.messages : [{ id: 'vels-hello', role: 'velsuno', body: r.greeting, card: null }], suggestions: r.suggestions, n: (s?.n ?? 0) + 1 }));
   }), []);
   if (path.startsWith('/app/preguntar')) return null; // the full Vels page is already open
   const open = () => { dialog.current?.showModal(); void loadChat(); load(path); };
