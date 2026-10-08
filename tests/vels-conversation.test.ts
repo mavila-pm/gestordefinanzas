@@ -149,6 +149,12 @@ describe('Vels asks for one missing fact at a time, then the engine answers', ()
     expect(m.card).toMatchObject({ pending: 'balance', resume: { k: 'free' } });
   });
 
+  it('"¿Cómo llego a fin de mes?" without data starts with the balance (no Gemini needed)', async () => {
+    const m = await turn('¿Cómo llego a fin de mes?');
+    expect(m.body).toBe('Te lo calculo. Primero necesito saber cuánto tienes disponible hoy.');
+    expect(m.card).toMatchObject({ pending: 'balance', resume: { k: 'organize' } });
+  });
+
   it('a new question while a fact is pending is answered as a question, never stored as the balance', async () => {
     await turn('¿Cuánto tengo libre?');
     const m = await turn('¿Me alcanza para unas zapatillas de 300?');

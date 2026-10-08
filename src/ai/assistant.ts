@@ -31,7 +31,7 @@ export function detectIntent(message: string): Intent {
   if (/\btarjeta\b/.test(t) && /\b(hasta cuanto|cuanto) (puedo|podria) (usar|gastar)\b|\blimite (real|de mi tarjeta)\b/.test(t)) return { k: 'card_limit' };
   // "Aplicar plan" (ADR-0013): saves reservations after confirmation; never pays or moves money.
   if (/\b(aplica|aplicar|aplicalo|guarda|guardar|guardalo|fija|fijar|deja|dejar|dejame) (el |este |mi |ese )?(plan|reparto)\b|\b(apartalo|aparta (la |mi )?plata|reserva(lo|r)? (todo|eso))\b/.test(t)) return { k: 'apply_plan' };
-  if (/\bque hago con mi (sueldo|plata|dinero|pago)\b|\borganiza(me|r)?( mi| mis)? (dinero|plata|sueldo|pagos)\b|\borganizalos\b|\bcomo llego al proximo (sueldo|ingreso|pago)\b/.test(t)) return { k: 'organize' };
+  if (/\bque hago con mi (sueldo|plata|dinero|pago)\b|\borganiza(me|r)?( mi| mis)? (dinero|plata|sueldo|pagos)\b|\borganizalos\b|\bcomo llego al proximo (sueldo|ingreso|pago)\b|\bcomo (llego|paso|termino) (a |el )?fin de mes\b/.test(t)) return { k: 'organize' };
   if (/\b(pago|pagar|pagamos) (solo )?(el )?minimo\b|\bminimo o (el )?total\b|\bpago (el )?total\b.*\btarjeta\b/.test(t)) return { k: 'pay_min' };
   const owe = t.match(/\b(le debo|tengo que pagarle|tengo que devolverle|debo)\b.*?\ba (mi |la |el |)([a-zñ]{3,20})\b/);
   if (owe && amount && !/\b(banco|tarjeta|visa|prestamo)\b/.test(t)) return { k: 'owe', amountMinor: amount.minor, currency: amount.currency ?? 'PEN', lender: `${owe[2] === 'mi ' ? 'tu ' : owe[2]}${owe[3]}` };
