@@ -74,7 +74,7 @@ beforeEach(() => { store.messages = []; store.balances = []; store.incomes = [];
 describe('Vels asks for one missing fact at a time, then the engine answers', () => {
   it('A: "¿Cuánto tengo libre?" without a balance → asks only the balance', async () => {
     const m = await turn('¿Cuánto tengo libre?');
-    expect(m.body).toBe('Claro. Primero dime cuánto tienes hoy disponible en tu cuenta.');
+    expect(m.body).toBe('Claro. ¿Cuánto tienes disponible hoy?');
     expect(m.card).toMatchObject({ pending: 'balance', resume: { k: 'free' } });
     expect(m.body).not.toMatch(/Falta|ingreso|Dinero libre/);
   });
@@ -83,7 +83,7 @@ describe('Vels asks for one missing fact at a time, then the engine answers', ()
     await turn('¿Cuánto tengo libre?');
     const m = await turn('3200');
     expect(store.balances).toEqual([{ user_id: 'u1', currency: 'PEN', amount_minor: 320000 }]);
-    expect(m.body).toBe('Entendido: tienes S/ 3,200 disponibles. ¿Cuándo recibes tu próximo ingreso y de cuánto será?');
+    expect(m.body).toBe('Perfecto: S/ 3,200 disponibles. ¿Cuándo vuelves a recibir dinero y de cuánto será?');
     expect(m.card).toMatchObject({ pending: 'income', resume: { k: 'free' } });
     expect(questions(m.body)).toBe(1);
   });
@@ -115,7 +115,7 @@ describe('Vels asks for one missing fact at a time, then the engine answers', ()
     const last = await turn('4500');
     expect(asked).toEqual([
       'Te lo calculo. ¿Cuánto tienes disponible hoy?',
-      'Entendido: tienes S/ 1,200 disponibles. ¿Cuándo recibes tu próximo ingreso y de cuánto será?',
+      'Listo: S/ 1,200 disponibles. ¿Cuándo vuelves a recibir dinero y de cuánto será?',
       '¿Y cuánto esperas recibir?',
     ]);
     expect(new Set(asked).size).toBe(asked.length);
@@ -151,7 +151,7 @@ describe('Vels asks for one missing fact at a time, then the engine answers', ()
 
   it('"¿Cómo llego a fin de mes?" without data starts with the balance (no Gemini needed)', async () => {
     const m = await turn('¿Cómo llego a fin de mes?');
-    expect(m.body).toBe('Te lo calculo. Primero necesito saber cuánto tienes disponible hoy.');
+    expect(m.body).toBe('Sí, lo vemos. ¿Cuánto tienes disponible hoy?');
     expect(m.card).toMatchObject({ pending: 'balance', resume: { k: 'organize' } });
   });
 
@@ -176,6 +176,86 @@ describe('Vels asks for one missing fact at a time, then the engine answers', ()
     const m = await turn('3200');
     expect(store.balances).toHaveLength(1);
     expect(m.card).toMatchObject({ pending: 'income', resume: { k: 'free' } });
+  });
+});
+
+describe('voice: social turns stay social, money answers stay short', () => {
+  const known = () => {
+    store.balances.push({ currency: 'PEN', amount_minor: 509000 });
+    store.incomes.push({ name: 'Sueldo', currency: 'PEN', amount_minor: 450000, amount_status: 'confirmed', frequency: 'monthly', day_of_month: 29 });
+  };
+  const MONEY = /S\/|US\$|\d/;
+
+  it('1: "Hola" (and "h") → short greeting, no figures, no menu, no engine', async () => {
+    known();
+    for (const t of ['Hola', 'h']) {
+      const m = await turn(t);
+      expect(m.body).toMatch(/^Hola\. /);
+      expect(m.body).not.toMatch(MONEY);
+      expect(m.body).not.toMatch(/Puedo|libre|pagos/);
+      expect(m.card?.links ?? []).toEqual([]);
+    }
+    expect(store.balances).toHaveLength(1);
+  });
+
+  it('2 + 3: "¿Cómo estás?" → social, then "¿Por qué todo en orden?" / "¿Por qué?" is about Vels\'s line, not the finances', async () => {
+    known();
+    const how = await turn('¿Cómo estás?');
+    expect(how.body).toMatch(/¿Y tú\?$/);
+    expect(how.body).not.toMatch(MONEY);
+    const why = await turn('¿Por qué todo en orden?');
+    expect(['Solo una forma de decir que estoy lista para ayudarte.', 'Es una forma de decir que todo está en orden por aquí.']).toContain(why.body);
+    await turn('¿Cómo estás?');
+    const why2 = await turn('¿por qué?');
+    expect(why2.body).not.toMatch(MONEY);
+    expect(why2.card?.social).toBe('follow_up');
+  });
+
+  it('4: "¿Cuánto tengo libre?" with everything known → one sentence with the engine amount, no extra question', async () => {
+    known();
+    const m = await turn('¿Cuánto tengo libre?');
+    expect(m.body).toBe(await engineAnswer({ k: 'free' }));
+    expect(m.body).toMatch(/^Tienes (unos )?S\/ [\d,]+ libres hasta el \d+ de octubre\.$/);
+    expect(questions(m.body)).toBe(0);
+  });
+
+  it('5: "¿Cuándo es mi próximo sueldo?" / "¿Cuándo me pagan?" → just the date', async () => {
+    known();
+    expect((await turn('¿Cuándo es mi próximo sueldo?')).body).toBe('El 29 de octubre.');
+    expect((await turn('¿Cuándo me pagan?')).body).toBe('El 29 de octubre.');
+    expect((await turn('¿Cuánto tengo?')).body).toBe('Tienes S/ 5,090 disponibles.');
+  });
+
+  it('6: "Gracias" → brief, no CTA', async () => {
+    known();
+    const m = await turn('Gracias');
+    expect(['De nada.', 'Con gusto.', 'Para eso estoy.']).toContain(m.body);
+    expect(m.card?.links ?? []).toEqual([]);
+    expect(m.card?.replies ?? []).toEqual([]);
+  });
+
+  it('7: an incomplete money question asks only the missing fact; a greeting in between keeps it open', async () => {
+    const q = await turn('¿Cuándo me pagan?');
+    expect(q.body).toBe('Aún no lo tengo. ¿Cuándo vuelves a recibir dinero y de cuánto será?');
+    await turn('gracias');
+    const m = await turn('el 29, 4500');
+    expect(m.body).toBe('Anotado: S/ 4,500 el 29.');
+    expect(store.balances).toHaveLength(0);
+  });
+
+  it('8: money is unchanged — the answer is the engine\'s, only the wording moved', async () => {
+    known();
+    const d = planningData();
+    const plan = buildPlan(inputFor(d, 'PEN'));
+    const m = await turn('¿Me alcanza para unas zapatillas de 300?');
+    expect(m.body).toBe(`Sí. Te quedarían ${plan.status === 'confirmed' ? '' : 'unos '}S/ ${((plan.freeMinor! - 30000) / 100).toLocaleString('en-US')} libres.`);
+  });
+
+  it('"Quiero ordenar mis gastos" → open question; "no sé" → starts with what is available now', async () => {
+    expect((await turn('Quiero ordenar mis gastos')).body).toBe('Claro. ¿Por dónde quieres empezar? Podemos empezar por lo que tienes disponible ahora.');
+    const m = await turn('no sé');
+    expect(m.body).toBe('Empecemos por lo que tienes disponible ahora. ¿Cuánto tienes hoy?');
+    expect(m.card).toMatchObject({ pending: 'balance', resume: { k: 'organize' } });
   });
 });
 

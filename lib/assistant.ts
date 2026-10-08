@@ -9,7 +9,7 @@ import { interpret } from '../src/ai/interpreter';
 import { money } from '../src/ai/draft';
 import { validateVelsRoute, VELS_ROUTE_SCHEMA, VELS_ROUTE_SYSTEM } from '../src/ai/vels-route';
 import { sanitizeUserText } from '../src/ai/sanitize';
-import { isSmallTalk } from '../src/ai/interpreter';
+import { socialKind, socialReply, type Social } from '../src/ai/vels-social';
 import { infer, STOP_TEXT } from './ai';
 import { logLearning } from './learning';
 import { isReplay } from './idempotency';
@@ -24,8 +24,9 @@ import { loadPlanningData, planFor, planInputFor, planTimeline } from './plannin
  * the rules do not cover, with a compact state + the last few messages. Thread is capped (older messages pruned).
  */
 const KEEP = 40;
-const FALLBACK = 'Puedo decirte cuánto tienes libre, qué pagos vienen, si te alcanza para una compra o qué pagar primero.';
-const FALLBACK_REPLIES = ['¿Cuánto tengo libre?', '¿Qué viene esta semana?', '¿Qué pago primero?'];
+const NOT_UNDERSTOOD = 'No te entendí bien. ¿Me lo dices de otra forma?';
+const SOCIAL: readonly Social[] = ['greeting', 'how', 'how_reply', 'thanks', 'ack', 'bye', 'capabilities', 'follow_up', 'open_order', 'open_spending'];
+const UNSURE = /\b(no se|ni idea|tu dime|donde sea|cualquiera|como quieras|por donde sea|no tengo idea)\b/;
 
 async function view(supabase: SupabaseClient): Promise<View> {
   const planning = loadPlanningData(supabase);
@@ -85,13 +86,29 @@ export async function assistantTurn(supabase: SupabaseClient, userId: string, ra
   const history = loaded.at(-1)?.role === 'user' && loaded.at(-1)?.body === text ? loaded.slice(0, -1) : loaded;
   const last = [...history].reverse().find((m) => m.role === 'velsuno');
 
-  // The answer to Vels's last question (balance, next income…): read deterministically, stored, then the next step.
+  // 1. Social turns first (greeting, "¿cómo estás?", thanks, "¿por qué?" about Vels's own line): never the engine,
+  //    never numbers, no menu. A question Vels was waiting on stays open across them.
+  const lastSocial = SOCIAL.find((s) => s === last?.card?.social) ?? null;
   const pending = last?.card?.pending as CollectPending | undefined;
+  const social = socialKind(text, lastSocial);
+  if (lastSocial === 'open_order' && UNSURE.test(fold(text))) {
+    if (!(await askIfMissing(supabase, userId, { k: 'organize' }, v, 'Empecemos por lo que tienes disponible ahora. ¿Cuánto tienes hoy?'))) {
+      const o = answer({ k: 'organize' }, v)!;
+      await say(supabase, userId, 'velsuno', o.text, toCard(o));
+    }
+    await prune(supabase); return;
+  }
+  if (social) {
+    const s = socialReply(social, text, history.length);
+    const keep = pending && COLLECT_PENDING.includes(pending) ? { pending, resume: last!.card!.resume, draft: last!.card!.draft } : {};
+    await say(supabase, userId, 'velsuno', s.text, { social, ...keep, ...(s.link ? { links: [s.link] } : {}) });
+    await prune(supabase); return;
+  }
+  // 2. The answer to Vels's last question (balance, next income…): read deterministically, stored, then the next step.
   if (pending && COLLECT_PENDING.includes(pending) && await collectTurn(supabase, userId, text, pending, last!.card!, v)) { await prune(supabase); return; }
   // Volunteered income while none is registered ("me pagan 4500 el 15"): same path, no question needed first.
   if (!pending && gapFor(v, null) === 'income' && detectIntent(text).k === 'unknown' && interpret(text).patches.some((p) => p.t === 'income')
     && await collectTurn(supabase, userId, text, 'income', {}, v)) { await prune(supabase); return; }
-  if (isSmallTalk(text)) { await say(supabase, userId, 'velsuno', '¿Algo más en lo que te ayude?'); return; }
 
   const intent = detectIntent(text);
   if (await askIfMissing(supabase, userId, intent, v)) { await prune(supabase); return; }
@@ -108,22 +125,22 @@ export async function assistantTurn(supabase: SupabaseClient, userId: string, ra
   const routed = route?.kind === 'intent' ? answer(route.intent, v) : null;
   if (routed) await say(supabase, userId, 'velsuno', routed.text, toCard(routed));
   else if (route?.kind === 'reply') await say(supabase, userId, 'velsuno', route.text.slice(0, 600));
-  else if (r.ok) await say(supabase, userId, 'velsuno', FALLBACK, { replies: FALLBACK_REPLIES });
+  else if (r.ok) await say(supabase, userId, 'velsuno', NOT_UNDERSTOOD);
   else if (r.reason === 'ai_quota') await say(supabase, userId, 'velsuno', STOP_TEXT.ai_quota, { stop: true, links: [{ label: 'Ver Plus', href: '/app/cuenta' }] });
   else if (r.reason === 'unavailable' || r.reason === 'failed') {
     // Timeout, provider error, rate limit, empty or invalid output: a friendly way forward, never a broken thread.
-    await say(supabase, userId, 'velsuno', r.reason === 'failed' ? `No pude entender eso ahora. ${FALLBACK}` : `Todavía no sé responder eso. ${FALLBACK}`, { replies: FALLBACK_REPLIES });
+    await say(supabase, userId, 'velsuno', r.reason === 'failed' ? NOT_UNDERSTOOD : 'Eso todavía no sé responderlo. Pregúntame por tu dinero libre o tus pagos y lo vemos.');
   } else await say(supabase, userId, 'velsuno', STOP_TEXT[r.reason], { stop: true });
   await prune(supabase);
 }
 
 /** A money question without today's balance or the next income: ask for the first missing fact, nothing else. */
-async function askIfMissing(supabase: SupabaseClient, userId: string, intent: unknown, v: View): Promise<boolean> {
+async function askIfMissing(supabase: SupabaseClient, userId: string, intent: unknown, v: View, opening?: string): Promise<boolean> {
   const resume = asResume(intent);
   const gap = resume ? gapFor(v, resume) : null;
   if (!resume || !gap) return false;
   const q = ask(gap, resume, true);
-  await say(supabase, userId, 'velsuno', q.text, { pending: q.pending, resume });
+  await say(supabase, userId, 'velsuno', opening && gap === 'balance' ? opening : q.text, { pending: q.pending, resume });
   return true;
 }
 
@@ -141,8 +158,8 @@ async function collectTurn(supabase: SupabaseClient, userId: string, text: strin
   const resume: Resume | null = asResume(card.resume);
   const r = readReply(pending, asDraft(card.draft), text, v.today, usesUsd(v));
   if (r.kind === 'none') {
-    const again = pending === 'balance' || pending === 'currency' ? 'No alcancé a leer el monto. ¿Cuánto tienes disponible hoy? Un aproximado me sirve.'
-      : '¿Qué día recibes tu próximo ingreso y de cuánto será? Por ejemplo: "el 15, 4500".';
+    const again = pending === 'balance' || pending === 'currency' ? 'No alcancé a leer el monto. ¿Cuánto tienes hoy? Un aproximado me sirve.'
+      : '¿Qué día vuelves a recibir dinero y cuánto? Por ejemplo: "el 15, 4500".';
     await say(supabase, userId, 'velsuno', again, { pending, resume, draft: card.draft as Draft });
     return true;
   }
@@ -174,6 +191,8 @@ async function collectTurn(supabase: SupabaseClient, userId: string, text: strin
   const gap = gapFor(v2, next);
   if (gap) { const q = ask(gap, next, false, said); await say(supabase, userId, 'velsuno', q.text, { pending: q.pending, resume: next }); return true; }
   // Everything the question needs is stored: the engine answers.
+  // "¿Cuánto tengo?" / "¿Cuándo me pagan?": what the person just said is the whole answer.
+  if (next.k === 'balance' || next.k === 'next_income') { await say(supabase, userId, 'velsuno', said); return true; }
   const a = answer(next, v2)!;
   await say(supabase, userId, 'velsuno', `${said} ${a.text}`, toCard(a));
   return true;

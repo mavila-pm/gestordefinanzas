@@ -98,13 +98,13 @@ await runSuite('onboarding', async ({ page, check }) => {
   await page.goto(`${BASE}/app/preguntar`);
   await send(page, '¿Cuánto tengo libre?');
   v = await lastVelsuno(page);
-  check('asks only for the missing balance, in plain words', v === 'Claro. Primero dime cuánto tienes hoy disponible en tu cuenta.', v);
+  check('asks only for the missing balance, in plain words', v === 'Claro. ¿Cuánto tienes disponible hoy?', v);
   await send(page, '3,000');
   v = await lastVelsuno(page);
-  check('balance answer is saved and free money recalculated deterministically', v.startsWith('Entendido: tienes S/ 3,000 disponibles.') && /libres|Te faltan/.test(v), v);
+  check('balance answer is saved and free money recalculated deterministically', v.startsWith('Listo: S/ 3,000 disponibles.') && /libres|Te faltan/.test(v), v);
   await send(page, '¿Puedo gastar S/ 100?');
   v = await lastVelsuno(page);
-  check('"¿puedo gastar?" answered by the planner', /^(Sí\.|No te alcanza)/.test(v), v);
+  check('"¿puedo gastar?" answered by the planner', /^(Sí\.|Ahí no te alcanza)/.test(v), v);
   check('deterministic questions consumed no AI usage', (await month()) === m0, String(await month()));
   await send(page, '¿qué opinas de mis finanzas en general?');
   check('uncovered question goes to the provider and is counted on the monthly bucket', (await month()) === m0 + 1);

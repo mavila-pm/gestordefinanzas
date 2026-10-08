@@ -16,7 +16,8 @@ export type CollectPending = 'balance' | 'currency' | 'income' | 'income_date' |
 export const COLLECT_PENDING: readonly CollectPending[] = ['balance', 'currency', 'income', 'income_date', 'income_amount', 'income_days'];
 
 /** Questions that need today's balance and the next income; anything else answers as before. */
-export type Resume = { k: 'free' } | { k: 'why_free' } | { k: 'card_limit' } | { k: 'organize' } | { k: 'can_spend'; amountMinor: number; currency: Currency };
+export type Resume = { k: 'free' } | { k: 'why_free' } | { k: 'card_limit' } | { k: 'organize' } | { k: 'how' } | { k: 'balance' } | { k: 'next_income' }
+  | { k: 'can_spend'; amountMinor: number; currency: Currency };
 export interface Draft {
   balanceMinor?: number;
   amountMinor?: number;
@@ -36,7 +37,7 @@ const okCur = (c: unknown): c is Currency => c === 'PEN' || c === 'USD';
 export function asResume(i: Intent | unknown): Resume | null {
   const x = i as Record<string, unknown> | null;
   if (!x || typeof x !== 'object') return null;
-  if (x.k === 'free' || x.k === 'why_free' || x.k === 'card_limit' || x.k === 'organize') return { k: x.k };
+  if (x.k === 'free' || x.k === 'why_free' || x.k === 'card_limit' || x.k === 'organize' || x.k === 'how' || x.k === 'balance' || x.k === 'next_income') return { k: x.k };
   if (x.k === 'can_spend' && okMinor(x.amountMinor) && okCur(x.currency)) return { k: 'can_spend', amountMinor: x.amountMinor as number, currency: x.currency };
   return null;
 }
@@ -60,7 +61,10 @@ const resumeCurrency = (r: Resume | null): Currency => (r?.k === 'can_spend' ? r
 /** The next fact the question needs, in conversational order; null when the engine can answer. */
 export function gapFor(v: View, r: Resume | null): 'balance' | 'income' | null {
   const p = plan(v, resumeCurrency(r));
+  // "¿Cuánto tengo?" needs only the balance; "¿Cuándo me pagan?" only the income.
+  if (r?.k === 'next_income') return v.plans.some((x) => x.nextIncome) ? null : 'income';
   if (!p?.base) return 'balance';
+  if (r?.k === 'balance') return null;
   if (!p.nextIncome) return 'income';
   return null;
 }
@@ -71,12 +75,12 @@ export interface Ask { text: string; pending: CollectPending; replies?: string[]
 export function ask(gap: 'balance' | 'income', r: Resume | null, opening: boolean, prefix = ''): Ask {
   const lead = prefix ? `${prefix} ` : '';
   if (gap === 'balance') {
-    const text = !opening ? '¿Cuánto tienes disponible hoy?' : r?.k === 'free' ? 'Claro. Primero dime cuánto tienes hoy disponible en tu cuenta.'
-      : r?.k === 'can_spend' ? 'Te lo calculo. ¿Cuánto tienes disponible hoy?' : 'Te lo calculo. Primero necesito saber cuánto tienes disponible hoy.';
+    const text = !opening ? '¿Cuánto tienes disponible hoy?' : r?.k === 'free' ? 'Claro. ¿Cuánto tienes disponible hoy?'
+      : r?.k === 'can_spend' ? 'Te lo calculo. ¿Cuánto tienes disponible hoy?' : r?.k === 'balance' ? 'Aún no lo sé. ¿Cuánto tienes disponible hoy?' : 'Sí, lo vemos. ¿Cuánto tienes disponible hoy?';
     return { text: lead + text, pending: 'balance' };
   }
-  const why = opening && !prefix ? 'Ya tengo tu saldo. ' : '';
-  return { text: `${lead}${why}¿Cuándo recibes tu próximo ingreso y de cuánto será?${opening ? ' Así calculo cuánto debe alcanzarte hasta ese día.' : ''}`, pending: 'income' };
+  const opener = prefix ? '' : r?.k === 'next_income' ? 'Aún no lo tengo. ' : opening ? 'Ya tengo tu saldo. ' : '';
+  return { text: `${lead}${opener}¿Cuándo vuelves a recibir dinero y de cuánto será?`, pending: 'income' };
 }
 
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
@@ -163,6 +167,7 @@ export function readReply(pending: CollectPending, draft0: Draft, text: string, 
 }
 
 /** Short confirmation of what was understood (only facts the person gave; no math). */
-export const saidBalance = (minor: number, c: Currency) => `Entendido: tienes ${money(minor, c)} disponibles.`;
+/** Varies the lead word by the amount itself (no randomness: the same input always reads the same). */
+export const saidBalance = (minor: number, c: Currency) => `${['Listo', 'Lo tengo', 'Perfecto'][Math.floor(minor / 100) % 3]}: ${money(minor, c)} disponibles.`;
 export const saidIncome = (i: IncomeFact) =>
   `Anotado: ${i.amountMinor === null ? 'tu ingreso' : `${i.approx ? 'unos ' : ''}${money(i.amountMinor, i.currency)}`} el ${i.day}${i.secondDay ? ` y el ${i.secondDay}` : ''}.`;

@@ -24,6 +24,8 @@ export interface MessageCard {
   resume?: unknown;
   /** Assistant: what the person already said in this exchange (validated by asDraft). */
   draft?: unknown;
+  /** Assistant: the social line Vels just said ("¿Y tú?"), so a follow-up like "¿por qué?" is read in that context. */
+  social?: string;
   stop?: boolean;
 }
 export interface ChatMessage { id: string; role: 'user' | 'velsuno'; body: string; card: MessageCard | null }

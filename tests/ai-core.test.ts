@@ -112,7 +112,7 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(detectIntent('muéstrame por qué tengo solo S/ 850 libres')).toEqual({ k: 'why_free' });
     expect(detectIntent('me quedé misio antes de fin de mes')).toEqual({ k: 'unknown' });
     const free = answer({ k: 'free' }, view)!;
-    expect(free.text).toBe(`Tienes S/ 1,500 libres hasta el 4 oct.`);
+    expect(free.text).toBe(`Tienes S/ 1,500 libres hasta el 4 de octubre.`);
     expect(answer({ k: 'can_spend', amountMinor: 200000, currency: 'PEN' }, view)!.text).toContain('te faltarían S/ 500');
     expect(answer({ k: 'upcoming', range: 'next' }, view)!.rows).toEqual([{ label: 'Alquiler', value: 'S/ 1,500 · 1 oct' }]);
     expect(answer({ k: 'update_amount', name: 'alquiler', amountMinor: 160000 }, view)!.actions![0]).toMatchObject({ type: 'act', act: 'patch_obligation', fields: { id: 'o1', amount: '1600.00' } });
