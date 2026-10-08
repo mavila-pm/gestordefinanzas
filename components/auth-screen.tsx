@@ -15,7 +15,6 @@ export function AuthScreen({ title, lead, step, children }: { title: string; lea
         <Image src={authPhoto} alt="" fill sizes="(min-width: 1024px) 50vw, 1px" placeholder="blur" quality={70} className="auth-art-photo" />
         <div className="auth-art-shade" />
         <div className="auth-art-copy">
-          <Logo height={30} />
           <p className="auth-slogan">Tu dinero, más claro.</p>
           <p className="auth-sub">Organiza tus gastos y entiende mejor tus finanzas.</p>
         </div>

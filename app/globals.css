@@ -262,10 +262,10 @@ input.readonly { background: var(--bg-secondary); color: var(--text-secondary); 
   .auth-art-shade { position: absolute; inset: 0; z-index: -1;
     background: linear-gradient(to top, color-mix(in srgb, var(--brand-primary) 88%, transparent) 0%, color-mix(in srgb, var(--brand-primary) 55%, transparent) 38%, transparent 70%); }
   .auth-art-copy { display: grid; gap: var(--space-12); max-width: 440px; }
-  .auth-slogan { font-size: 40px; line-height: 48px; font-weight: 600; letter-spacing: -.01em; margin-top: var(--space-24); }
+  .auth-slogan { font-size: 40px; line-height: 48px; font-weight: 600; letter-spacing: -.01em; }
   .auth-sub { font-size: 17px; line-height: 26px; color: color-mix(in srgb, var(--brand-secondary) 72%, transparent); }
   .auth-panel { align-self: center; justify-self: center; padding: var(--space-48) var(--space-32); }
-  .auth-panel > .brand, .auth-panel > .auth-tagline { display: none; }
+  .auth-panel > .auth-tagline { display: none; }
 }
 
 /* ── Legal pages ─────────────────────────────────────────────────────────────────────────────── */
