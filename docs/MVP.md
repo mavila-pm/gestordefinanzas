@@ -50,8 +50,8 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Depende de: PO (proveedor, costo). Riesgo: alto para la hipótesis del producto (sin automatización solo hay manual + pegado).
   - Terminado cuando: un email real del BCP reenviado crea 1 movimiento; reenviarlo de nuevo no duplica.
 - [ ] **P1 — Límites de plan aplicados en el servidor**
-  - Estado: entitlements y `plan_config` existen; límites mostrados, no aplicados en todas las escrituras (status "known debt").
-  - Falta: decidir límites Free (PO) y aplicarlos en SQL/server actions con tests.
+  - Estado: automatización Free (50 movimientos automáticos/mes Lima, 1 banco) aplicada en SQL (migración 032, `assert_auto_allowance`, test DB `plan-limits`).
+  - Falta: historial visible Free (3 meses) en servidor; Email Bridge debe llamar la misma verificación al activarse.
   - Archivos: `src/domain/entitlements.ts`, `app/app/actions.ts`, migración nueva. Riesgo: medio (regla no negociable de CLAUDE.md).
   - Terminado cuando: un usuario Free no puede exceder un límite ni llamando la acción directamente (test DB).
 - [ ] **P1 — IA real verificada y decisión de privacidad**

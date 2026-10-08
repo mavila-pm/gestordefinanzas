@@ -2,7 +2,7 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20261008000031` (`…028` delete_account PENDING, PO applies in SQL Editor).
+migrations applied through `20261008000032` (`…028` delete_account PENDING, PO applies in SQL Editor).
 
 ## Checkpoint (2026-09-29)
 Last full regression: unit 302 · DB 104 · E2E 289/289 (10 suites; 1 month-end bug found and fixed, re-run 23/23) · visual 162 shots, 0 overflow, 0 UX issues · perf probe 8/8 · cleanup 0|0.
@@ -41,14 +41,16 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Auth/registration redo: email-first signup (Supabase link) → password (12+, letters+numbers, show/hide) → profile (names, E.164 phone, DOB 18+ in SQL) → versioned Terms/Privacy acceptance (legal_acceptances) → bienvenida; gate on pages + proxy POST 403; new login/recovery copy; branded email templates; Terms + Privacy rewritten with index/version/placeholders; auth layout with brand panel (042) | VERIFIED (unit 314, DB 114, E2E registration 32/32 + auth-dashboard 12/12 + visual 162/0/0) | SMTP + templates pasted in Supabase (PO); legal review; video not integrated (license/source unreachable from this environment) |
 | Auth emails: 4 Velsuno templates (signup, magic link, recovery, email change) verified rendered 375/640 with no technical words; real Brevo delivery of signup + recovery to Gmail inbox; token_hash links verified cross-browser (valid → steps, reused → error); password step now recorded by a trigger on real password change (031) (043) | VERIFIED (live) | PO pastes templates in Supabase; Brevo domain + tracking off |
 | Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Statement camera read needs the AI provider (key) |
+| Plan limits in SQL (spec §81): Free capped at `free_auto_movements_per_month` automatic movements per Lima month and `free_institutions` automated bank(s), enforced inside `import_insert_transaction` via `assert_auto_allowance` (not client-callable); trial/Plus uncapped; manual never capped; Importar shows what + action (044) | VERIFIED (unit 314, DB 117, applied live: owner app_writer, no client execute) | Email Bridge write path must call the same check when it goes live; Free 3-month history not yet enforced |
 
 ## Blockers / decisions (external)
 - AI provider (OpenRouter integrated; Gemini/DeepSeek alternatives) + server key → `/app/prueba-ia`, then `scripts/ai-bench.ts` (synthetic data only). MVP priorities: `docs/MVP.md`.
 - Email Bridge real integration; billing provider/price/periodicity; custom SMTP before launch; leaked-password protection (plan).
-- Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); plan limits enforcement.
+- Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); Free history window (3 months) not enforced server-side.
 
 ## Next work (no external decision needed)
-1. Partial payments on obligations and sinking funds (named reserves) in the planning engine.
-2. Copy pass on older screens (Reglas, Conexiones, Importar); camera failure-state UX once a provider key exists.
+1. Free history window (`free_history_months`) enforced server-side (queries/RPC + DB test).
+2. Partial payments on obligations and sinking funds (named reserves) in the planning engine.
+3. Copy pass on older screens (Reglas, Conexiones, Importar); camera failure-state UX once a provider key exists.
 
 PO manual checklist: `docs/runbooks/acceptance-checklist.md`.

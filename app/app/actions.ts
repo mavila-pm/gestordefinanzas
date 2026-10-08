@@ -197,7 +197,11 @@ export async function importAction(_prev: ImportState, form: FormData): Promise<
     const text = importOutcomeText(result.outcome);
     return { ...(text.ok ? { message: text.text } : { error: text.text }), transactionId: result.transactionId, outcome: result.outcome };
   } catch (e) {
-    console.warn(JSON.stringify({ event: 'import_failed', message: e instanceof Error ? e.message.slice(0, 200) : 'unknown' }));
+    const message = e instanceof Error ? e.message : '';
+    // Free plan limits (spec §81, enforced in SQL): say what happened and what the person can do.
+    if (message.includes('plan_auto_limit')) return { error: 'Llegaste a los movimientos automáticos de tu plan este mes. Puedes registrarlo a mano o pasar a Plus.' };
+    if (message.includes('plan_institution_limit')) return { error: 'Tu plan Free automatiza un solo banco. Registra este movimiento a mano o pasa a Plus para sumar otro banco.' };
+    console.warn(JSON.stringify({ event: 'import_failed', message: message.slice(0, 200) || 'unknown' }));
     return { error: errorText(null) };
   }
 }

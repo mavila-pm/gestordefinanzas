@@ -48,6 +48,7 @@
 | 20261008000029_registration.sql | registration | 2026-10-08 |
 | 20261008000030_profiles_upsert_grant.sql | profiles_upsert_grant | 2026-10-08 |
 | 20261008000031_password_step_trigger.sql | password_step_trigger | 2026-10-08 |
+| 20261008000032_plan_auto_limits.sql | plan_auto_limits | 2026-10-08 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
