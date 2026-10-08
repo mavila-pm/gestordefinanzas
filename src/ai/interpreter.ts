@@ -71,10 +71,39 @@ function amountFields(a: Amount | undefined): { amountMinor?: number; currency?:
   return { amountMinor: a.minor, ...(a.currency ? { currency: a.currency } : {}), ...(a.approx ? { approx: true } : {}) };
 }
 
+/**
+ * "gasto 200 en carro 100 en comida y 100 en agua y luz": a list of monthly spending, one item per "<amount> en <thing>".
+ * Read as a whole before the clause split, so "agua y luz" stays ONE item of S/ 100 (never split or guessed per part).
+ * Spending has no date: none is invented. Returns the items and the text left for the normal reading.
+ */
+const SPEND_START = /\b(gasto|gastos|gastamos|gasto mensual|mis gastos son)\b/;
+const SPEND_PAIR = /(?:s\/\.?\s*)?(\d[\d,.]*)\s*(?:soles\s+)?(?:en|de|para)\s+(?:el |la |los |las |mi |mis )?([a-z][a-z ]*?)(?=\s*(?:[,;.]|$|\s(?:y\s+)?(?:s\/\.?\s*)?\d))/g;
+function spendingList(all: string): { items: Patch[]; rest: string } {
+  const start = SPEND_START.exec(all);
+  if (!start) return { items: [], rest: all };
+  const tail = all.slice(start.index + start[0].length);
+  const end = tail.search(/[.;\n]/);
+  const segment = end < 0 ? tail : tail.slice(0, end);
+  const pairs = [...segment.matchAll(SPEND_PAIR)];
+  // Only a clean list counts: every amount in the segment belongs to a pair (else the normal reading handles it).
+  if (!pairs.length || findAmounts(segment).length !== pairs.length) return { items: [], rest: all };
+  const items: Patch[] = [];
+  for (const m of pairs) {
+    const amount = findAmounts(m[1]!)[0];
+    const thing = m[2]!.trim();
+    const known = [...VARIABLE.filter(([re]) => re.test(thing)).map(([, label]) => label), ...OBLIGATIONS.filter(([re]) => re.test(thing)).map(([, , label]) => label)];
+    const name = /\b(carro|auto|camioneta|moto)\b/.test(thing) && known.length === 1 ? 'Transporte (carro)'
+      : known.length === 1 ? known[0]! : thing.charAt(0).toUpperCase() + thing.slice(1);
+    items.push({ t: 'variable', name, ...amountFields(amount) });
+  }
+  return { items, rest: all.slice(0, start.index) + (end < 0 ? '' : tail.slice(end)) };
+}
+
 export function interpret(message: string): Interpretation {
-  const all = fold(message);
+  const spending = spendingList(fold(message));
+  const all = spending.rest;
   const banksInMessage = bankIn(all);
-  const patches: Patch[] = [];
+  const patches: Patch[] = [...spending.items];
   let bare: Bare | null = null;
   // The subject of the previous clause: "mi tarjeta BBVA…, debo 2,430, el mínimo es 284, vence el 19" is one card.
   let ctx = null as Ctx | null;

@@ -3,9 +3,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { domainWrites, validPatches } from '../src/ai/apply';
 import { isReplay } from './idempotency';
 import type { ChatMessage, MessageCard } from '../src/ai/conversation';
-import { canStart, compactState, hasFacts, mergePatches, nextQuestion, summarize, type Changed } from '../src/ai/draft';
+import { canStart, compactState, hasFacts, mergePatches, nextQuestion, recap, summarize, unreadNumbers, yesNoReply, type Changed } from '../src/ai/draft';
 import { checkImage, IMAGE_ERROR_TEXT, imageReadKey, READ_REUSE_MINUTES } from '../src/ai/image';
 import { interpret, isSmallTalk } from '../src/ai/interpreter';
+import { fold } from '../src/ai/text';
 import { EXTRACT_SYSTEM, VISION_SYSTEM } from '../src/ai/prompts';
 import { sanitizeUserText } from '../src/ai/sanitize';
 import { validateInterpretation, validateVision } from '../src/ai/schema';
@@ -18,7 +19,8 @@ import { loadProfile } from './queries';
 /**
  * Conversational onboarding turn logic (ADR-0006). The structured draft is the memory; messages are the short
  * visible conversation. Deterministic first: the local interpreter reads most messages at zero cost; a provider
- * is called only when nothing could be read and one is configured. Taps (summary, start, confirm) never call AI.
+ * is called when nothing could be read OR the reading left numbers unused (partial), and only if one is configured.
+ * Either way the output goes through the same validation and merge: the model never writes money by itself. Taps (summary, start, confirm) never call AI.
  */
 export interface OnboardingState { status: 'active' | 'completed' | 'skipped'; isDemo: boolean; draft: Draft; applied: Record<string, string[]>; startedAt: string | null }
 
@@ -80,7 +82,7 @@ function followUp(draft: Draft, changed: Changed[]): { body: string; card: Messa
     card.question = q.text;
     card.replies = q.replies.filter((r) => r !== 'Tomar foto');
     card.actions = [...(q.replies.includes('Tomar foto') ? [{ kind: 'camera' as const, label: 'Tomar foto' }] : []), ...(canStart(draft) ? [{ kind: 'summary' as const, label: 'Ver mi resumen' }] : [])];
-    return { body: changed.length ? q.text : `Perfecto. ${q.text}`, card, draft };
+    return { body: changed.length ? `${recap(changed)} ${q.text}` : `Perfecto. ${q.text}`, card, draft };
   }
   card.summary = summarize(draft);
   card.actions = [{ kind: 'correct', label: 'Corregir' }, { kind: 'start', label: 'Empezar' }];
@@ -92,15 +94,31 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   const { text } = sanitizeUserText(raw);
   if (!text) return;
   await say(supabase, userId, 'onboarding', 'user', text);
+  // "Sí" / "No" answer the pending question; they never become an amount or a movement.
+  const yn = yesNoReply(state.draft, text);
+  if (yn && (yn.patches.length || yn.reask)) {
+    if (yn.reask) { await say(supabase, userId, 'onboarding', 'velsuno', yn.reask, { actions: canStart(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] }); return; }
+    const merged = mergePatches(state.draft, yn.patches, null);
+    const next = followUp(merged.draft, merged.changed);
+    await save(supabase, userId, next.draft);
+    await say(supabase, userId, 'onboarding', 'velsuno', next.body, next.card);
+    return;
+  }
   if (isSmallTalk(text) && !state.draft.pending) { await say(supabase, userId, 'onboarding', 'velsuno', '¿Algo más que quieras contarme? Si no, puedes ver tu resumen.', { actions: hasFacts(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] }); return; }
 
   let read = interpret(text);
-  if (!read.patches.length && !read.bare) {
+  const partial = unreadNumbers(fold(text), read) > 0;
+  if ((!read.patches.length && !read.bare) || partial) {
     const pendingQ = state.draft.pending ? `Pregunta pendiente: ${state.draft.pending}` : 'Sin pregunta pendiente';
     const r = await infer(supabase, { operation: 'onboarding_extract', system: EXTRACT_SYSTEM, json: true,
       messages: [{ role: 'user', content: `${pendingQ}\nDatos ya registrados:\n${compactState(state.draft) || '(ninguno)'}\n\nMensaje:\n${text}` }] },
     (t) => validateInterpretation(t) !== null);
-    if (r.ok) read = validateInterpretation(r.text)!;
+    if (r.ok) {
+      // A provider answer that read nothing never replaces a partial deterministic reading.
+      const ai = validateInterpretation(r.text)!;
+      if (ai.patches.length || ai.bare || !partial) read = ai;
+    }
+    else if (partial) { /* provider off, failed or out of quota: keep the deterministic reading (never lose a turn) */ }
     else if (r.reason !== 'unavailable' && r.reason !== 'failed') {
       await save(supabase, userId, state.draft);
       await say(supabase, userId, 'onboarding', 'velsuno', `${r.reason === 'ai_quota' ? 'Guardé todo lo que me contaste. Podemos seguir después.' : STOP_TEXT[r.reason]}`,

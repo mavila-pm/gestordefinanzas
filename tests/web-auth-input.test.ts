@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageOn, limaMonth, limaMonthRange, limaToday, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../src/web/auth-input';
+import { ageOn, birthProblem, limaMonth, limaMonthRange, limaToday, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../src/web/auth-input';
 
 describe('auth input validation', () => {
   it('emails', () => {
@@ -19,14 +19,25 @@ describe('auth input validation', () => {
     expect(passwordProblem('')).not.toBeNull();
   });
 
-  it('phones to E.164 (+51 for a Peruvian mobile without code; other countries need +code)', () => {
+  it('phones: Peruvian mobile only, 9 digits starting with 9, stored as +519XXXXXXXX', () => {
+    expect(normalizePhone('987654321')).toBe('+51987654321');
     expect(normalizePhone('987 654 321')).toBe('+51987654321');
-    expect(normalizePhone('+51 987-654-321')).toBe('+51987654321');
-    expect(normalizePhone('0034 612 345 678')).toBe('+34612345678');
-    expect(normalizePhone('+1 (415) 555-0100')).toBe('+14155550100');
-    expect(normalizePhone('12345')).toBeNull();
-    expect(normalizePhone('01 234 5678')).toBeNull(); // local landline without +code
-    expect(normalizePhone('+0123456789')).toBeNull();
+    expect(normalizePhone('98765432')).toBeNull(); // 8 digits
+    expect(normalizePhone('9876543210')).toBeNull(); // 10 digits
+    expect(normalizePhone('887654321')).toBeNull(); // not a mobile
+    expect(normalizePhone('+51987654321')).toBeNull(); // the +51 is fixed in the form, never typed
+    expect(normalizePhone('+34612345678')).toBeNull(); // another country
+    expect(normalizePhone('98765432a')).toBeNull();
+    expect(normalizePhone('987-654-321')).toBeNull();
+    expect(normalizePhone(null)).toBeNull();
+  });
+
+  it('birth date for the profile step: 18 on the exact Lima day, future/invalid refused, a fix clears the error', () => {
+    expect(birthProblem('2008-10-08', '2026-10-08')).toBeNull(); // turns 18 today
+    expect(birthProblem('2008-10-09', '2026-10-08')).toBe('Velsuno es para personas mayores de 18 años.');
+    expect(birthProblem('2030-01-01', '2026-10-08')).toBe('Revisa tu fecha de nacimiento.');
+    expect(birthProblem('2008-02-30', '2026-10-08')).toBe('Revisa tu fecha de nacimiento.');
+    expect(birthProblem('1990-05-01', '2026-10-08')).toBeNull();
   });
 
   it('birth dates and age (18+ by calendar, birthday counts)', () => {

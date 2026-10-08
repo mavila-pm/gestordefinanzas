@@ -58,8 +58,8 @@ export function newPasswordError(error: { status?: number; code?: string }): str
 /** complete_registration errors (SQL exception messages) to copy. */
 export function registrationError(message: string | undefined): string {
   if (!message) return 'No pudimos guardar tus datos. Intenta de nuevo.';
-  if (message.includes('under_age')) return 'Velsuno es para mayores de 18 años.';
-  if (message.includes('invalid_phone')) return 'Revisa tu número de celular. Si no es de Perú, incluye el código de país (+).';
+  if (message.includes('under_age')) return 'Velsuno es para personas mayores de 18 años.';
+  if (message.includes('invalid_phone')) return 'Escribe tu celular de 9 dígitos. Empieza con 9.';
   if (message.includes('invalid_birth_date')) return 'Revisa tu fecha de nacimiento.';
   if (message.includes('invalid_name')) return 'Revisa tu nombre y apellidos.';
   if (message.includes('consent_version')) return 'Actualizamos los Términos o la Política de Privacidad. Recarga la página y vuelve a aceptarlos.';

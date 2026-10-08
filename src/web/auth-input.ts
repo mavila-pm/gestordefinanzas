@@ -23,14 +23,25 @@ export function passwordProblem(v: unknown): string | null {
 }
 
 /**
- * Mobile number to E.164. A Peruvian mobile written without the country code (9 digits starting with 9) gets +51;
- * any other number must include its "+code". Spaces, dashes, dots and parentheses are ignored.
+ * Peruvian mobile only (registration is Peru-only): the person types the 9 digits (starting with 9) after a fixed +51.
+ * Spaces are tolerated; anything else (letters, symbols, another country, a missing or extra digit) is refused.
+ * Returns E.164 (+519XXXXXXXX) or null.
  */
 export function normalizePhone(v: unknown): string | null {
   if (typeof v !== 'string') return null;
-  const raw = v.trim().replace(/[\s().-]/g, '');
-  const e164 = /^9\d{8}$/.test(raw) ? `+51${raw}` : raw.startsWith('00') ? `+${raw.slice(2)}` : raw;
-  return /^\+[1-9]\d{7,14}$/.test(e164) ? e164 : null;
+  const digits = v.replace(/ /g, '');
+  return /^9\d{8}$/.test(digits) ? `+51${digits}` : null;
+}
+
+export const PHONE_ERROR = 'Escribe tu celular de 9 dígitos. Empieza con 9.';
+export const UNDER_AGE_ERROR = 'Velsuno es para personas mayores de 18 años.';
+export const BIRTH_ERROR = 'Revisa tu fecha de nacimiento.';
+
+/** Birth date problem for the profile step (Lima calendar, exact day): null when valid and 18+. */
+export function birthProblem(v: unknown, today: string): string | null {
+  const birth = parseBirthDate(v);
+  if (!birth || birth > today) return BIRTH_ERROR;
+  return ageOn(birth, today) >= 18 ? null : UNDER_AGE_ERROR;
 }
 
 /** ISO date (YYYY-MM-DD) that exists on the calendar, or null. */

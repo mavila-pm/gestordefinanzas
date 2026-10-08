@@ -199,18 +199,37 @@ export function nextQuestion(d: Draft): Question | null {
     () => (d.incomes.length === 0 ? ask('income:new', '¿Cuánto recibes y qué día te pagan?', ['Después']) : null),
     ...d.incomes.map((i) => () => (i.amountMinor === null && i.amountStatus === 'unknown' ? ask(`income:${i.id}:amount`, `¿Cuánto recibes de ${i.name.toLowerCase()}?`) : null)),
     ...d.incomes.map((i) => () => (i.day === null ? ask(`income:${i.id}:day`, `¿Qué día te pagan ${i.name.toLowerCase() === 'sueldo' ? 'el sueldo' : i.name.toLowerCase()}?`, ['Quincenal', 'Después']) : null)),
-    () => (d.balance === null ? ask('balance', '¿Cuánto tienes hoy en tu cuenta, más o menos?') : null),
+    () => (d.balance === null ? ask('balance', '¿Cuánto dinero tienes disponible hoy?') : null),
     ...d.obligations.map((o) => () => (o.day === null && o.dayStatus === 'unknown' ? ask(`obligation:${o.id}:day`, `¿Qué día pagas ${o.name.toLowerCase()}?`) : null)),
     ...cards.map((x) => () => (x.dueDay === null ? ask(`debt:${x.id}:day`, `¿Qué día vence la ${cardName(x)}?`) : null)),
     ...d.obligations.map((o) => () => (o.amountMinor === null && o.amountStatus === 'unknown' ? ask(`obligation:${o.id}:amount`, `¿Cuánto pagas de ${o.name.toLowerCase()}?`, ['No sé', 'Tomar foto']) : null)),
     ...cards.map((x) => () => (x.minimumMinor === null ? ask(`debt:${x.id}:minimum`, `¿Cuál es el pago mínimo de la ${cardName(x)}?`, ['No sé', 'Tomar foto']) : null)),
     ...cards.map((x) => () => (x.balanceMinor === null ? ask(`debt:${x.id}:balance`, `¿Cuánto debes en la ${cardName(x)}?`, ['No sé', 'Tomar foto']) : null)),
     ...d.debts.filter((x) => x.kind !== 'card').map((x) => () => (x.balanceMinor === null ? ask(`debt:${x.id}:balance`, x.kind === 'personal' ? `¿Cuánto le debes a ${x.lender}?` : `¿Cuánto te falta pagar del ${x.name.toLowerCase()}?`) : null)),
-    () => (!d.done.includes('obligations') ? ask('group:obligations', d.obligations.length ? '¿Algún otro pago fijo? Alquiler, luz, internet…' : '¿Qué pagos fijos tienes cada mes? Alquiler, luz, internet…', ['No tengo más']) : null),
+    () => (!d.done.includes('obligations') ? ask('group:obligations', d.obligations.length + d.variable.length ? '¿Tienes algún otro pago fijo, como alquiler o internet?' : '¿Qué pagos fijos tienes cada mes? Alquiler, luz, internet…', ['No tengo más']) : null),
     () => (d.variable.length === 0 ? ask('variable:basics', '¿Cuánto gastas al mes en lo básico, como comida y transporte?', ['No sé']) : null),
   ];
   for (const c of candidates) { const q = c(); if (q) return q; }
   return null;
+}
+
+/**
+ * How many numbers in the message the deterministic reading did NOT use (amounts and days). Above 0 the reading is
+ * partial ("gasto 200 en carro y 100 en comida" read as one item): the provider, when enabled, reads it instead.
+ */
+export function unreadNumbers(folded: string, read: { patches: readonly Patch[]; bare: Bare | null }): number {
+  const numbers = (folded.match(/\d+(?:[.,]\d+)*/g) ?? []).length;
+  let used = 0;
+  const count = (...v: Array<unknown>) => { for (const x of v) if (x !== undefined && x !== null) used++; };
+  for (const p of read.patches) {
+    if (p.t === 'income') count(p.amountMinor, p.day, p.dayMax, p.secondDay);
+    else if (p.t === 'obligation') count(p.amountMinor, p.day, p.dayMax);
+    else if (p.t === 'debt') count(p.balanceMinor, p.minimumMinor, p.dueDay, p.last4);
+    else if (p.t === 'variable' || p.t === 'balance') count(p.amountMinor);
+    else if (p.t === 'account') count(p.last4);
+  }
+  if (read.bare) count(read.bare.amountMinor, read.bare.day, read.bare.dayMax);
+  return Math.max(0, numbers - used);
 }
 
 /** "Con esto ya podemos empezar": an income (even partial) and the balance question answered or asked. */
@@ -245,4 +264,28 @@ export function compactState(d: Draft): string {
   const s = summarize(d);
   const lines = s.groups.flatMap((g) => g.items.map((i) => `${g.title}: ${i.label} = ${i.value}`));
   return [...lines, s.pending.length ? `Por confirmar: ${s.pending.join('; ')}` : ''].filter(Boolean).join('\n').slice(0, 2000);
+}
+
+/**
+ * "Sí" / "No" read against the pending question, never as data: "no" to "¿algún otro pago fijo?" closes that group;
+ * "sí" (or a yes/no to a question that needs a value) asks for the value again. null = not a yes/no reply.
+ */
+export function yesNoReply(d: Draft, text: string): { patches: Patch[]; reask: string | null } | null {
+  const t = fold(text).replace(/[.!¡¿?]/g, '').trim();
+  const yes = /^(si|claro|correcto|asi es|exacto|ok si|si claro)$/.test(t);
+  const no = /^(no|nop|nada|ninguno|ninguna|no tengo|no hay)$/.test(t);
+  if (!yes && !no) return null;
+  if (d.pending === 'group:obligations') {
+    return no ? { patches: [{ t: 'done', group: 'obligations' }], reask: null } : { patches: [], reask: '¿Cuál es? Dime el nombre y cuánto pagas, por ejemplo "internet 90".' };
+  }
+  if (!d.pending) return { patches: [], reask: null };
+  const q = nextQuestion({ ...d, asked: d.asked.filter((k) => k !== d.pending) });
+  return { patches: [], reask: q && q.key === d.pending ? `Me falta ese dato. ${q.text}` : null };
+}
+
+/** One natural sentence with everything understood in this turn (all rows, nothing dropped). */
+export function recap(changed: readonly Changed[]): string {
+  const parts = changed.map((c) => `${c.label.toLowerCase()}: ${c.value}`);
+  if (!parts.length) return '';
+  return `Entendí ${parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join('; ')} y ${parts.at(-1)}`}.`;
 }

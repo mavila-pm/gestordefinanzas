@@ -71,26 +71,40 @@ await runSuite('registration', async ({ page, check }) => {
 
   await page.fill('input[name=givenNames]', 'Diego Armando');
   await page.fill('input[name=familyNames]', 'Prueba Sintética');
-  await page.fill('input[name=phone]', '987 654 321');
+  // Peru-only phone: fixed +51, only the 9 digits are typed; letters/symbols never reach the field.
+  check('phone shows a fixed +51 prefix', (await page.locator('.phone-prefix').textContent()) === '+51');
+  await page.fill('input[name=phone]', '98a7-65 4321x0');
+  check('only digits, at most 9', (await page.inputValue('input[name=phone]')) === '987654321', await page.inputValue('input[name=phone]'));
   // Server-side rules, with the browser's own constraints removed before each submit (React restores them on re-render).
-  const unguard = () => page.evaluate(() => document.querySelectorAll('main input').forEach((i) => { i.removeAttribute('max'); i.removeAttribute('required'); }));
+  const unguard = () => page.evaluate(() => {
+    document.querySelectorAll('main input').forEach((i) => { i.removeAttribute('max'); i.removeAttribute('required'); i.removeAttribute('pattern'); i.removeAttribute('maxlength'); });
+    document.querySelector('main button[type=submit]')?.removeAttribute('disabled');
+  });
   const submit = async () => { await unguard(); await act(page, () => page.click('main button[type=submit]')); };
-  const alertText = async () => ((await page.locator(`main ${ALERT}`).textContent().catch(() => '')) ?? '');
+  const alertText = async () => ((await page.locator(`main ${ALERT}`).allTextContents().catch(() => [])).join(' | '));
   const lima = new Date(Date.now() - 5 * 3600_000);
   const iso = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10);
   await page.fill('input[name=birthDate]', iso(lima.getUTCFullYear() - 18, lima.getUTCMonth(), lima.getUTCDate() + 1)); // 18 tomorrow
+  check('under 18: message right away and Continue blocked', (await alertText()).includes('Velsuno es para personas mayores de 18 años.')
+    && await page.locator('main button[type=submit]').isDisabled(), await alertText());
   await page.check('input[name=accept]');
   await submit();
-  check('under 18 (one day short) refused', (await alertText()).includes('mayores de 18'), await alertText());
+  check('under 18 (one day short) refused by the server too', (await page.locator('main p[role=alert]').textContent().catch(() => '') ?? '').includes('mayores de 18'), await alertText());
+  await page.fill('input[name=birthDate]', iso(lima.getUTCFullYear() - 18, lima.getUTCMonth(), lima.getUTCDate())); // 18 today
+  check('turning 18 today is accepted (message cleared)', !(await alertText()).includes('mayores de 18') && !(await page.locator('main button[type=submit]').isDisabled()), await alertText());
   await page.fill('input[name=birthDate]', iso(lima.getUTCFullYear() - 30, 4, 20));
   await page.uncheck('input[name=accept]');
   await submit();
   check('consent not accepted → refused', (await alertText()).includes('acepta los Términos'), await alertText());
-  await page.fill('input[name=phone]', '12345');
+  await page.fill('input[name=phone]', '98765');
+  await page.locator('input[name=phone]').blur();
+  check('incomplete phone: message on leaving the field, Continue blocked', (await alertText()).includes('9 dígitos') && await page.locator('main button[type=submit]').isDisabled(), await alertText());
+  // A tampered request (foreign number in the field) is refused by the server.
   await page.check('input[name=accept]');
+  await page.evaluate(() => { (document.querySelector('input[name=phone]') as HTMLInputElement).value = '+34612345678'; });
   await submit();
-  check('invalid phone → refused', (await alertText()).includes('celular'), await alertText());
-  await page.fill('input[name=phone]', '987 654 321');
+  check('foreign / tampered phone → refused by the server', (await alertText()).includes('9 dígitos'), await alertText());
+  await page.fill('input[name=phone]', '987654321');
   await page.fill('input[name=birthDate]', iso(lima.getUTCFullYear() - 30, 4, 20));
   await page.check('input[name=accept]');
   await Promise.all([page.waitForURL(/\/bienvenida/, { timeout: 20000 }).catch(() => undefined), page.click('main button[type=submit]')]);
