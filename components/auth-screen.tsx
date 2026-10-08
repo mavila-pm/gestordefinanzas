@@ -1,16 +1,19 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { Logo } from './ui/logo';
+import authPhoto from '../public/auth/velsuno-acceso.webp';
 
 /**
- * Access screens (signup, login, recovery, registration steps). Mobile: the form first, brand line on top.
- * Desktop (≥ 1024 px): a calm brand panel beside the form. The panel is pure CSS (no media download); a licensed
- * background video can be added in `.auth-art` later without touching the form (docs/runbooks/auth-email.md).
+ * Access screens (signup, login, recovery, registration steps).
+ * Mobile/tablet: brand line + a compact photo card, then the form. Desktop (≥ 1024 px): the photo fills the side
+ * panel with the slogan over a dark gradient. Decorative only (alt=""), optimized and lazy: the form renders first.
  */
 export function AuthScreen({ title, lead, step, children }: { title: string; lead?: string; step?: string; children: React.ReactNode }) {
   return (
     <main className="auth">
       <aside className="auth-art" aria-hidden="true">
-        <div className="auth-art-glow" />
+        <Image src={authPhoto} alt="" fill sizes="(min-width: 1024px) 50vw, 1px" placeholder="blur" quality={70} className="auth-art-photo" />
+        <div className="auth-art-shade" />
         <div className="auth-art-copy">
           <Logo height={30} />
           <p className="auth-slogan">Tu dinero, más claro.</p>
@@ -20,6 +23,9 @@ export function AuthScreen({ title, lead, step, children }: { title: string; lea
       <div className="auth-panel">
         <Link href="/" className="brand" aria-label="Velsuno, inicio"><Logo height={26} /></Link>
         <p className="auth-tagline">Tu dinero, más claro.</p>
+        <div className="auth-photo" aria-hidden="true">
+          <Image src={authPhoto} alt="" fill sizes="(max-width: 1023px) min(100vw, 400px), 1px" placeholder="blur" quality={70} className="auth-art-photo" />
+        </div>
         <div className="page-head">
           {step && <p className="auth-step">{step}</p>}
           <h1>{title}</h1>
