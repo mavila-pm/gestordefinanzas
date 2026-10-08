@@ -1,5 +1,4 @@
 import Image from 'next/image';
-import Link from 'next/link';
 import { Logo } from './ui/logo';
 import authPhoto from '../public/auth/velsuno-acceso.webp';
 
@@ -20,7 +19,7 @@ export function AuthScreen({ title, lead, step, children }: { title: string; lea
         </div>
       </aside>
       <div className="auth-panel">
-        <Link href="/" className="brand" aria-label="Velsuno, inicio"><Logo height={26} /></Link>
+        <div className="brand"><Logo height={26} /></div>
         <p className="auth-tagline">Tu dinero, más claro.</p>
         <div className="page-head">
           {step && <p className="auth-step">{step}</p>}
