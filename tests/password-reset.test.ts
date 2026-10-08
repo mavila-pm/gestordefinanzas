@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { passwordResetOutcome, RESET_SENT, SIGNUP_SENT, signupOutcome } from '../src/web/password-reset';
+import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError, RESET_SENT } from '../src/web/password-reset';
 
 /**
  * Anti-enumeration for password recovery (spec §86). Supabase returns 429 `over_email_send_rate_limit` only for
@@ -33,12 +33,12 @@ describe('passwordResetOutcome (pure policy)', () => {
 
 // ── The real server action, with Next.js and Supabase stubbed ────────────────────────────────────────────────
 const resetPasswordForEmail = vi.fn();
-const signUp = vi.fn();
+const signInWithOtp = vi.fn();
 vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({ cookies: async () => ({ set: vi.fn(), get: vi.fn(), getAll: () => [] }) }));
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
 vi.mock('../lib/supabase/server', () => ({
-  createSupabaseServerClient: async () => ({ auth: { resetPasswordForEmail, signUp } }),
+  createSupabaseServerClient: async () => ({ auth: { resetPasswordForEmail, signInWithOtp } }),
 }));
 
 const form = (email: string) => { const f = new FormData(); f.set('email', email); return f; };
@@ -87,26 +87,35 @@ describe('requestPasswordReset action: no enumeration by message difference', ()
   });
 });
 
-describe('signup: no enumeration by message difference', () => {
+describe('signup (email only): same answer for new and registered addresses; errors in plain words', () => {
   let warn: ReturnType<typeof vi.spyOn>;
-  beforeEach(() => { signUp.mockReset(); warn = vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+  beforeEach(() => { signInWithOtp.mockReset(); warn = vi.spyOn(console, 'warn').mockImplementation(() => {}); });
   afterEach(() => warn.mockRestore());
-  const signupForm = (email: string) => { const f = form(email); f.set('password', 'una-clave-segura'); return f; };
 
-  it('new email hitting the email cap (429) === already registered email (200), byte for byte', async () => {
+  it('new and registered addresses both get { sent: true }; the link goes to the query-free callback', async () => {
     const { signup } = await import('../app/auth/actions');
-    signUp.mockResolvedValueOnce({ data: null, error: RATE_LIMITED }); // new address, cap exhausted
-    const fresh = await signup({}, signupForm('new@example.test'));
-    signUp.mockResolvedValueOnce({ data: { user: {} }, error: null }); // registered address (obfuscated user)
-    const registered = await signup({}, signupForm('registered@example.test'));
+    signInWithOtp.mockResolvedValue({ data: {}, error: null });
+    const fresh = await signup({}, form('new@example.test'));
+    const registered = await signup({}, form('registered@example.test'));
+    expect(fresh).toEqual({ sent: true });
     expect(JSON.stringify(fresh)).toBe(JSON.stringify(registered));
-    expect(fresh).toEqual({ message: SIGNUP_SENT });
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]![0])).not.toContain('new@example.test');
+    expect(signInWithOtp).toHaveBeenCalledWith({ email: 'new@example.test', options: { shouldCreateUser: true, emailRedirectTo: 'http://localhost:3000/auth/confirm' } });
+    expect(warn).not.toHaveBeenCalled();
   });
 
-  it('only a weak password (input property, not account property) is reported', () => {
-    expect(signupOutcome({ status: 422, code: 'weak_password' }).state).toEqual({ error: 'La contraseña es demasiado débil.' });
-    expect(signupOutcome({ status: 500, code: 'unexpected_failure' }).state).toEqual({ message: SIGNUP_SENT });
+  it('rate limit and provider failures are shown in plain words and logged without the address', async () => {
+    const { signup } = await import('../app/auth/actions');
+    signInWithOtp.mockResolvedValueOnce({ data: null, error: RATE_LIMITED });
+    expect(await signup({}, form('someone@example.test'))).toEqual({ error: 'Demasiados intentos. Espera un minuto y vuelve a intentarlo.' });
+    expect(String(warn.mock.calls[0]![0])).not.toContain('someone@example.test');
+    expect(emailLinkOutcome({ status: 500, code: 'unexpected_failure' }).state).toEqual({ error: 'No pudimos enviar el correo. Intenta de nuevo en unos minutos.' });
+    expect(await signup({}, form('not-an-email'))).toEqual({ error: 'Revisa tu correo electrónico.' });
+  });
+
+  it('password and profile errors never show provider text', () => {
+    expect(newPasswordError({ status: 422, code: 'weak_password' })).toMatch(/fácil de adivinar/);
+    expect(newPasswordError({ status: 401 })).toMatch(/enlace venció/);
+    expect(registrationError('under_age')).toBe('Velsuno es para mayores de 18 años.');
+    expect(registrationError('duplicate key value violates something internal')).toBe('No pudimos guardar tus datos. Intenta de nuevo.');
   });
 });

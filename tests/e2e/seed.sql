@@ -2,7 +2,7 @@
 -- (__E2E_RUN__), so probe users are new and deterministic per run (e2e-<tag>-<run>@gestordefinanzas.invalid) and the
 -- seed never depends on a previous cleanup. It never deletes or updates anything: cleanup is tests/e2e/cleanup.sql.
 -- Probe users live on the non-deliverable .invalid domain; one A/B pair per suite, so suites never share data:
---   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits   s11* cashflow   s12* onboarding   s13* income-link   s14* vels   s15* account-delete
+--   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits   s11* cashflow   s12* onboarding   s13* income-link   s14* vels   s15* account-delete   s16* registration
 -- __E2E_PASSWORD__ is replaced at run time (scripts/e2e.sh render) — the password is never committed.
 -- B rows attacked by id in the suites have fixed ids (see B_TX in tests/e2e/lib.ts).
 -- Fixed ids are derived from the run (md5('<run>:<name>')), so two runs never collide.
@@ -20,7 +20,7 @@ declare r record; u uuid; ta uuid; em text;
 begin
   -- Namespace guard: refuse anything but the synthetic run format (never a real user).
   if run !~ '^[a-z0-9]{8,20}$' then raise exception 'e2e seed: invalid run id %', run; end if;
-  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b'),('s12a'),('s12b'),('s13a'),('s13b'),('s14a'),('s14b'),('s15a'),('s15b')) v(tag) loop
+  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b'),('s12a'),('s12b'),('s13a'),('s13b'),('s14a'),('s14b'),('s15a'),('s15b'),('s16a'),('s16b')) v(tag) loop
     u := gen_random_uuid();
     em := 'e2e-' || r.tag || '-' || run || '@gestordefinanzas.invalid';
     if em !~ '^e2e-s[0-9]+[ab]-[a-z0-9]{8,20}@gestordefinanzas\.invalid$' then raise exception 'e2e seed: % is outside the synthetic namespace', em; end if;
@@ -165,8 +165,12 @@ begin
       insert into public.debts (user_id, name, principal_minor, balance_minor) values (u, 'B deuda secreta', 100000, 50000);
       insert into public.subscriptions (user_id, plan, status) values (u, 'plus', 'active');
     end if;
+    -- Registration (migration 029): every probe finished it, except s16a (the registration suite walks the steps).
+    if r.tag <> 's16a' then
+      insert into public.profiles (user_id, password_set_at, registration_completed_at) values (u, now(), now()) on conflict (user_id) do nothing;
+    end if;
     -- Every probe user has finished onboarding except s12a, the first-time user of the onboarding suite (ADR-0006).
-    if r.tag <> 's12a' then insert into public.onboarding_states (user_id, status, completed_at) values (u, 'completed', now()); end if;
+    if r.tag not in ('s12a', 's16a') then insert into public.onboarding_states (user_id, status, completed_at) values (u, 'completed', now()); end if;
     if r.tag = 's12a' then insert into public.demo_access (user_id) values (u); end if;
   end loop;
 end $$;

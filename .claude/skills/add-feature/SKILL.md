@@ -17,7 +17,8 @@ by themselves when you touch those files.
    validation in `src/web/<area>-input.ts`. Money = integer minor units; metrics via `financialEffect()`. Unit test in `tests/<area>.test.ts`.
 4. **Server**: reads in `lib/queries.ts` or an area loader (`lib/planning.ts`), always with `createSupabaseServerClient()`
    + `authUser()` (RLS). Writes in `app/app/actions.ts` (or the route's `actions.ts`): validate → RPC/insert → `revalidatePath`.
-   Creates take a `client_ref` (ADR-0012, `lib/idempotency.ts`). AI only through `lib/ai.ts`.
+   Creates take a `client_ref` (ADR-0012, `lib/idempotency.ts`). AI only through `lib/ai.ts`. Profile/registration
+   columns are function-only (column grants, migration 029): add a SQL function, not a client update.
 5. **UI**: page in `app/app/<route>/page.tsx` (server component), client parts in `components/`; reuse `components/ui/*`
    (Sheet, Icon) and `app/globals.css` tokens. New menu entry → `components/ui/nav-items.ts`. No `loading.tsx` above a `notFound()`.
 6. **E2E** when the flow is user-visible: extend a suite in `tests/e2e/` or add one + its probe pair in `tests/e2e/seed.sql`

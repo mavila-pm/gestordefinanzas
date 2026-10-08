@@ -8,6 +8,9 @@ import { chromium, type Page } from 'playwright-core';
 import { mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { BASE, login, probe } from './lib.ts';
 
+// Seed rows are relative to the Lima month (tests/e2e/seed.sql): use the current month, never a fixed one.
+const M0 = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 7);
+
 const WIDTHS = [320, 375, 390, 430, 768, 1024, 1280, 1440];
 const FULL = new Set([375, 1280]); // every screen; the rest only for the overflow check + key screens
 const OUT = '.e2e/shots';
@@ -65,14 +68,14 @@ for (const theme of ['light', 'dark'] as const) {
       await shoot(page, path.slice(1), width, theme, save && path === '/login');
     }
     await login(page, probe('s78a'));
-    for (const [name, path] of [['dashboard', '/app?month=2026-09'], ['movements', '/app/movimientos?month=2026-09'], ['review', '/app/revisar'], ['more', '/app/mas'],
-      ['analysis', '/app/analisis?month=2026-09'], ['budgets', '/app/presupuestos'], ['payments', '/app/compromisos'], ['accounts', '/app/tarjetas'],
+    for (const [name, path] of [['dashboard', `/app?month=${M0}`], ['movements', `/app/movimientos?month=${M0}`], ['review', '/app/revisar'], ['more', '/app/mas'],
+      ['analysis', `/app/analisis?month=${M0}`], ['budgets', '/app/presupuestos'], ['payments', '/app/compromisos'], ['accounts', '/app/tarjetas'],
       ['rules', '/app/reglas'], ['connections', '/app/conexiones'], ['account-plan', '/app/cuenta'], ['settings', '/app/ajustes'], ['new', '/app/movimientos/nuevo'],
       ['import', '/app/importar'], ['ask', '/app/preguntar']] as const) {
       await page.goto(`${BASE}${path}`);
       await shoot(page, name, width, theme, save);
     }
-    await page.goto(`${BASE}/app/movimientos?month=2026-09&q=TIENDA`);
+    await page.goto(`${BASE}/app/movimientos?month=${M0}&q=TIENDA`);
     await page.getByText('TIENDA RARA E2E').first().click();
     await page.waitForURL(/movimientos\/[0-9a-f-]{36}$/);
     await shoot(page, 'detail', width, theme, save);

@@ -224,12 +224,64 @@ details > summary::after { content: ''; width: 8px; height: 8px; margin-left: 10
 details[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
 
 /* ── Auth ──────────────────────────────────────────────────────────────────────────────────────── */
-.auth { min-height: 100dvh; display: grid; align-content: center; justify-items: center; padding: var(--space-32) var(--space-16); }
+.auth { min-height: 100dvh; display: grid; align-content: center; justify-items: center; padding: var(--space-32) var(--space-16); max-width: none; width: 100%; margin: 0; }
+.auth-tagline { font-size: 15px; line-height: 22px; font-weight: 600; color: var(--text-secondary); margin-top: -12px; }
+.auth-art { display: none; }
 .auth-panel { width: 100%; max-width: 400px; display: grid; gap: var(--space-24); }
 .auth-panel .brand { color: var(--text-primary); }
 .auth-panel h1 { font-size: 28px; line-height: 36px; }
+.auth-step { font-size: 13px; font-weight: 600; color: var(--text-secondary); letter-spacing: .02em; }
+.auth-form { gap: var(--space-16); }
+.auth-form .field { gap: 6px; }
+.auth-form label, .auth-form .field > label { font-size: 14px; line-height: 20px; font-weight: 600; }
 .auth-links { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-16); font-size: 14px; }
 .auth-links a { min-height: 44px; display: inline-flex; align-items: center; }
+.password-field { position: relative; }
+.password-field input { width: 100%; padding-right: 52px; }
+.password-field .reveal { position: absolute; top: 50%; right: 2px; transform: translateY(-50%); width: 44px; height: 44px; min-height: 44px;
+  display: grid; place-items: center; background: transparent; color: var(--text-secondary); box-shadow: none; border-radius: var(--radius-control); }
+.password-field .reveal:hover { color: var(--text-primary); }
+.pw-rules { display: flex; flex-wrap: wrap; gap: 4px 14px; list-style: none; margin: 2px 0 0; padding: 0; font-size: 13px; color: var(--text-muted); }
+.pw-rules li::before { content: '○'; margin-right: 6px; }
+.pw-rules li[data-ok="true"] { color: var(--text-primary); }
+.pw-rules li[data-ok="true"]::before { content: '✓'; color: var(--semantic-success); }
+.field-row { display: grid; gap: var(--space-16); grid-template-columns: 1fr; }
+@media (min-width: 480px) { .field-row { grid-template-columns: 1fr 1fr; } }
+input.readonly { background: var(--bg-secondary); color: var(--text-secondary); }
+.consent { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; font-size: 14px; line-height: 20px; min-height: 44px; }
+.consent input { margin-top: 1px; width: 22px; height: 22px; }
+.consent a { text-decoration: underline; text-underline-offset: 2px; }
+.sent { gap: var(--space-12); }
+.sent h2 { font-size: 22px; line-height: 30px; }
+@media (min-width: 1024px) {
+  .auth { grid-template-columns: minmax(0, 1fr) minmax(440px, 560px); align-content: stretch; justify-items: stretch; padding: 0; }
+  .auth-art { display: grid; position: relative; overflow: hidden; align-content: end; padding: var(--space-64);
+    background: var(--brand-primary); color: var(--brand-secondary); isolation: isolate; }
+  .auth-art-glow { position: absolute; inset: -20%; z-index: -1;
+    background: radial-gradient(40% 35% at 70% 30%, color-mix(in srgb, var(--brand-accent) 16%, transparent), transparent 70%),
+                radial-gradient(55% 45% at 20% 80%, color-mix(in srgb, var(--brand-secondary) 7%, transparent), transparent 70%); }
+  .auth-art-copy { display: grid; gap: var(--space-12); max-width: 440px; }
+  .auth-slogan { font-size: 40px; line-height: 48px; font-weight: 600; letter-spacing: -.01em; margin-top: var(--space-24); }
+  .auth-sub { font-size: 17px; line-height: 26px; color: color-mix(in srgb, var(--brand-secondary) 72%, transparent); }
+  .auth-panel { align-self: center; justify-self: center; padding: var(--space-48) var(--space-32); }
+  .auth-panel > .brand, .auth-panel > .auth-tagline { display: none; }
+}
+
+/* ── Legal pages ─────────────────────────────────────────────────────────────────────────────── */
+.legal { max-width: 720px; margin: 0 auto; padding: var(--space-24) var(--space-16) var(--space-64); display: grid; gap: var(--space-16); }
+.legal-head { display: flex; justify-content: space-between; align-items: center; min-height: 44px; color: var(--text-primary); }
+.legal h1 { font-size: 32px; line-height: 40px; margin-top: var(--space-16); }
+.legal h2 { font-size: 19px; line-height: 26px; margin-top: var(--space-16); }
+.legal section { display: grid; gap: var(--space-8); scroll-margin-top: var(--space-24); }
+.legal p, .legal li { font-size: 16px; line-height: 26px; color: var(--text-secondary); }
+.legal ul { display: grid; gap: var(--space-8); padding-left: 20px; margin: 0; }
+.legal strong { color: var(--text-primary); }
+.legal a { text-decoration: underline; text-underline-offset: 2px; }
+.legal-toc { background: var(--bg-secondary); border-radius: var(--radius-card); padding: var(--space-16) var(--space-24); }
+.legal-toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; columns: 1; }
+.legal-toc a { display: inline-flex; min-height: 36px; align-items: center; text-decoration: none; color: var(--text-primary); font-size: 15px; }
+@media (min-width: 720px) { .legal-toc ol { display: block; columns: 2; column-gap: var(--space-24); } .legal { padding-top: var(--space-48); } }
+.legal-foot { margin-top: var(--space-24); }
 
 @media (max-width: 380px) {
   main { padding-left: var(--space-12); padding-right: var(--space-12); }

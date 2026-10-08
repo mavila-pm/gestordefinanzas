@@ -55,13 +55,8 @@ await runSuite('auth-dashboard', async ({ page, check }) => {
     nextCookie?.value === '%2Freset-password' || nextCookie?.value === '/reset-password'
       ? nextCookie.httpOnly && nextCookie.path === '/auth' : false, JSON.stringify(nextCookie));
 
-  // 6. Signup with an already registered email: neutral message (no enumeration)
+  // 6. Signup asks only for the email (registration suite walks the steps; the send is unit-tested, no email here)
   await page.goto(`${BASE}/signup`);
-  await page.fill('input[name=email]', B);
-  await page.fill('input[name=password]', 'another-pass-123');
-  await act(page, () => page.click('form button[type=submit]'));
-  const signupMsg = await page.locator('[role=status], [role=alert]:not(#__next-route-announcer__)').first().textContent();
-  check('signup existing email -> neutral message', !!signupMsg?.includes('Si el correo es válido'), signupMsg ?? '');
-  const signupCookie = (await page.context().cookies()).find((c) => c.name === 'gf_auth_next');
-  check('signup remembers /app for the confirmation link', decodeURIComponent(signupCookie?.value ?? '') === '/app', JSON.stringify(signupCookie));
+  check('signup: email only, then "Continuar"', (await page.locator('input[name=password]').count()) === 0
+    && (await page.locator('input[type=email]').count()) === 1 && (await page.locator('main button[type=submit]').textContent()) === 'Continuar');
 });

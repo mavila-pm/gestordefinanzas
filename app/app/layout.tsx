@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { registrationStep } from '../../lib/registration';
 import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { logout } from '../auth/actions';
 import { BottomNav, SidebarNav } from '../../components/ui/app-nav';
@@ -12,10 +13,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const supabase = await createSupabaseServerClient();
   const user = await authUser(supabase);
   if (!user) redirect('/login');
-  const [{ count }, onboarding] = await Promise.all([
+  const [{ count }, onboarding, step] = await Promise.all([
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
     supabase.from('onboarding_states').select('status').maybeSingle(),
+    registrationStep(supabase),
   ]);
+  // A new account finishes registration (password, profile, consents) before anything else.
+  if (step !== 'done') redirect('/crear-cuenta');
   // First access goes to the conversation (ADR-0006); "Ahora no" (skipped) or finished never comes back here.
   if (!onboarding.error && (!onboarding.data || onboarding.data.status === 'active')) redirect('/bienvenida');
   const pending = count ?? 0;

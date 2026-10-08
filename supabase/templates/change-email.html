@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Confirma tu nuevo correo</title>
+</head>
+<body style="margin:0;padding:0;background:#F6F7F2;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Confirma el cambio de correo de tu cuenta de Velsuno.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F7F2;">
+  <tr><td align="center" style="padding:32px 16px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
+      <tr><td style="padding:0 8px 20px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+        <span style="font-size:20px;line-height:24px;font-weight:700;letter-spacing:4px;color:#20231F;">VELSUNO</span><br>
+        <span style="font-size:13px;line-height:20px;color:#5C6159;">Tu dinero, más claro.</span>
+      </td></tr>
+      <tr><td style="background:#FFFFFF;border-radius:20px;padding:32px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#20231F;">
+        <div style="width:40px;height:4px;border-radius:2px;background:#E4EA8A;margin-bottom:20px;"></div>
+        <h1 style="margin:0 0 12px 0;font-size:24px;line-height:32px;font-weight:600;color:#20231F;">Confirma tu nuevo correo</h1>
+        <p style="margin:0 0 24px 0;font-size:16px;line-height:24px;color:#3D413B;">Pediste usar esta dirección en tu cuenta de Velsuno. Ábrelo para confirmar el cambio.</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td style="border-radius:12px;background:#20231F;">
+            <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=email_change" style="display:inline-block;padding:14px 28px;font-size:16px;line-height:20px;font-weight:600;color:#F6F7F2;text-decoration:none;border-radius:12px;">Confirmar correo</a>
+          </td>
+        </tr></table>
+        <p style="margin:24px 0 0 0;font-size:14px;line-height:20px;color:#5C6159;">Este enlace vence por seguridad y solo funciona una vez.</p>
+        <p style="margin:8px 0 0 0;font-size:14px;line-height:20px;color:#5C6159;">Si no pediste este cambio, ignora este correo y revisa la seguridad de tu cuenta.</p>
+      </td></tr>
+      <tr><td style="padding:20px 8px 0 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#7A7F76;">
+        Velsuno nunca te pedirá la clave de tu banco, tu PIN, el CVV ni códigos de verificación.<br>
+        Recibiste este correo porque alguien usó esta dirección en Velsuno.
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>

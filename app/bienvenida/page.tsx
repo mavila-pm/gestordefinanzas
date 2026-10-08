@@ -4,6 +4,7 @@ import { Chat } from '../../components/chat';
 import { Logo } from '../../components/ui/logo';
 import { aiAvailability } from '../../src/ai/config';
 import { onboardingConversation, onboardingResume, startOnboarding } from '../../lib/onboarding';
+import { registrationStep } from '../../lib/registration';
 import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { leaveOnboarding, onboardingAction } from './actions';
 
@@ -14,6 +15,7 @@ export default async function Bienvenida() {
   const supabase = await createSupabaseServerClient();
   const user = await authUser(supabase);
   if (!user) redirect('/login');
+  if ((await registrationStep(supabase)) !== 'done') redirect('/crear-cuenta');
   const state = await startOnboarding(supabase, user.id);
   if (state.status === 'completed') redirect('/app');
   if (state.status === 'skipped') await onboardingResume(supabase, user.id);

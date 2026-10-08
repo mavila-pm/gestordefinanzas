@@ -130,7 +130,7 @@ CI (GitHub Actions, `.github/workflows/ci.yml`): `check` + `test:db` + `build` e
 | `app/auth/actions.ts` | server actions | signup, login, logout, recuperación de contraseña |
 
 ## Flujo principal
-1. **Registro** (`/signup`) → confirmación por email → `/bienvenida`: onboarding conversacional (ingreso, pagos, saldo).
+1. **Registro** (`/signup`, solo correo) → enlace por email → contraseña → perfil (+18, Términos y Privacidad) → `/bienvenida`: onboarding conversacional.
 2. **Entrada de datos**: manual (`/app/movimientos/nuevo`), mensaje bancario pegado (`/app/importar`) o, cuando exista
    proveedor, reenvío de emails (Email Bridge). Cada evento pasa por adaptador → normalización → dedupe → categoría →
    confianza; lo dudoso va a **Por revisar**.

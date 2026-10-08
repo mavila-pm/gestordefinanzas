@@ -20,7 +20,8 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Terminado cuando: la URL de producción sirve `/`, signup → email → `/auth/confirm` → `/bienvenida` funciona allí.
 - [ ] **P0 — Emails de autenticación confiables (SMTP propio)**
   - Estado: SMTP por defecto de Supabase (límite bajo de envíos, no apto para usuarios reales); plantillas `token_hash` pendientes.
-  - Falta: configurar SMTP propio y pegar plantillas (`docs/architecture/auth.md`); verificar recuperación en un inbox real (TASK-003 manual).
+  - Hecho (2026-10-08): registro con correo primero, plantillas Velsuno en `supabase/templates/`, manejo de 429/fallas, runbook `docs/runbooks/auth-email.md`.
+  - Falta: configurar SMTP propio y pegar plantillas (runbook); verificar registro y recuperación en un inbox real.
   - Depende de: PO (proveedor SMTP, dominio). Riesgo: alto (nadie puede confirmar su cuenta).
   - Terminado cuando: signup y recuperación llegan a Gmail/Outlook reales en < 1 min y el link abre la app correcta.
 - [ ] **P0 — Plantillas BCP verificadas con mensajes reales**
@@ -35,7 +36,8 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Depende de: nada externo. Riesgo: medio (sin N4 no se puede afirmar "flujo principal no roto").
   - Terminado cuando: `scripts/e2e.sh` (todas las suites) pasa en cualquier fecha y cleanup devuelve `0 | 0`.
 - [ ] **P0 — Política de privacidad y términos**
-  - Hecho (2026-10-07): `/privacidad` y `/terminos` (borrador basado en lo que el código realmente guarda y envía),
+  - Hecho (2026-10-08): Términos y Privacidad reescritos (índice, versión, placeholders), aceptación versionada y auditada en el registro (`legal_acceptances`).
+  - Antes (2026-10-07): `/privacidad` y `/terminos` (borrador basado en lo que el código realmente guarda y envía),
     enlazadas desde `/` y `/signup`; contacto desde `SUPPORT_EMAIL` (`components/legal-page.tsx`). Revisadas a 375 px.
   - Falta: aprobación del PO / revisión legal del texto, `SUPPORT_EMAIL` en Vercel, y registro del banco de datos ante la ANPD si aplica.
   - Depende de: PO / asesoría legal. Riesgo: alto (legal y de confianza).

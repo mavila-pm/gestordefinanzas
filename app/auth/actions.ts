@@ -4,17 +4,20 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { authCallbackUrl } from '../../lib/env';
 import { authUser, createSupabaseServerClient } from '../../lib/supabase/server';
-import { AUTH_NEXT_COOKIE, authNextCookieOptions, parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
-import { passwordResetOutcome, signupOutcome } from '../../src/web/password-reset';
+import { AUTH_NEXT_COOKIE, authNextCookieOptions, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
+import { PRIVACY_VERSION, TERMS_VERSION } from '../../src/web/legal';
+import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError } from '../../src/web/password-reset';
 
 /** Remembers where the email link should land (the callback URL itself stays query-free). */
-async function rememberAuthNext(path: '/app' | '/reset-password') {
+async function rememberAuthNext(path: '/crear-cuenta' | '/reset-password') {
   (await cookies()).set(AUTH_NEXT_COOKIE, path, authNextCookieOptions(process.env.NODE_ENV === 'production'));
 }
 
 export interface FormState {
   error?: string;
   message?: string;
+  /** Registration: the link was sent (the form switches to "Revisa tu correo"). */
+  sent?: true;
 }
 
 // Messages never reveal whether an account exists (anti-enumeration, §86).
@@ -30,23 +33,56 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
   redirect(safeNextPath(form.get('next')));
 }
 
+/**
+ * Registration step 1: email only. Supabase Auth sends a signed, single-use, expiring link (signInWithOtp creates the
+ * user if new; a registered address simply gets a sign-in link). The link lands on /auth/confirm (token_hash) and
+ * continues at /crear-cuenta. Same answer for new and registered addresses; the address is never logged.
+ */
 export async function signup(_prev: FormState, form: FormData): Promise<FormState> {
   const email = parseEmail(form.get('email'));
-  if (!email) return { error: 'Ingresa un correo válido.' };
-  const problem = passwordProblem(form.get('password'));
-  if (problem) return { error: problem };
+  if (!email) return { error: 'Revisa tu correo electrónico.' };
   const supabase = await createSupabaseServerClient();
-  await rememberAuthNext('/app');
-  const { error } = await supabase.auth.signUp({
-    email,
-    password: form.get('password') as string,
-    options: { emailRedirectTo: authCallbackUrl() },
-  });
-  // Any outcome (new or registered email, including Supabase's 429) gets the same answer; failures are logged
-  // server-side without the email address.
-  const outcome = signupOutcome(error);
+  await rememberAuthNext('/crear-cuenta');
+  const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: authCallbackUrl() } });
+  const outcome = emailLinkOutcome(error);
   if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
   return outcome.state;
+}
+
+/** Registration step 2: the password (12+, letters and numbers), validated here and by Supabase Auth. */
+export async function createPassword(_prev: FormState, form: FormData): Promise<FormState> {
+  const password = form.get('password');
+  const problem = passwordProblem(password);
+  if (problem) return { error: problem };
+  const supabase = await createSupabaseServerClient();
+  if (!(await authUser(supabase))) redirect('/login?error=link');
+  const { error } = await supabase.auth.updateUser({ password: password as string });
+  if (error) {
+    console.warn(JSON.stringify({ event: 'registration_password_failed', status: error.status ?? null, code: error.code ?? null }));
+    return { error: newPasswordError(error) };
+  }
+  const marked = await supabase.rpc('mark_password_set');
+  if (marked.error) return { error: 'No pudimos guardar tu contraseña. Intenta de nuevo.' };
+  redirect('/crear-cuenta/perfil');
+}
+
+/** Registration step 3: profile, 18+ (birth date, checked again in SQL) and acceptance of the current legal versions. */
+export async function completeProfile(_prev: FormState, form: FormData): Promise<FormState> {
+  const given = String(form.get('givenNames') ?? '').trim();
+  const family = String(form.get('familyNames') ?? '').trim();
+  if (!given || !family) return { error: 'Escribe tu nombre y apellidos.' };
+  const phone = normalizePhone(form.get('phone'));
+  if (!phone) return { error: 'Revisa tu número de celular. Si no es de Perú, incluye el código de país (+).' };
+  const birth = parseBirthDate(form.get('birthDate'));
+  if (!birth) return { error: 'Revisa tu fecha de nacimiento.' };
+  if (form.get('accept') !== 'on') return { error: 'Para continuar, acepta los Términos y la Política de Privacidad.' };
+  const supabase = await createSupabaseServerClient();
+  if (!(await authUser(supabase))) redirect('/login');
+  const { error } = await supabase.rpc('complete_registration', {
+    p_given: given, p_family: family, p_phone: phone, p_birth: birth, p_terms: TERMS_VERSION, p_privacy: PRIVACY_VERSION,
+  });
+  if (error) return { error: registrationError(error.message) };
+  redirect('/bienvenida');
 }
 
 export async function requestPasswordReset(_prev: FormState, form: FormData): Promise<FormState> {
@@ -66,12 +102,10 @@ export async function updatePassword(_prev: FormState, form: FormData): Promise<
   const password = form.get('password');
   const problem = passwordProblem(password);
   if (problem) return { error: problem };
-  if (password !== form.get('confirm')) return { error: 'Las contraseñas no coinciden.' };
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: 'El enlace expiró. Solicita uno nuevo.' };
+  if (!(await authUser(supabase))) return { error: 'Tu enlace venció. Pide uno nuevo.' };
   const { error } = await supabase.auth.updateUser({ password: password as string });
-  if (error) return { error: 'No se pudo actualizar la contraseña. Intenta con otra.' };
+  if (error) return { error: newPasswordError(error) };
   redirect('/app');
 }
 

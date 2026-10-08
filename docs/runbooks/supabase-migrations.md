@@ -45,6 +45,8 @@
 | 20260929000026_card_statements.sql | card_statements | 2026-09-29 |
 | 20260929000027_replay_hardening.sql | replay_hardening | 2026-09-29 |
 | 20261007000028_delete_account.sql | **PENDING — PO applies it** (the MCP connector hangs on SQL containing DELETE): Supabase → SQL Editor → paste the file → Run | — |
+| 20261008000029_registration.sql | registration | 2026-10-08 |
+| 20261008000030_profiles_upsert_grant.sql | profiles_upsert_grant | 2026-10-08 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

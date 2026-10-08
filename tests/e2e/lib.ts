@@ -41,9 +41,9 @@ export function need(name: string): string {
 export const PASSWORD = () => need('E2E_PASSWORD');
 
 /** Anon (publishable-key) client signed in as a probe user: exercises RLS/grants exactly like an attacker would. */
-export async function apiAs(email: string): Promise<SupabaseClient> {
+export async function apiAs(email: string, password = PASSWORD()): Promise<SupabaseClient> {
   const client = createClient(need('NEXT_PUBLIC_SUPABASE_URL'), need('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY'), { auth: { persistSession: false } });
-  const { error } = await client.auth.signInWithPassword({ email, password: PASSWORD() });
+  const { error } = await client.auth.signInWithPassword({ email, password });
   if (error) throw new Error(`api sign-in failed for ${email}: ${error.message}`);
   return client;
 }

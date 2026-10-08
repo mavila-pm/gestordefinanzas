@@ -39,11 +39,11 @@ describe.skipIf(!DATABASE_URL)('E2E seed / cleanup harness', () => {
   it('seed → seed again (new run) → passes, never colliding; leftovers of an incomplete cleanup do not block it', async () => {
     expect(await code(seed('run0000aaaa'))).toBeNull();
     expect(await code(seed('run0000bbbb'))).toBeNull();
-    expect(await probes()).toBe(44);
+    expect(await probes()).toBe(48);
     // Incomplete cleanup: only some users of the first run went away.
     await pool.query(`delete from auth.users where email like 'e2e-s4%-run0000aaaa@gestordefinanzas.invalid'`);
     expect(await code(seed('run0000cccc'))).toBeNull();
-    expect(await probes()).toBe(64); // 44 − s4a/s4b of run aaaa + 22 new
+    expect(await probes()).toBe(70); // 48 − s4a/s4b of run aaaa + 24 new
     // Fixed ids are per run: two runs of the same B row coexist.
     expect((await pool.query(`select count(*)::int n from public.transactions where id in (md5('run0000bbbb:e4b1')::uuid, md5('run0000cccc:e4b1')::uuid)`)).rows[0].n).toBe(2);
   });
