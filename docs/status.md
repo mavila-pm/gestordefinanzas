@@ -2,7 +2,7 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20261008000036` (`…035` login_throttle_purge PENDING: contains DELETE, PO applies in SQL Editor) (`…028` delete_account withdrawn: never applied, file removed; deletion only on request, by an admin).
+migrations applied through `20261008000037` (`…035` login_throttle_purge PENDING: contains DELETE, PO applies in SQL Editor) (`…028` delete_account withdrawn: never applied, file removed; deletion only on request, by an admin).
 
 ## Checkpoint (2026-09-29)
 Last full regression: unit 302 · DB 104 · E2E 289/289 (10 suites; 1 month-end bug found and fixed, re-run 23/23) · visual 162 shots, 0 overflow, 0 UX issues · perf probe 8/8 · cleanup 0|0.
