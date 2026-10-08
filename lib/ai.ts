@@ -1,6 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { aiConfig, generalAIConfig, providerFor, type AIConfig } from '../src/ai/config';
+import { aiConfig, providerFor, type AIConfig } from '../src/ai/config';
 import { AIProviderError, ZERO_USAGE, type AIImage, type AIMessage, type AIProvider, type AIUsage } from '../src/ai/provider';
 import { estimateCostMicroUsd, ratesFrom } from '../src/ai/pricing';
 import { sanitizeUserText } from '../src/ai/sanitize';
@@ -8,9 +8,9 @@ import type { Operation } from '../src/ai/types';
 
 /**
  * The only door to a provider (ADR-0006). Every call is: reserve (quota, rate limit, cost guards, under the
- * user's session) → provider → settle with the usage the provider reported. At most one retry, and only for
- * transient failures; a fallback provider is used only on failure/unsupported modality, never in parallel (§62).
- * Nothing here logs prompts or images.
+ * user's session) → provider (Gemini) → settle with the usage the provider reported. At most one retry, and only
+ * for transient failures (timeout, 5xx, rate limit); 4xx and invalid output are final (§62).
+ * Nothing here logs prompts, answers or images.
  */
 export type AIStop = 'ai_quota' | 'camera_quota' | 'ai_rate' | 'ai_budget' | 'too_many_images' | 'unavailable' | 'failed';
 export type InferResult = { ok: true; text: string; usage: AIUsage; provider: string; model: string } | { ok: false; reason: AIStop };
@@ -20,19 +20,15 @@ const OUTCOME: Record<string, 'error' | 'timeout' | 'invalid_output'> = { timeou
 
 export async function infer(
   supabase: SupabaseClient,
-  req: { operation: Operation; system: string; messages: AIMessage[]; images?: AIImage[]; json: boolean; temperature?: number; maxOutputTokens?: number },
+  req: { operation: Operation; system: string; messages: AIMessage[]; images?: AIImage[]; json: boolean; schema?: Record<string, unknown>; temperature?: number; maxOutputTokens?: number },
   validate: (text: string) => boolean = () => true,
   cfg: AIConfig = aiConfig(),
   resolve: (p: AIConfig['provider']) => AIProvider | null = (p) => providerFor(p),
 ): Promise<InferResult> {
   const camera = req.operation === 'vision_extract';
-  const chain: Array<{ provider: AIProvider; model: string }> = [];
-  const main = resolve(cfg.provider);
-  const mainModel = camera ? cfg.visionModel : cfg.textModel;
-  if (main && (!camera || main.supportsVision(mainModel))) chain.push({ provider: main, model: mainModel });
-  const fb = cfg.fallbackProvider !== cfg.provider ? resolve(cfg.fallbackProvider) : null;
-  if (fb && cfg.fallbackModel && (!camera || fb.supportsVision(cfg.fallbackModel))) chain.push({ provider: fb, model: cfg.fallbackModel });
-  if (!chain.length) return { ok: false, reason: 'unavailable' };
+  const provider = resolve(cfg.provider);
+  const model = camera ? cfg.visionModel : cfg.textModel;
+  if (!provider || !model || (camera && !provider.supportsVision(model))) return { ok: false, reason: 'unavailable' };
 
   // Compact context: keep the most recent messages within the configured budget (§23, §40).
   const messages: AIMessage[] = [];
@@ -44,8 +40,7 @@ export async function infer(
   }
   const rates = ratesFrom();
 
-  for (let attempt = 1, i = 0; attempt <= 2 && i < chain.length; attempt++) {
-    const { provider, model } = chain[i]!;
+  for (let attempt = 1; attempt <= 2; attempt++) {
     const reserved = await supabase.rpc('ai_reserve', { p_operation: req.operation, p_camera: camera, p_images: req.images?.length ?? 0 });
     if (reserved.error) {
       const code = RESERVE_ERRORS.find((c) => reserved.error!.message.includes(c));
@@ -58,7 +53,7 @@ export async function infer(
     });
     const started = Date.now();
     try {
-      const r = await provider.complete({ operation: req.operation, model, system: req.system, messages, images: req.images, json: req.json,
+      const r = await provider.complete({ operation: req.operation, model, system: req.system, messages, images: req.images, json: req.json, schema: req.schema,
         // A caller may ask for less output or more variety, never more than the configured cap.
         maxOutputTokens: Math.min(Math.max(req.maxOutputTokens ?? Infinity, 50), cfg.maxOutput[req.operation]),
         temperature: Math.min(Math.max(req.temperature ?? 0, 0), 1), reasoning: cfg.reasoning, timeoutMs: cfg.timeoutMs });
@@ -72,23 +67,21 @@ export async function infer(
     } catch (e) {
       const err = e instanceof AIProviderError ? e : new AIProviderError('http', 'unexpected', false);
       await settle(err.usage ?? ZERO_USAGE, OUTCOME[err.kind] ?? 'error', Date.now() - started);
-      if (!err.retryable && err.kind !== 'unsupported') i++; // permanent: only a different provider may help
-      else if (err.kind === 'unsupported') i++;
+      if (!err.retryable) break; // permanent (4xx, unsupported, empty answer): a retry would fail the same way
     }
   }
   return { ok: false, reason: 'failed' };
 }
 
 /**
- * Generic text answer for product features (provider-agnostic: OpenRouter, Gemini, DeepSeek… per src/ai/config.ts).
- * Same door as everything else: the signed-in user's quota and rate limit, timeout, at most one retry, usage recorded.
- * User messages are sanitized here (secrets never reach a provider); the answer is untrusted text for the caller.
- * It may run on OPENROUTER_API_KEY alone (generalAIConfig): never put account data (balances, movements) in the prompt.
+ * Generic text answer (the technical test route): same door as everything else (quota, rate limit, timeout, at most
+ * one retry, usage recorded). User messages are sanitized here; the answer is untrusted text for the caller.
+ * Never put account data (balances, movements) in this prompt.
  */
 export function generateAIResponse(supabase: SupabaseClient, opts: { messages: AIMessage[]; systemPrompt: string; temperature?: number; maxTokens?: number }): Promise<InferResult> {
   const messages = opts.messages.map((m) => (m.role === 'user' ? { role: m.role, content: sanitizeUserText(m.content).text } : m));
   return infer(supabase, { operation: 'assistant_answer', system: opts.systemPrompt, messages, json: false,
-    temperature: opts.temperature, maxOutputTokens: opts.maxTokens }, undefined, generalAIConfig());
+    temperature: opts.temperature, maxOutputTokens: opts.maxTokens });
 }
 
 /** Human copy for a stop (§49): no urgency, never blocks the rest of the product. */

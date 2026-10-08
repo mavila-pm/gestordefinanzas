@@ -15,6 +15,8 @@ export interface AIRequest {
   images?: AIImage[];
   /** Ask the provider for a single JSON object (structured extraction). */
   json: boolean;
+  /** JSON Schema the answer must follow (provider-enforced structured output). The caller still validates it. */
+  schema?: Record<string, unknown>;
   maxOutputTokens: number;
   /** 0 (default) = most deterministic; callers clamp to [0, 1]. */
   temperature?: number;
@@ -44,21 +46,3 @@ export interface AIProvider {
 }
 
 export const ZERO_USAGE: AIUsage = { input: 0, output: 0, cached: 0, image: 0 };
-
-/** fetch with a hard timeout; network errors and 5xx are retryable, 4xx are not. */
-export async function postJson(url: string, headers: Record<string, string>, body: unknown, timeoutMs: number, fetchImpl: typeof fetch = fetch): Promise<unknown> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetchImpl(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal: ctrl.signal });
-    if (res.status === 429) throw new AIProviderError('rate_limited', 'provider rate limited', true);
-    if (!res.ok) throw new AIProviderError('http', `provider http ${res.status}`, res.status >= 500);
-    return await res.json();
-  } catch (e) {
-    if (e instanceof AIProviderError) throw e;
-    if ((e as Error).name === 'AbortError') throw new AIProviderError('timeout', 'provider timeout', true);
-    throw new AIProviderError('http', 'provider unreachable', true);
-  } finally {
-    clearTimeout(timer);
-  }
-}

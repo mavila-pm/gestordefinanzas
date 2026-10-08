@@ -14,8 +14,8 @@ tests/
   fixtures/bcp/      SYNTHETIC_FIXTURE builders + samples/ (golden, REAL_ANONYMIZED or SYNTHETIC)
 supabase/migrations/ Versioned SQL schema + RLS (supabase/tests/: local-only shim)
 scripts/test-db.sh   Throwaway PostgreSQL for DB tests
-  ai/                Interpreter, prompts, draft (onboarding memory), assistant intents, providers/ (openai-compatible:
-                     OpenRouter + DeepSeek, gemini, fixture), config (env → provider), pricing, sanitize, entitlements
+  ai/                Interpreter, prompts, draft (onboarding memory), assistant intents, providers/ (gemini via
+                     @google/genai, fixture), vels-route (Gemini → engine intent), config (env → provider), pricing, sanitize, entitlements
   web/               Pure helpers for the web layer (form validation, Lima dates, labels, CSV, AI test input)
 app/                 Next.js 16 App Router. Public: /, (auth)/{login,signup,forgot-password,reset-password}, /auth/confirm.
                      /bienvenida = onboarding (app/app/layout.tsx redirects there until it is completed).
@@ -58,7 +58,7 @@ Swapping a synthetic template for a real one touches only `adapters/<bank>/` and
 | Design system / shell | `app/globals.css`, `components/ui/*`, `components/tx-row.tsx`, `src/web/labels.ts` | E2E `visual` |
 | Observed vs planned, recurrence, scenarios, applied plans, card statements (ADR-0007/0008/0010/0013/0014) | `src/engine/{observed,recurring,scenarios,applied,cards}.ts`, `lib/{plan-applications,cards}.ts` | `observed`, `recurring`, `scenarios`, `applied`, `cards`, `db/*`, E2E `income-link` |
 | Vels (ADR-0011) | `src/ai/assistant.ts` (deterministic intents), `lib/assistant.ts`, `components/vels.tsx`, `components/chat.tsx` | `ai-core`, E2E `vels` |
-| AI providers / OpenRouter (block 040) | `src/ai/config.ts`, `src/ai/providers/`, `lib/ai.ts` (`infer`, `generateAIResponse`), `app/api/ai/chat/` | `ai-openrouter`, `ai-resilience` |
+| AI provider: Gemini only (ADR-0015) | `src/ai/config.ts`, `src/ai/providers/gemini.ts` (@google/genai), `src/ai/vels-route.ts`, `lib/ai.ts` (`infer`), `app/api/ai/chat/` | `ai-gemini`, `ai-resilience`, `ai-core` |
 | E2E (real Supabase) | `scripts/e2e.sh`, `tests/e2e/{lib.ts,seed.sql,cleanup.sql}` | 10 suites + `visual` + `perf` |
 | CI | `.github/workflows/ci.yml` | `check` + `test:db` + `build` per push/PR |
 

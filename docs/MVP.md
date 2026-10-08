@@ -56,7 +56,7 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Archivos: `src/domain/entitlements.ts`, `app/app/actions.ts`, migración nueva. Riesgo: medio (regla no negociable de CLAUDE.md).
   - Terminado cuando: un usuario Free no puede exceder un límite ni llamando la acción directamente (test DB).
 - [ ] **P1 — IA real verificada y decisión de privacidad**
-  - Estado: OpenRouter integrado (bloque 040); sin clave en este entorno; Vels usa IA solo con `AI_PROVIDER` explícito.
+  - Estado: Gemini único proveedor (bloque 049, ADR-0015); sin clave en este entorno (llamada real NO VERIFICADA).
   - Falta: clave en Preview, prueba en `/app/prueba-ia`, `scripts/ai-bench.ts` con datos sintéticos, decidir proveedor y retención de datos.
   - Depende de: PO (clave, privacidad). Riesgo: bajo (la app funciona sin IA; respuestas deterministas cuestan 0).
   - Terminado cuando: benchmark registrado en `docs/ai/provider-evaluation.md` y `AI_PROVIDER` decidido para Preview/Production.

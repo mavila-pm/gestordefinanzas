@@ -7,7 +7,7 @@ import { VISION_FIXTURES } from './fixture-data';
  * It exercises the full path (reservation, validation, usage recording) with fixed answers:
  *  - extraction: a few canned phrases the local rules cannot read; otherwise an empty result;
  *  - vision: synthetic images identified by SHA-256 (tests/fixtures/ai/vision); unknown image → nothing read;
- *  - assistant: a fixed short sentence.
+ *  - assistant: structured route ("¿cuánto me sobra?" → free; else other + a fixed sentence), or that sentence as text.
  * Token counts are synthetic (chars/4) and labelled as fixture usage.
  */
 const CANNED: Array<[RegExp, string]> = [
@@ -32,7 +32,9 @@ export function fixtureProvider(): AIProvider {
         return { text, usage: { input, output: tokens(text), cached: 0, image: 258 * (req.images?.length ?? 0) }, model: req.model, latencyMs: 5 };
       }
       if (req.operation === 'assistant_answer') {
-        const text = 'Con lo que tengo registrado no puedo responder eso con precisión. Prueba preguntando cuánto tienes libre o qué pagos vienen.';
+        const reply = 'Con lo que tengo registrado no puedo responder eso con precisión. Prueba preguntando cuánto tienes libre o qué pagos vienen.';
+        // Vels asks for structured output (intent + facts); the technical test route asks for plain text.
+        const text = req.json ? JSON.stringify(/cuanto me sobra|cuánto me sobra/i.test(last) ? { intent: 'free' } : { intent: 'other', reply }) : reply;
         return { text, usage: { input, output: tokens(text), cached: 0, image: 0 }, model: req.model, latencyMs: 5 };
       }
       const canned = CANNED.find(([re]) => re.test(last))?.[1] ?? '{"patches":[],"bare":null}';

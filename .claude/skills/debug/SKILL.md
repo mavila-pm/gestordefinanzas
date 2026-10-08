@@ -23,7 +23,7 @@ smallest change → re-run the same check. A second attempt needs new evidence.
 | Registration step looks done without a password | Supabase gives email-link accounts a random password: only the `on_auth_password_changed` trigger (migration 031) records the step |
 | Auth email link opens localhost / Site URL | Redirect URL must equal `<base>/auth/confirm` exactly; base from `siteUrl()` in `lib/env.ts` |
 | Route returns 200 instead of 404 | a `loading.tsx` above a `notFound()` streams the response |
-| Vels/onboarding say "todavía no está activa" | `aiConfig()` → provider `none`: `AI_PROVIDER` unset, key missing, or unpriced `OPENROUTER_MODEL` (`src/ai/config.ts`) |
+| Vels/onboarding say "todavía no está activa" | `providerFor()` → null: `GEMINI_API_KEY` missing on the server or `AI_PROVIDER=none` (`src/ai/config.ts`) |
 | AI stop `ai_rate` / `ai_quota` / `ai_budget` | raised by SQL `ai_reserve` (`grep -l ai_reserve supabase/migrations`); reasons and copy in `lib/ai.ts` `STOP_TEXT` |
 | A new E2E probe lands on /crear-cuenta | accounts created after 2026-10-08 05:00 UTC must finish registration: seeds insert `profiles(password_set_at, registration_completed_at)` (except the registration suite's s16a) |
 | Form loses what was typed after an error | React 19 resets a form after its action: keep inputs controlled (`components/auth-form.tsx`, `profile-form.tsx`) |

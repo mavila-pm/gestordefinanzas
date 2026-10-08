@@ -51,7 +51,7 @@ Sin librerías de UI ni de animación: CSS propio con los tokens de `brand/VELSU
 | `src/domain/` | Tipos y reglas puras: dinero, modelo de transacción, `financialEffect()` |
 | `src/ingestion/` | Fuentes (email, SMS) y adaptadores por banco/canal/versión (`adapters/bcp/`) |
 | `src/engine/` | Dedupe, categorización, análisis, alertas, planificación, escenarios, tarjetas |
-| `src/ai/` | Interpretación, prompts, proveedores (OpenRouter, Gemini, DeepSeek, fixture), cuotas |
+| `src/ai/` | Interpretación, prompts, proveedor Gemini (`@google/genai`) + fixture de tests, cuotas |
 | `src/web/` | Validación de formularios y helpers puros de la capa web |
 | `src/infrastructure/` | Repositorio Postgres y webhook de email entrante |
 | `supabase/migrations/` | Esquema, RLS y funciones SQL versionadas (27 migraciones aplicadas) |
@@ -76,11 +76,10 @@ cp .env.example .env.local   # completa los valores públicos de Supabase
 | `NEXT_PUBLIC_SUPABASE_URL` | pública | URL del proyecto Supabase |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | pública | clave publicable (`sb_publishable_…`); la app rechaza claves secretas |
 | `NEXT_PUBLIC_SITE_URL` | pública, opcional | base de los links de email; en Preview se usa la URL de rama |
-| `OPENROUTER_API_KEY` | **secreta, servidor** | IA vía OpenRouter (prueba técnica y llamadas sin datos de cuenta) |
-| `OPENROUTER_MODEL` | servidor | modelo (por defecto `openrouter/free`) |
-| `AI_PROVIDER` | servidor | `none` (defecto) · `openrouter` · `gemini` · `deepseek`; activa la IA de Vels/onboarding |
-| `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` | **secretas, servidor** | proveedores alternativos |
-| `APP_URL` | servidor, opcional | URL enviada a OpenRouter como atribución |
+| `GEMINI_API_KEY` | **secreta, servidor** | IA de Vels y onboarding (único proveedor). Sin ella, Vels responde solo con reglas |
+| `GEMINI_MODEL` | servidor, opcional | modelo (por defecto `gemini-3.8-flash`, en `src/ai/config.ts`) |
+| `AI_PRICES` | servidor, opcional | precio real del modelo (micro-USD por 1M tokens) para los topes de costo |
+| `AI_PROVIDER` | servidor, opcional | `none` apaga la IA |
 | `DATABASE_URL`, `INBOUND_EMAIL_SECRET`, `INGEST_EMAIL_DOMAIN` | **secretas, servidor** | Email Bridge (sin ellas el webhook responde 503) |
 
 Lista completa y comentada: [`.env.example`](.env.example). La service role de Supabase **nunca** se usa en la app.
@@ -113,7 +112,7 @@ CI (GitHub Actions, `.github/workflows/ci.yml`): `check` + `test:db` + `build` e
 |---|---|---|
 | Supabase | Postgres, Auth, RLS | activo |
 | Vercel | hosting (Preview) | activo; sin producción |
-| OpenRouter / Gemini / DeepSeek | IA de Vels y onboarding (opcional) | configurable; sin clave la app funciona sin IA |
+| Gemini (Google) | IA de Vels y onboarding (opcional) | sin clave la app funciona sin IA |
 | Proveedor de email entrante | Email Bridge | pendiente de elegir |
 | Proveedor de pagos | Plus | pendiente (Plus es simulado: prueba de 14 días) |
 

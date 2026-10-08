@@ -5,7 +5,7 @@ import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
 import { findAmounts, fold } from '../src/ai/text';
 import { money } from '../src/ai/draft';
-import { ASSISTANT_SYSTEM } from '../src/ai/prompts';
+import { validateVelsRoute, VELS_ROUTE_SCHEMA, VELS_ROUTE_SYSTEM } from '../src/ai/vels-route';
 import { sanitizeUserText } from '../src/ai/sanitize';
 import { isSmallTalk } from '../src/ai/interpreter';
 import { infer, STOP_TEXT } from './ai';
@@ -22,6 +22,8 @@ import { loadPlanningData, planFor, planInputFor, planTimeline } from './plannin
  * the rules do not cover, with a compact state + the last few messages. Thread is capped (older messages pruned).
  */
 const KEEP = 40;
+const FALLBACK = 'Puedo decirte cuánto tienes libre, qué pagos vienen, si te alcanza para una compra o qué pagar primero.';
+const FALLBACK_REPLIES = ['¿Cuánto tengo libre?', '¿Qué viene esta semana?', '¿Qué pago primero?'];
 
 async function view(supabase: SupabaseClient): Promise<View> {
   const planning = loadPlanningData(supabase);
@@ -96,14 +98,20 @@ export async function assistantTurn(supabase: SupabaseClient, userId: string, ra
   const a = answer(detectIntent(text), v);
   if (a) { await say(supabase, userId, 'velsuno', a.text, toCard(a)); await prune(supabase); return; }
 
+  // Not recognised locally → Gemini interprets (structured, validated) → the engine answers. The model never computes money.
   const recent = history.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.body }));
-  const r = await infer(supabase, { operation: 'assistant_answer', system: ASSISTANT_SYSTEM, json: false,
-    messages: [...recent, { role: 'user', content: `ESTADO:\n${compactView(v)}\n\nPREGUNTA:\n${text}` }] }, (t) => t.trim().length > 0 && t.length < 1500);
-  if (r.ok) await say(supabase, userId, 'velsuno', r.text.trim().slice(0, 600));
+  const ctx = { state: compactView(v), question: text };
+  const r = await infer(supabase, { operation: 'assistant_answer', system: VELS_ROUTE_SYSTEM, json: true, schema: VELS_ROUTE_SCHEMA,
+    messages: [...recent, { role: 'user', content: `ESTADO:\n${ctx.state}\n\nPREGUNTA:\n${text}` }] }, (t) => validateVelsRoute(t, ctx) !== null);
+  const route = r.ok ? validateVelsRoute(r.text, ctx) : null;
+  const routed = route?.kind === 'intent' ? answer(route.intent, v) : null;
+  if (routed) await say(supabase, userId, 'velsuno', routed.text, toCard(routed));
+  else if (route?.kind === 'reply') await say(supabase, userId, 'velsuno', route.text.slice(0, 600));
+  else if (r.ok) await say(supabase, userId, 'velsuno', FALLBACK, { replies: FALLBACK_REPLIES });
   else if (r.reason === 'ai_quota') await say(supabase, userId, 'velsuno', STOP_TEXT.ai_quota, { stop: true, links: [{ label: 'Ver Plus', href: '/app/cuenta' }] });
-  else if (r.reason === 'unavailable') {
-    await say(supabase, userId, 'velsuno', 'Todavía no sé responder eso. Puedo decirte cuánto tienes libre, qué pagos vienen, si te alcanza para una compra o qué pagar primero.',
-      { replies: ['¿Cuánto tengo libre?', '¿Qué viene esta semana?', '¿Qué pago primero?'] });
+  else if (r.reason === 'unavailable' || r.reason === 'failed') {
+    // Timeout, provider error, rate limit, empty or invalid output: a friendly way forward, never a broken thread.
+    await say(supabase, userId, 'velsuno', r.reason === 'failed' ? `No pude entender eso ahora. ${FALLBACK}` : `Todavía no sé responder eso. ${FALLBACK}`, { replies: FALLBACK_REPLIES });
   } else await say(supabase, userId, 'velsuno', STOP_TEXT[r.reason], { stop: true });
   await prune(supabase);
 }

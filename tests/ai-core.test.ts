@@ -8,52 +8,37 @@ import { checkImage, sniff, stripJpeg, stripPng } from '../src/ai/image';
 import { interpret } from '../src/ai/interpreter';
 import { estimateCostMicroUsd, ratesFrom } from '../src/ai/pricing';
 import { geminiProvider } from '../src/ai/providers/gemini';
-import { openAICompatibleProvider } from '../src/ai/providers/openai-compatible';
 import { minor, validateInterpretation, validateVision } from '../src/ai/schema';
 import { emptyDraft } from '../src/ai/types';
 import { proposalFrom } from '../src/ai/vision';
 import { buildPlan } from '../src/engine/planning';
 
 const req = { operation: 'onboarding_extract' as const, model: 'm', system: 's', messages: [{ role: 'user' as const, content: 'hola' }], json: true, maxOutputTokens: 100, reasoning: 'off' as const, timeoutMs: 1000 };
-const fakeFetch = (status: number, body: unknown, seen?: { url?: string; init?: RequestInit }) => (async (url: string, init: RequestInit) => {
-  if (seen) { seen.url = url; seen.init = init; }
-  return new Response(JSON.stringify(body), { status });
-}) as unknown as typeof fetch;
+const fakeModels = (r: () => unknown) => ({ generateContent: async () => r() }) as never;
 
 describe('provider adapters (§26, §32): usage exactly as the provider reports it', () => {
-  it('OpenAI-compatible (DeepSeek): JSON mode, cache hits, images as data URLs, no key in the body', async () => {
-    const seen: { url?: string; init?: RequestInit } = {};
-    const p = openAICompatibleProvider({ name: 'deepseek', baseUrl: 'https://x.test/', apiKey: 'k', visionModels: ['v'], fetchImpl: fakeFetch(200, {
-      choices: [{ message: { content: '{"patches":[]}' } }], usage: { prompt_tokens: 120, completion_tokens: 30, prompt_cache_hit_tokens: 100 }, model: 'm-1' }, seen) });
-    const r = await p.complete(req);
-    expect(r.usage).toEqual({ input: 120, output: 30, cached: 100, image: 0 });
-    expect(seen.url).toBe('https://x.test/chat/completions');
-    const body = JSON.parse(String(seen.init!.body));
-    expect(body.response_format).toEqual({ type: 'json_object' });
-    expect(String(seen.init!.body)).not.toContain('"k"');
-    await expect(p.complete({ ...req, images: [{ mime: 'image/png', base64: 'AA' }] })).rejects.toMatchObject({ kind: 'unsupported' });
-  });
-
   it('Gemini: thinking tokens count as output, image tokens split from text, errors are typed', async () => {
-    const p = geminiProvider({ apiKey: 'k', fetchImpl: fakeFetch(200, { candidates: [{ content: { parts: [{ text: '{}' }] } }],
-      usageMetadata: { promptTokenCount: 400, candidatesTokenCount: 20, thoughtsTokenCount: 5, promptTokensDetails: [{ modality: 'IMAGE', tokenCount: 258 }] } }) });
+    const p = geminiProvider({ models: fakeModels(() => ({ text: '{}',
+      usageMetadata: { promptTokenCount: 400, candidatesTokenCount: 20, thoughtsTokenCount: 5, promptTokensDetails: [{ modality: 'IMAGE', tokenCount: 258 }] } })) });
     expect((await p.complete(req)).usage).toEqual({ input: 142, output: 25, cached: 0, image: 258 });
-    await expect(geminiProvider({ apiKey: 'k', fetchImpl: fakeFetch(503, {}) }).complete(req)).rejects.toMatchObject({ kind: 'http', retryable: true });
-    await expect(geminiProvider({ apiKey: 'k', fetchImpl: fakeFetch(400, {}) }).complete(req)).rejects.toMatchObject({ kind: 'http', retryable: false });
-    await expect(geminiProvider({ apiKey: 'k', fetchImpl: fakeFetch(429, {}) }).complete(req)).rejects.toMatchObject({ kind: 'rate_limited' });
+    const failing = (status: number) => geminiProvider({ models: fakeModels(() => { throw Object.assign(new Error('x'), { status }); }) });
+    await expect(failing(503).complete(req)).rejects.toMatchObject({ kind: 'http', retryable: true });
+    await expect(failing(400).complete(req)).rejects.toMatchObject({ kind: 'http', retryable: false });
+    await expect(failing(429).complete(req)).rejects.toMatchObject({ kind: 'rate_limited' });
   });
 
-  it('config: default is no provider; no key → no provider; fixture never on production', () => {
-    expect(aiConfig({}).provider).toBe('none');
+  it('config: Gemini is the only provider; no key → no provider; fixture never on production', () => {
+    expect(aiConfig({}).provider).toBe('gemini');
+    expect(aiConfig({ AI_PROVIDER: 'none' }).provider).toBe('none');
     expect(aiAvailability({})).toEqual({ text: false, vision: false });
-    expect(providerFor('deepseek', {})).toBeNull();
+    expect(providerFor('gemini', {})).toBeNull();
     expect(providerFor('gemini', { GEMINI_API_KEY: 'x' })?.name).toBe('gemini');
     expect(aiConfig({ AI_PROVIDER: 'fixture', AI_ALLOW_FIXTURE: '1', VERCEL_ENV: 'production' }).provider).toBe('none');
     expect(aiConfig({ AI_PROVIDER: 'fixture', AI_ALLOW_FIXTURE: '1' }).provider).toBe('fixture');
     expect(aiConfig({ AI_MAX_OUTPUT_ASSISTANT_ANSWER: '999999' }).maxOutput.assistant_answer).toBe(300);
   });
 
-  it('cost estimate: cached input at the cached rate; unknown models at the most expensive rate (fail safe)', () => {
+  it('cost estimate: cached input at the cached rate; unknown models at the cost ceiling (fail safe)', () => {
     const rates = ratesFrom({ AI_PRICES: '{"cheap":{"in":100000,"out":400000,"cached":10000},"bad":{"in":-1}}' });
     expect(estimateCostMicroUsd('cheap', { input: 1_000_000, output: 1_000_000, cached: 500_000, image: 0 }, rates)).toBe(50_000 + 5_000 + 400_000);
     expect(rates.bad).toBeUndefined();

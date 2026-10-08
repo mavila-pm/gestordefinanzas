@@ -12,8 +12,8 @@ change production env, or apply a migration outside `jeloegnvaxlfqjntbbyy` — t
    Apply BEFORE pushing code that depends on it (Preview uses the same database). SQL containing `DELETE` or `DROP` hangs in the
    connector: hand that file to the PO for the Supabase SQL Editor and make the code degrade gracefully until it exists.
 3. **Env vars** (Vercel → Settings → Environment Variables, scope Preview first; link to project `gestordefinanzas`):
-   public `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; server secrets (type Secret) `OPENROUTER_API_KEY`,
-   `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `DATABASE_URL`, `INBOUND_EMAIL_SECRET`; config `AI_PROVIDER`, `OPENROUTER_MODEL`,
+   public `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; server secrets (type Secret) `GEMINI_API_KEY`,
+   `DATABASE_URL`, `INBOUND_EMAIL_SECRET`; config `GEMINI_MODEL` (optional), `AI_PRICES`,
    `INGEST_EMAIL_DOMAIN`. A changed env var needs a **Redeploy**. Never ask the user to paste a secret in chat.
 4. **Smoke (Preview)**: branch URL in `docs/runbooks/vercel-preview.md`. Check `/` and `/login` load; sign in with a synthetic
    or PO account (never modify PO data); `/app` renders Dinero libre; `/app/prueba-ia` shows whether AI is active.

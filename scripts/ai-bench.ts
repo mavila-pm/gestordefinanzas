@@ -5,7 +5,7 @@
  * Candidates: `local` (deterministic interpreter, zero cost) and any configured provider (AI_PROVIDER + key).
  * Metrics: field precision/recall (hallucinated facts = precision misses), valid JSON rate, latency, provider-
  * reported tokens and estimated cost. Nothing is persisted except the report under .e2e/bench/.
- * Run: node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/ai-bench.ts [local|deepseek|gemini|fixture ...]
+ * Run: node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/ai-bench.ts [local|gemini|fixture ...]
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { aiConfig, providerFor, type ProviderName } from '../src/ai/config.ts';

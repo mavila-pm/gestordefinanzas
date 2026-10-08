@@ -21,7 +21,7 @@ Preconditions: every P0 in `docs/MVP.md` checked, CI green on the release commit
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | config | `sb_publishable_…` (never a secret key) |
 | `NEXT_PUBLIC_SITE_URL` | config | `https://<domain>` (if unset, the Vercel production domain is used) |
 | `SUPPORT_EMAIL` | config | contact mailbox |
-| `OPENROUTER_API_KEY` + `AI_PROVIDER` | secret / config | only if AI goes live (privacy decision); otherwise leave unset |
+| `GEMINI_API_KEY` (+ `AI_PRICES` for the model) | secret / config | only if AI goes live (privacy decision: paid tier, no training on prompts); otherwise leave unset |
 | `DATABASE_URL`, `INBOUND_EMAIL_SECRET`, `INGEST_EMAIL_DOMAIN` | secret | only when the Email Bridge provider exists |
 Do NOT set `AI_TEST_ENDPOINT` or `AI_ALLOW_FIXTURE` in production.
 
