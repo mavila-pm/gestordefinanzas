@@ -28,13 +28,13 @@ await runSuite('onboarding', async ({ page, check }) => {
   await send(page, 'Me pagan 5,700 el 5, uso BCP, pago el carro como el 10, debo en la tarjeta y también le debo plata a mi pareja.');
   let v = await lastVelsuno(page);
   check('understood card lists income, car, card and personal debt', v.includes('Entendí esto') && v.includes('S/ 5,700 · día 5') && v.includes('Carro') && v.includes('Tarjeta BCP') && v.includes('Deuda con tu pareja'), v);
-  check('asks ONE question, by impact: today\'s balance (it blocks Dinero libre)', v.includes('¿Cuánto tienes hoy en tu cuenta'), v);
+  check('asks ONE question, by impact: today\'s balance (it blocks Dinero libre)', v.includes('¿Cuánto dinero tienes disponible hoy?'), v);
   const u0 = await usage();
   check('deterministic reading costs no AI usage (§54)', u0.every((r) => r.requests === 0), JSON.stringify(u0));
 
   await tap(page, 'Después');
   v = await lastVelsuno(page);
-  check('"Después" moves on (unknown, never 0)', !v.includes('¿Cuánto tienes hoy') && !v.includes('Saldo de hoy S/ 0'), v);
+  check('"Después" moves on (unknown, never 0)', !v.includes('¿Cuánto dinero tienes disponible hoy') && !v.includes('Saldo de hoy S/ 0'), v);
   check('next: a payment date that is missing (the card due day)', v.includes('¿Qué día vence la tarjeta bcp?'), v);
   await send(page, 'el 19');
   v = await lastVelsuno(page);

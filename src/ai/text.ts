@@ -15,12 +15,17 @@ export interface Day { day: number; dayMax: number | null; second: number | null
  */
 export function findDays(t: string): Day[] {
   const out: Day[] = [];
-  const re = /\b(?:(como|aprox\w*|mas o menos|entre|alrededor del?)\s+)?(?:(?:el|los|dia|dias|cada)\s+)(\d{1,2})(?:\s*(?:y|o|al|a|-|–)\s*(?:el\s+)?(\d{1,2}))?\b(?!\s*(?:[.,]\d|mil|k\b|soles|dolares|%))/g;
+  // Ordinals count as days: "cada 1ro", "el 1ero", "el 2do", "el 1°".
+  const re = /\b(?:(como|aprox\w*|mas o menos|entre|alrededor del?)\s+)?(?:(?:el|los|dia|dias|cada)\s+)(\d{1,2})(?:ro|ero|do|to|vo|no|mo|°|º)?(?:\s*(?:y|o|al|a|-|–)\s*(?:el\s+)?(\d{1,2}))?(?![\w°º])(?!\s*(?:[.,]\d|mil|k\b|soles|dolares|%))/g;
   for (const m of t.matchAll(re)) {
     const a = Number(m[2]); const b = m[3] ? Number(m[3]) : null;
     if (a < 1 || a > 31 || (b !== null && (b < 1 || b > 31 || b <= a))) continue;
     const window = b !== null && b - a <= 7;
     out.push({ day: a, dayMax: window ? b : null, second: b !== null && !window ? b : null, approx: !!m[1] || window, index: m.index!, end: m.index! + m[0].length });
+  }
+  const first = /\b(el|cada|los) primero(s)?( de (cada |del? )?mes)?\b/.exec(t);
+  if (first && !out.some((d) => d.index <= first.index && first.index < d.end)) {
+    out.push({ day: 1, dayMax: null, second: null, approx: false, index: first.index, end: first.index + first[0].length });
   }
   const eom = /\b(a )?fin(es)? de mes\b/.exec(t);
   if (eom) out.push({ day: 30, dayMax: null, second: null, approx: true, index: eom.index, end: eom.index + eom[0].length });
