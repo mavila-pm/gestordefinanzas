@@ -7,6 +7,7 @@ import { authUser, createSupabaseServerClient } from '../../lib/supabase/server'
 import { AUTH_NEXT_COOKIE, authNextCookieOptions, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../../src/web/auth-input';
 import { PRIVACY_VERSION, TERMS_VERSION } from '../../src/web/legal';
 import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError } from '../../src/web/password-reset';
+import { passwordChangeOutcome, parseReauthCode, reauthRequestOutcome, type ChangePasswordState } from '../../src/web/password-change';
 import { LOGIN_INVALID, LOGIN_SERVER, lockoutMessage, loginOutcome } from '../../src/web/login';
 
 /** Remembers where the email link should land (the callback URL itself stays query-free). */
@@ -119,6 +120,36 @@ export async function updatePassword(_prev: FormState, form: FormData): Promise<
   const { error } = await supabase.auth.updateUser({ password: password as string });
   if (error) return { error: newPasswordError(error) };
   redirect('/app');
+}
+
+/**
+ * Signed-in password change (Ajustes). Supabase Auth only: updateUser; if Supabase requires reauthentication
+ * ("Secure password change" + session older than 24 h) it emails a one-time code via reauthenticate(), and the
+ * next submit sends it as `nonce`. Never logs the password or the code.
+ */
+export async function changePassword(prev: ChangePasswordState, form: FormData): Promise<ChangePasswordState> {
+  const password = form.get('password');
+  const problem = passwordProblem(password);
+  if (problem) return { error: problem, needsCode: prev.needsCode };
+  const rawCode = form.get('code');
+  const code = parseReauthCode(rawCode);
+  if (prev.needsCode && !code) return { needsCode: true, error: 'Escribe el código que te enviamos por correo.' };
+  const supabase = await createSupabaseServerClient();
+  // Password flows validate the session with the Auth server (getUser), not only the local JWT.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+  const { error } = await supabase.auth.updateUser(code ? { password: password as string, nonce: code } : { password: password as string });
+  const outcome = passwordChangeOutcome(error, !!code, (prev.done ?? 0) + 1);
+  if (error) console.warn(JSON.stringify({ event: 'password_change_failed', status: error.status ?? null, code: error.code ?? null }));
+  if (!error) {
+    // Changed, maybe because of a suspected leak: other devices sign out, this one stays.
+    const { error: outError } = await supabase.auth.signOut({ scope: 'others' });
+    if (outError) console.warn(JSON.stringify({ event: 'password_change_signout_others_failed', status: outError.status ?? null, code: outError.code ?? null }));
+  }
+  if (outcome !== 'reauthenticate') return outcome;
+  const { error: reauthError } = await supabase.auth.reauthenticate();
+  if (reauthError) console.warn(JSON.stringify({ event: 'password_reauth_failed', status: reauthError.status ?? null, code: reauthError.code ?? null }));
+  return reauthRequestOutcome(reauthError);
 }
 
 export async function logout(): Promise<void> {

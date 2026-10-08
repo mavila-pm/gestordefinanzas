@@ -15,3 +15,9 @@
 - [ ] TASK-010/011: create a budget, a fixed expense and a debt; register a debt payment.
 - [ ] TASK-012: Cuenta shows Free; start the Plus trial and check the end date.
 
+
+## Cambiar contraseña (047)
+- [ ] Ajustes → Cuenta → "Cambiar contraseña": ojo muestra/oculta; 11 caracteres, solo letras o solo números → error sin enviar.
+- [ ] Contraseña válida → "Contraseña actualizada."; otro dispositivo queda fuera de la sesión; entrar con la nueva funciona.
+- [ ] Con "Secure password change" activo y sesión de más de 24 h: llega un código (template Reauthentication) y se pide en el mismo formulario.
+- [ ] "¿Olvidaste tu contraseña?" sigue llegando con el template Reset password y abre "Crea una nueva contraseña".

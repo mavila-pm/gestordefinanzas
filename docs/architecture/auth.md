@@ -14,6 +14,10 @@
   The service role key is not used by the web app and must never be.
 - Server actions (`app/auth/actions.ts`): login, signup, logout, password reset request, password update.
   Messages never reveal whether an email is registered. New passwords 12–72 bytes with letters and numbers (bcrypt limit; longer is refused, never truncated).
+- Signed-in password change (Ajustes → Cuenta, `changePassword`, `src/web/password-change.ts`): same rules as new
+  passwords; `getUser()` → `updateUser({ password })`. If Supabase answers `reauthentication_needed` ("Secure password
+  change" on + session older than 24 h), `reauthenticate()` emails a code and the next submit sends it as `nonce`.
+  Success signs out other sessions (`signOut({ scope: 'others' })`). The app never checks the current password itself.
 - A `type=recovery` link always lands on `/reset-password`, whatever `next` or the cookie say (TASK-015).
 - Email links land on `/auth/confirm`, which accepts `token_hash`+`type` (works across devices) or `code` (PKCE,
   same browser only). `next` is restricted to same-origin paths (open-redirect guard, unit-tested).

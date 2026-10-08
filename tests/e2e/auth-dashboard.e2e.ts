@@ -53,6 +53,23 @@ await runSuite('auth-dashboard', async ({ page, check }) => {
   check('withdrawal shown apart, not as expense', (await page.content()).includes('Retiros de efectivo'));
 
   check('Ajustes no longer offers account deletion', await (async () => { await page.goto(`${BASE}/app/ajustes`); return (await page.getByText(/Eliminar mi cuenta/).count()) === 0; })());
+  // Ajustes → Cambiar contraseña: sheet, show/hide, client validation (nothing is sent, the probe password stays as is).
+  await page.getByRole('button', { name: 'Cambiar contraseña' }).first().click();
+  const sheet = page.getByTestId('password-sheet');
+  const npw = sheet.locator('input[name=password]');
+  check('Cambiar contraseña opens from Ajustes with one main action', await sheet.isVisible()
+    && (await sheet.locator('button[type=submit]').count()) === 1 && (await sheet.locator('button[type=submit]').textContent()) === 'Cambiar contraseña');
+  await npw.fill('clave corta');
+  await sheet.getByRole('button', { name: 'Mostrar contraseña' }).click();
+  check('change password: show keeps the value', (await npw.getAttribute('type')) === 'text' && (await npw.inputValue()) === 'clave corta');
+  await sheet.getByRole('button', { name: 'Ocultar contraseña' }).click();
+  check('change password: hide again', (await npw.getAttribute('type')) === 'password');
+  for (const [value, expected] of [['abc12345678', 'Usa al menos 12 caracteres.'], ['soloLetrasLargas', 'Combina letras y números.'], ['123456789012', 'Combina letras y números.']] as const) {
+    await npw.fill(value);
+    await sheet.locator('button[type=submit]').click();
+    check(`change password: client refuses "${value}"`, (await sheet.locator('[role=alert]').textContent()) === expected);
+  }
+  await page.keyboard.press('Escape');
 
   // 4. Logout
   // Server-action redirect = client-side navigation (no new load event): wait for the URL instead of networkidle.

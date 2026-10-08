@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ActionForm } from '../../../components/action-form';
+import { ChangePasswordForm } from '../../../components/change-password-form';
 import { ProfileFields } from '../../../components/profile-fields';
 import { Icon } from '../../../components/ui/icon';
 import { Sheet } from '../../../components/ui/sheet';
@@ -59,6 +60,12 @@ export default async function Settings() {
       <section className="group" aria-labelledby="g-account">
         <h2 id="g-account" className="group-title">Cuenta</h2>
         <div className="rows">
+          <div className="setting">
+            <span className="setting-text"><strong>Contraseña</strong></span>
+            <Sheet label="Cambiar contraseña" triggerClassName="link" title="Cambiar contraseña" testId="password-sheet">
+              <div className="sheet-body"><ChangePasswordForm /></div>
+            </Sheet>
+          </div>
           <Link href="/app/cuenta" className="setting link-row">
             <span className="setting-text"><strong>Plan</strong></span>
             <Icon name="chevron" size={18} />
