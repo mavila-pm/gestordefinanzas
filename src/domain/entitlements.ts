@@ -53,3 +53,20 @@ export function planConfigFrom(rows: ReadonlyArray<{ key: string; value: number 
   for (const r of rows) if (r.key in cfg && Number.isInteger(r.value) && r.value >= 0) (cfg as Record<string, number>)[r.key] = r.value;
   return cfg;
 }
+
+/**
+ * First visible month (YYYY-MM) of the plan's history window (§81): the current month plus the previous
+ * `historyMonths - 1`. null = full history. Older data is kept (never deleted); it is only not shown on Free.
+ */
+export function historyStart(e: Entitlements, currentMonth: string): string | null {
+  const n = e.limits.historyMonths;
+  if (n === null) return null;
+  const [y, m] = currentMonth.split('-').map(Number) as [number, number];
+  const idx = y * 12 + (m - 1) - Math.max(0, n - 1);
+  return `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`;
+}
+
+/** A requested month kept inside the visible window: older months show the first visible one. */
+export function visibleMonth(month: string, start: string | null): string {
+  return start && month < start ? start : month;
+}

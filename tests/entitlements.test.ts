@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PLAN_CONFIG, entitlementsFor, planConfigFrom } from '../src/domain/entitlements';
+import { DEFAULT_PLAN_CONFIG, entitlementsFor, historyStart, planConfigFrom, visibleMonth } from '../src/domain/entitlements';
 
 const now = new Date('2026-09-27T12:00:00Z');
 const sub = (o: Record<string, unknown>) => ({ plan: 'free', status: 'free', trial_started_at: null, trial_ends_at: null, current_period_end: null, ...o }) as never;
@@ -26,5 +26,20 @@ describe('entitlements (§81-84), decided server-side', () => {
   it('config comes from the server table; unknown keys and bad values are ignored', () => {
     expect(planConfigFrom([{ key: 'free_auto_movements_per_month', value: 80 }, { key: 'hack', value: 1 }, { key: 'trial_days', value: -3 }]))
       .toEqual({ ...DEFAULT_PLAN_CONFIG, free_auto_movements_per_month: 80 });
+  });
+});
+
+describe('history window (§81)', () => {
+  const free = entitlementsFor(null, DEFAULT_PLAN_CONFIG, new Date('2026-10-08T12:00:00Z'));
+  const plus = entitlementsFor({ plan: 'plus', status: 'active', trial_started_at: null, trial_ends_at: null, current_period_end: null }, DEFAULT_PLAN_CONFIG, new Date());
+  it('Free sees the current month and the 2 previous (year boundary included); Plus sees everything', () => {
+    expect(historyStart(free, '2026-10')).toBe('2026-08');
+    expect(historyStart(free, '2027-01')).toBe('2026-11');
+    expect(historyStart(plus, '2026-10')).toBeNull();
+  });
+  it('an older requested month shows the first visible one; visible months stay as asked', () => {
+    expect(visibleMonth('2026-01', '2026-08')).toBe('2026-08');
+    expect(visibleMonth('2026-09', '2026-08')).toBe('2026-09');
+    expect(visibleMonth('2020-01', null)).toBe('2020-01');
   });
 });

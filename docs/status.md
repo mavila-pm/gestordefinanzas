@@ -42,15 +42,15 @@ Agent workflow migrated (ADR-0009): core CLAUDE.md + path rules + skills `verify
 | Auth emails: 4 Velsuno templates (signup, magic link, recovery, email change) verified rendered 375/640 with no technical words; real Brevo delivery of signup + recovery to Gmail inbox; token_hash links verified cross-browser (valid → steps, reused → error); password step now recorded by a trigger on real password change (031) (043) | VERIFIED (live) | PO pastes templates in Supabase; Brevo domain + tracking off |
 | Vels card cycle: statement/payment days + bank limit per credit card (Tarjetas → Ciclo); Vels says when billed is due and when today's purchase is paid (031) | VERIFIED | Statement camera read needs the AI provider (key) |
 | Plan limits in SQL (spec §81): Free capped at `free_auto_movements_per_month` automatic movements per Lima month and `free_institutions` automated bank(s), enforced inside `import_insert_transaction` via `assert_auto_allowance` (not client-callable); trial/Plus uncapped; manual never capped; Importar shows what + action (044) | VERIFIED (unit 314, DB 117, applied live: owner app_writer, no client execute) | Email Bridge write path must call the same check when it goes live; Free 3-month history not yet enforced |
+| Free history window (spec §81): Inicio, Análisis and Movimientos show the current month + `free_history_months - 1` previous (older month → first visible one, no 'Mes anterior' at the edge, list query bounded, notice with Plus link); data kept; export keeps full history; Plus/trial full (045) | VERIFIED (unit 316, E2E analysis-dashboard 35/35) | Vels and Presupuestos only read recent months (no change needed) |
 
 ## Blockers / decisions (external)
 - AI provider (OpenRouter integrated; Gemini/DeepSeek alternatives) + server key → `/app/prueba-ia`, then `scripts/ai-bench.ts` (synthetic data only). MVP priorities: `docs/MVP.md`.
 - Email Bridge real integration; billing provider/price/periodicity; custom SMTP before launch; leaked-password protection (plan).
-- Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003); Free history window (3 months) not enforced server-side.
+- Known debt: user-owned categories; direct-edit policy for cards/accounts/budgets/debts (ADR-0003).
 
 ## Next work (no external decision needed)
-1. Free history window (`free_history_months`) enforced server-side (queries/RPC + DB test).
-2. Partial payments on obligations and sinking funds (named reserves) in the planning engine.
-3. Copy pass on older screens (Reglas, Conexiones, Importar); camera failure-state UX once a provider key exists.
+1. Partial payments on obligations and sinking funds (named reserves) in the planning engine.
+2. Copy pass on older screens (Reglas, Conexiones, Importar); camera failure-state UX once a provider key exists.
 
 PO manual checklist: `docs/runbooks/acceptance-checklist.md`.

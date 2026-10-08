@@ -8,7 +8,8 @@ import { buildAlerts } from '../../../src/engine/alerts';
 import { dataHealth } from '../../../src/engine/data-health';
 import { closedMonthMilestone, mainInsight } from '../../../src/engine/insights';
 import { budgetStatus } from '../../../src/engine/budgets';
-import { loadBudgets, loadCommitmentData, loadProfile } from '../../../lib/queries';
+import { loadBudgets, loadCommitmentData, loadEntitlements, loadProfile } from '../../../lib/queries';
+import { historyStart, visibleMonth } from '../../../src/domain/entitlements';
 import { preferredName } from '../../../src/domain/profile';
 import { loadPlanningData, planFor } from '../../../lib/planning';
 import { shortDate } from '../../../src/web/dates';
@@ -27,12 +28,13 @@ const CURRENCIES: Currency[] = ['PEN', 'USD'];
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ month?: string; deleted?: string }> }) {
   const { month: requested, deleted } = await searchParams;
-  const month = requested && limaMonthRange(requested) ? requested : limaMonth();
-  const range = limaMonthRange(month)!;
-
   const supabase = await createSupabaseServerClient();
   const now = new Date();
   const currentMonth = limaMonth(now);
+  // Free shows a limited history window (§81), decided here on the server; older months show the first visible one.
+  const firstMonth = historyStart((await loadEntitlements(supabase, now)).entitlements, currentMonth);
+  const month = visibleMonth(requested && limaMonthRange(requested) ? requested : currentMonth, firstMonth);
+  const range = limaMonthRange(month)!;
   // Window: 3 months before the viewed month (milestones compare with 2 previous months; alerts look back 90 days).
   const windowFrom = limaMonthRange(previousMonth(month, 3))!.from;
   const since30 = new Date(now.getTime() - 30 * 86_400_000).toISOString();
@@ -137,7 +139,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <p>{month === currentMonth ? monthLabel(month) : 'Mes cerrado'} · Soles</p>
         </div>
         <nav className="month-nav" aria-label="Cambiar de mes">
-          <Link href={`/app?month=${previousMonth(month)}`} aria-label="Mes anterior"><Icon name="back" /></Link>
+          {(!firstMonth || month > firstMonth) && <Link href={`/app?month=${previousMonth(month)}`} aria-label="Mes anterior"><Icon name="back" /></Link>}
           {month < currentMonth && <Link href={`/app?month=${previousMonth(month, -1)}`} aria-label="Mes siguiente"><Icon name="chevron" /></Link>}
         </nav>
       </header>

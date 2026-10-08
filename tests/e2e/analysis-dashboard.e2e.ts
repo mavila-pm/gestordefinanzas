@@ -15,6 +15,8 @@ const M0 = ym(lima.getUTCFullYear(), lima.getUTCMonth());
 const prev = new Date(Date.UTC(lima.getUTCFullYear(), lima.getUTCMonth() - 1, 1));
 const M1 = ym(prev.getUTCFullYear(), prev.getUTCMonth());
 const M1_NAME = MONTHS[prev.getUTCMonth()]!;
+const old = new Date(Date.UTC(lima.getUTCFullYear(), lima.getUTCMonth() - 3, 1));
+const M3 = ym(old.getUTCFullYear(), old.getUTCMonth());
 
 await runSuite('analysis-dashboard', async ({ browser, page, check }) => {
   await login(page, A);
@@ -52,6 +54,14 @@ await runSuite('analysis-dashboard', async ({ browser, page, check }) => {
   await page.goto(`${BASE}/app?month=${M1}`);
   check('no milestone when viewing a past month', (await page.getByTestId('milestone').count()) === 0);
   check('month navigation shows M1 figures', (await page.getByTestId('expenses-PEN').textContent()) === 'S/ 4,000.00');
+
+  // ── Free history window (§81): A is on Free; M3 ('GASTOS JUNIO') is kept but not shown ──
+  await page.goto(`${BASE}/app?month=${M3}`);
+  check('Free: a month older than the window shows the first visible one (M2: S/ 4,000.00)', (await page.getByTestId('expenses-PEN').textContent()) === 'S/ 4,000.00' && (await page.getByLabel('Mes anterior').count()) === 0);
+  await page.goto(`${BASE}/app/movimientos?month=all&q=GASTOS`);
+  check('Free: list stops at the window (GASTOS JULIO yes, GASTOS JUNIO no) and says so', ((await page.getByTestId('movement-count').textContent()) ?? '').startsWith('1 movimiento') && (await page.getByTestId('history-window').count()) === 1, (await page.getByTestId('movement-count').textContent()) ?? '');
+  const csvAll = await (await page.request.get(`${BASE}/app/exportar?month=all&q=GASTOS`)).text();
+  check('Free: export keeps the full history (data access is never premium)', csvAll.includes('GASTOS JUNIO'));
 
   // ── Movements (TASK-007) ───────────────────────────────────────────────────────────────────────────────
   await page.goto(`${BASE}/app/movimientos?month=${M0}`);

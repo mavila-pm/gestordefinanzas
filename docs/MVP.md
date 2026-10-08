@@ -49,9 +49,10 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Falta: elegir proveedor de email entrante, dominio + MX, `DATABASE_URL` / `INBOUND_EMAIL_SECRET` / `INGEST_EMAIL_DOMAIN` en el servidor.
   - Depende de: PO (proveedor, costo). Riesgo: alto para la hipótesis del producto (sin automatización solo hay manual + pegado).
   - Terminado cuando: un email real del BCP reenviado crea 1 movimiento; reenviarlo de nuevo no duplica.
-- [ ] **P1 — Límites de plan aplicados en el servidor**
+- [x] **P1 — Límites de plan aplicados en el servidor**
   - Estado: automatización Free (50 movimientos automáticos/mes Lima, 1 banco) aplicada en SQL (migración 032, `assert_auto_allowance`, test DB `plan-limits`).
-  - Falta: historial visible Free (3 meses) en servidor; Email Bridge debe llamar la misma verificación al activarse.
+  - Historial visible Free (3 meses) aplicado en el servidor en Inicio, Análisis y Movimientos (bloque 045); la exportación conserva todo.
+  - Falta: Email Bridge debe llamar `assert_auto_allowance` al activarse.
   - Archivos: `src/domain/entitlements.ts`, `app/app/actions.ts`, migración nueva. Riesgo: medio (regla no negociable de CLAUDE.md).
   - Terminado cuando: un usuario Free no puede exceder un límite ni llamando la acción directamente (test DB).
 - [ ] **P1 — IA real verificada y decisión de privacidad**

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createSupabaseServerClient } from '../../../../lib/supabase/server';
-import { LINKED_SELECT, loadCatalog, toLinked } from '../../../../lib/queries';
+import { LINKED_SELECT, loadCatalog, loadEntitlements, toLinked } from '../../../../lib/queries';
+import { historyStart, visibleMonth } from '../../../../src/domain/entitlements';
 import { formatMoney } from '../../../../src/domain/money';
 import { limaMonth, limaMonthRange } from '../../../../src/web/auth-input';
 import {
@@ -13,14 +14,19 @@ import { limaDateKey, limaDayLabel, monthLabel } from '../../../../src/web/label
 export const metadata = { title: 'Movimientos' };
 
 export default async function Movements({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const f = parseMovementFilters(await searchParams, limaMonth());
+  const current = limaMonth();
   const supabase = await createSupabaseServerClient();
-  const catalog = await loadCatalog(supabase);
+  const [catalog, { entitlements }] = await Promise.all([loadCatalog(supabase), loadEntitlements(supabase)]);
+  // Free history window (§81), applied in the query: older movements are kept but not listed (export keeps them all).
+  const firstMonth = historyStart(entitlements, current);
+  const parsed = parseMovementFilters(await searchParams, current);
+  const f = parsed.month === 'all' ? parsed : { ...parsed, month: visibleMonth(parsed.month, firstMonth) };
 
   // Every filter is applied server-side under RLS; values come from fixed whitelists (movement-filters.ts).
   const select = f.source === 'all' ? LINKED_SELECT : `${LINKED_SELECT},src_filter:transaction_sources!inner(channel)`;
   let q = supabase.from('transactions').select(select, { count: 'exact' });
   if (f.month !== 'all') { const r = limaMonthRange(f.month)!; q = q.gte('occurred_at', r.from).lt('occurred_at', r.to); }
+  else if (firstMonth) q = q.gte('occurred_at', limaMonthRange(firstMonth)!.from);
   if (f.status !== 'all') q = q.in('status', STATUS_VALUES[f.status]);
   if (f.kind !== 'all') q = q.in('type', KIND_TYPES[f.kind]);
   if (f.source !== 'all') q = q.in('src_filter.channel', SOURCE_VALUES[f.source]);
@@ -64,7 +70,7 @@ export default async function Movements({ searchParams }: { searchParams: Promis
         <details open={activeFilters > 0}>
           <summary>Filtros{activeFilters > 0 ? ` (${activeFilters})` : ''}</summary>
           <div className="filters" style={{ paddingTop: 8 }}>
-            <label className="stack-sm"><span>Mes</span><input name="month" type="month" defaultValue={f.month === 'all' ? '' : f.month} /></label>
+            <label className="stack-sm"><span>Mes</span><input name="month" type="month" min={firstMonth ?? undefined} max={current} defaultValue={f.month === 'all' ? '' : f.month} /></label>
             <label className="stack-sm"><span>Estado</span><select name="status" defaultValue={f.status}>
               {opt('all', 'Todos')}{opt('confirmed', 'Confirmados')}{opt('pending', 'Por revisar')}{opt('ignored', 'Ignorados')}</select></label>
             <label className="stack-sm"><span>Tipo</span><select name="kind" defaultValue={f.kind}>
@@ -85,6 +91,7 @@ export default async function Movements({ searchParams }: { searchParams: Promis
         </div>
       </form>
 
+      {firstMonth && <p className="muted small" data-testid="history-window">Tu plan Free muestra desde {monthLabel(firstMonth).toLowerCase()}. Lo anterior sigue guardado: puedes exportarlo o <Link href="/app/cuenta">pasar a Plus</Link>.</p>}
       <section aria-label="Lista de movimientos">
         {error && <p role="alert" className="notice error">No pudimos cargar los movimientos. Intenta de nuevo.</p>}
         {!error && txs.length === 0 && <p className="muted">{f.q ? `Nada coincide con “${f.q}”.` : `Aún no hay movimientos${f.month !== 'all' ? ` en ${monthLabel(f.month).toLowerCase()}` : ''}.`}</p>}
