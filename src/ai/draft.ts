@@ -70,16 +70,19 @@ export function mergePatches(draft0: Draft, patches0: readonly Patch[], bare: Ba
         }
         if (p.institution && !d.institution) { d.institution = p.institution; d.name = d.kind === 'loan' ? loanName(d.loanType, p.institution) : p.name; }
         if (p.loanType) { d.loanType = p.loanType; if (d.kind === 'loan') d.name = loanName(p.loanType, d.institution); }
-        if (p.principalMinor !== undefined) d.principalMinor = p.principalMinor;
-        if (p.installmentMinor !== undefined) d.installmentMinor = p.installmentMinor;
+        // PEN ≠ USD: amounts in another currency than the ones already given are not merged (never mixed or relabelled).
+        const hasMoney = d.balanceMinor !== null || d.minimumMinor !== null || d.installmentMinor != null || d.principalMinor != null;
+        const sameMoney = !p.currency || p.currency === d.currency || !hasMoney;
+        if (sameMoney && p.currency) d.currency = p.currency;
+        if (sameMoney && p.principalMinor !== undefined) d.principalMinor = p.principalMinor;
+        if (sameMoney && p.installmentMinor !== undefined) d.installmentMinor = p.installmentMinor;
         if (p.installmentsTotal !== undefined) d.installmentsTotal = p.installmentsTotal;
         if (p.installmentsPaid !== undefined) d.installmentsPaid = p.installmentsPaid;
         if (p.installmentsLeft !== undefined) d.installmentsLeft = p.installmentsLeft;
         if (p.last4) d.last4 = p.last4;
-        if (p.currency) d.currency = p.currency;
-        if (p.balanceMinor !== undefined) { d.balanceMinor = p.balanceMinor; d.balanceStatus = status(true, p.approx); }
+        if (sameMoney && p.balanceMinor !== undefined) { d.balanceMinor = p.balanceMinor; d.balanceStatus = status(true, p.approx); }
         else if (p.unknownBalance) { d.balanceMinor = null; d.balanceStatus = 'unknown'; }
-        if (p.minimumMinor !== undefined) d.minimumMinor = p.minimumMinor;
+        if (sameMoney && p.minimumMinor !== undefined) d.minimumMinor = p.minimumMinor;
         if (p.dueDay !== undefined) d.dueDay = p.dueDay;
         touched.add(`debt:${d.id}`);
         break;
@@ -349,7 +352,7 @@ export function pendingReply(d: Draft, text: string): MergeResult | null {
   const facts = [f.balanceMinor, f.installmentMinor, f.installmentsTotal, f.installmentsPaid, f.installmentsLeft, f.dueDay].filter((x) => x !== undefined).length;
   const single = facts === 0 && f.principalMinor !== undefined;
   if (field === 'installments') {
-    const nums = (t.match(/\d{1,3}/g) ?? []).map(Number);
+    const nums = (t.match(/\d+/g) ?? []).map(Number).filter((n) => n <= 600);
     const total = f.installmentsTotal ?? (f.installmentsLeft === undefined ? nums[0] : undefined);
     const paid = f.installmentsPaid ?? (nums.length > 1 && f.installmentsLeft === undefined ? nums[1] : undefined);
     if (total === undefined && paid === undefined && f.installmentsLeft === undefined) return null;
@@ -357,7 +360,7 @@ export function pendingReply(d: Draft, text: string): MergeResult | null {
   }
   if (!facts && f.principalMinor === undefined && !f.institution) return null;
   const base: Partial<Extract<Patch, { t: 'debt' }>> = {
-    ...(f.institution ? { institution: f.institution } : {}), ...(f.loanType ? { loanType: f.loanType } : {}),
+    ...(f.currency ? { currency: f.currency } : {}), ...(f.institution ? { institution: f.institution } : {}), ...(f.loanType ? { loanType: f.loanType } : {}),
     ...(f.balanceMinor !== undefined ? { balanceMinor: f.balanceMinor } : {}), ...(f.installmentMinor !== undefined ? { installmentMinor: f.installmentMinor } : {}),
     ...(f.installmentsTotal !== undefined ? { installmentsTotal: f.installmentsTotal } : {}), ...(f.installmentsPaid !== undefined ? { installmentsPaid: f.installmentsPaid } : {}),
     ...(f.installmentsLeft !== undefined ? { installmentsLeft: f.installmentsLeft } : {}), ...(f.dueDay !== undefined ? { dueDay: f.dueDay } : {}),

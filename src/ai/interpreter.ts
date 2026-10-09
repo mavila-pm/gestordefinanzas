@@ -75,7 +75,7 @@ const LOAN_TYPES: Array<[RegExp, string]> = [
  * or the remaining amount when the rest is already read). The balance is never computed from the others.
  */
 export interface LoanFacts { institution?: string; loanType?: string; principalMinor?: number; balanceMinor?: number; installmentMinor?: number;
-  installmentsTotal?: number; installmentsPaid?: number; installmentsLeft?: number; dueDay?: number; approx?: boolean }
+  installmentsTotal?: number; installmentsPaid?: number; installmentsLeft?: number; dueDay?: number; approx?: boolean; currency?: Currency }
 export function readLoan(t: string): LoanFacts {
   const f: LoanFacts = {};
   const bank = bankIn(t)[0];
@@ -91,7 +91,12 @@ export function readLoan(t: string): LoanFacts {
   if (paid) { f.installmentsPaid = Number(paid[1]); spans.push({ index: paid.index, end: paid.index + paid[0].length }); }
   const days = findDays(t);
   if (days[0]) { f.dueDay = days[0].day; spans.push(...days); }
-  for (const a of findAmounts(t, spans)) {
+  const amounts = findAmounts(t, spans);
+  // PEN ≠ USD: one currency for the loan; soles and dollars in one sentence → no amounts (asked again, never mixed).
+  const currencies = new Set(amounts.map((a) => a.currency).filter((c) => c !== null));
+  if (currencies.size > 1) return f;
+  if (currencies.has('USD')) f.currency = 'USD';
+  for (const a of amounts) {
     const before = t.slice(Math.max(0, a.index - 22), a.index);
     const after = t.slice(a.end, a.end + 14);
     if (f.installmentMinor === undefined && (/\b(pago|cuota|cuotas de|mensualidad|abono)\b[^\d]*$/.test(before) || /^\s*(al mes|mensual|cada mes|por mes)\b/.test(after))) f.installmentMinor = a.minor;
@@ -200,7 +205,7 @@ export function interpret(message: string): Interpretation {
       const institution = f.institution ?? (banksInMessage.length === 1 ? banksInMessage[0] : undefined);
       patches.push({
         t: 'debt', kind: 'loan', name: loanName(f.loanType, institution), ...(institution ? { institution } : {}),
-        ...(f.loanType ? { loanType: f.loanType } : {}), ...(f.principalMinor ? { principalMinor: f.principalMinor } : {}),
+        ...(f.loanType ? { loanType: f.loanType } : {}), ...(f.currency ? { currency: f.currency } : {}), ...(f.principalMinor ? { principalMinor: f.principalMinor } : {}),
         ...(f.balanceMinor ? { balanceMinor: f.balanceMinor, ...(f.approx ? { approx: true } : {}) } : {}),
         ...(f.installmentMinor ? { installmentMinor: f.installmentMinor } : {}), ...(f.installmentsTotal ? { installmentsTotal: f.installmentsTotal } : {}),
         ...(f.installmentsPaid !== undefined ? { installmentsPaid: f.installmentsPaid } : {}), ...(f.installmentsLeft !== undefined ? { installmentsLeft: f.installmentsLeft } : {}),

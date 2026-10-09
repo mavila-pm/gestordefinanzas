@@ -97,19 +97,31 @@ const okDay = (n: unknown) => n === undefined || (typeof n === 'number' && Numbe
 const okCur = (c: unknown) => c === undefined || c === 'PEN' || c === 'USD';
 const KINDS = new Set(['rent', 'car', 'loan', 'card', 'internet', 'phone', 'insurance', 'education', 'services', 'taxes', 'subscription', 'other']);
 
+/** Only the fields a photo reading may carry (validatePatch's own list); anything else in a stored card is dropped. */
+const VISION_FIELDS: Record<string, readonly string[]> = {
+  balance: ['t', 'amountMinor', 'currency'],
+  obligation: ['t', 'kind', 'name', 'amountMinor', 'currency', 'approx', 'unknownAmount', 'day', 'dayMax'],
+  debt: ['t', 'kind', 'name', 'lender', 'institution', 'last4', 'currency', 'balanceMinor', 'approx', 'unknownBalance', 'minimumMinor', 'dueDay'],
+  account: ['t', 'institution', 'kind', 'last4'],
+};
+const pick = (x: Record<string, unknown>): Patch =>
+  Object.fromEntries((VISION_FIELDS[x.t as string] ?? []).filter((k) => x[k] !== undefined).map((k) => [k, x[k]])) as unknown as Patch;
+
 export function validPatches(input: unknown): Patch[] {
   if (!Array.isArray(input)) return [];
   return input.slice(0, 8).filter((p): p is Patch => {
     if (!p || typeof p !== 'object') return false;
     const x = p as Record<string, unknown>;
-    if (!okCur(x.currency) || !okDay(x.day) || !okDay(x.dueDay)) return false;
+    if (!okCur(x.currency) || !okDay(x.day) || !okDay(x.dueDay) || !okDay(x.dayMax)) return false;
+    if (![x.lender, x.institution].every((v) => v === undefined || (typeof v === 'string' && v.length <= 60))) return false;
+    if (![x.approx, x.unknownAmount, x.unknownBalance].every((v) => v === undefined || typeof v === 'boolean')) return false;
     if (x.t === 'balance') return okMinor(x.amountMinor) && x.amountMinor !== undefined;
     if (x.t === 'obligation') return typeof x.name === 'string' && x.name.length <= 60 && KINDS.has(x.kind as string) && okMinor(x.amountMinor);
     if (x.t === 'debt') return typeof x.name === 'string' && x.name.length <= 60 && (x.kind === 'card' || x.kind === 'loan') && okMinor(x.balanceMinor) && okMinor(x.minimumMinor)
       && (x.last4 === undefined || (typeof x.last4 === 'string' && /^\d{4}$/.test(x.last4)));
     if (x.t === 'account') return x.kind === 'card' && typeof x.last4 === 'string' && /^\d{4}$/.test(x.last4);
     return false; // incomes, variables, removals never come from a photo
-  });
+  }).map((p) => pick(p as unknown as Record<string, unknown>));
 }
 
 export function visionWrites(patches: readonly Patch[], existing: Existing, userId: string): PlannedWrites {

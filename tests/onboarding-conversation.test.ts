@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { followUp } from '../lib/onboarding';
-import { domainWrites } from '../src/ai/apply';
+import { domainWrites, validPatches } from '../src/ai/apply';
 import { mergePatches, pendingReply, upcomingFromDraft, yesNoReply } from '../src/ai/draft';
 import { interpret, readLoan } from '../src/ai/interpreter';
 import { emptyDraft, type Draft } from '../src/ai/types';
@@ -199,6 +199,34 @@ describe('card and loan answers: a short recap of only what was just said', () =
       expect.stringMatching(/^Listo, llevas 10 de 36 cuotas\. ¿Cuánto gastas al mes en lo básico/),
     ]);
     expect(said.join(' ')).not.toMatch(/s\/ \d/);
+  });
+});
+
+describe('review fixes: loan currency, amount ceiling, stored readings', () => {
+  it('a loan said in dollars stays USD; soles and dollars in one sentence are not mixed', () => {
+    const usd = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'préstamo vehicular BCP, me prestaron US$ 20 mil, debo $15,000, cuota $600 al mes').draft;
+    expect(usd.debts[0]).toMatchObject({ currency: 'USD', principalMinor: 2000000, balanceMinor: 1500000, installmentMinor: 60000 });
+    expect(domainWrites(usd, 'u1').debts[0]).toMatchObject({ currency: 'USD', balance_minor: 1500000, installment_minor: 60000 });
+    const mixed = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'préstamo BCP, debo 15 mil soles, cuota $600').draft;
+    expect(mixed.debts[0]).toMatchObject({ balanceMinor: null });
+    expect(mixed.debts[0]!.installmentMinor ?? null).toBeNull();
+    // A later answer in the other currency does not relabel what was already given.
+    const later = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'tengo un préstamo', 'BCP', 'Personal', '12 mil', 'US$ 300').draft;
+    expect(later.debts[0]).toMatchObject({ currency: 'PEN', balanceMinor: 1200000 });
+    expect(later.debts[0]!.installmentMinor ?? null).toBeNull();
+  });
+  it('an amount above the database ceiling is never read as money', () => {
+    expect(readLoan('me prestaron 9999999999999').principalMinor).toBeUndefined();
+  });
+  it('"1000" as installments is not read as 100 + 0', () => {
+    const d = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'tengo un préstamo', 'BCP', 'Personal', '12 mil', '850', 'el 10', '1000').draft;
+    expect(d.debts[0]!.installmentsTotal ?? null).toBeNull();
+    expect(d.debts[0]!.installmentsPaid ?? null).toBeNull();
+  });
+  it('a stored photo reading is rebuilt from its allowlist (loan fields and ids dropped, bad types refused)', () => {
+    const out = validPatches([{ t: 'debt', kind: 'loan', name: 'x', balanceMinor: 100, installmentMinor: 1.5, installmentsTotal: '9', id: 'd1' }]);
+    expect(out).toEqual([{ t: 'debt', kind: 'loan', name: 'x', balanceMinor: 100 }]);
+    expect(validPatches([{ t: 'debt', kind: 'card', name: 'x', lender: 7 }])).toEqual([]);
   });
 });
 

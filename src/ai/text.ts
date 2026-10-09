@@ -65,10 +65,14 @@ export function findAmounts(t: string, skip: Array<{ index: number; end: number 
       const half = /^\s+y\s+medi[ao]\b/.exec(t.slice(end));
       if (half) { minor += 50_000; end += half[0].length; }
     }
+    // "15 mil soles" / "2 mil dólares": the currency word after the multiplier.
+    const tail = unit && !/^(soles|sol|dolares|dolar|usd|pen)$/.test(unit) ? /^\s*(soles|sol|dolares|dolar|usd|pen)\b/.exec(t.slice(end)) : null;
+    if (tail) end += tail[0].length;
     const marker = m[1];
-    const currency: Currency | null = marker === 'us$' || marker === '$' || marker === 'usd' || unit === 'dolares' || unit === 'dolar' || unit === 'usd'
-      ? 'USD' : marker || unit === 'soles' || unit === 'sol' || unit === 'pen' ? 'PEN' : null;
-    if (!Number.isSafeInteger(minor) || minor <= 0) continue;
+    const word = tail?.[1] ?? unit;
+    const currency: Currency | null = marker === 'us$' || marker === '$' || marker === 'usd' || word === 'dolares' || word === 'dolar' || word === 'usd'
+      ? 'USD' : marker || word === 'soles' || word === 'sol' || word === 'pen' ? 'PEN' : null;
+    if (!Number.isSafeInteger(minor) || minor <= 0 || minor > 1e11) continue; // above the DB ceiling: never an amount
     if (!marker && !unit && minor < 1000) continue; // "2 tarjetas", "3 veces"
     const before20 = t.slice(Math.max(0, start - 20), start);
     out.push({ minor, currency, approx: APPROX.test(before20), index: start, end });
