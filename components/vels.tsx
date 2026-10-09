@@ -31,7 +31,7 @@ export function VelsBubble() {
   return (
     <>
       <button type="button" className="vels-fab" aria-label="Hablar con Vels" aria-haspopup="dialog" onClick={open} onPointerEnter={() => void loadChat()} data-testid="vels-fab">
-        <VelsAvatar size={44} />
+        <VelsAvatar size={52} />
       </button>
       <dialog ref={dialog} className="vels-panel" aria-labelledby="vels-title" data-testid="vels-panel"
         onClick={(e) => { if (e.target === dialog.current) dialog.current?.close(); }}>

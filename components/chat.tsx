@@ -166,7 +166,7 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
       <ol className="chat-list" ref={list} aria-live="polite" onScroll={onScroll} data-testid="chat-list">
         {messages.map((m, i) => (
           <li key={m.id} className={`msg ${m.role}${m.role === 'velsuno' && messages[i - 1]?.role !== 'velsuno' ? ' first' : ''}`} data-testid={m.role === 'velsuno' ? 'velsuno-msg' : 'user-msg'}>
-            {m.role === 'velsuno' && messages[i - 1]?.role !== 'velsuno' && <span className="msg-avatar"><VelsAvatar size={26} /></span>}
+            {m.role === 'velsuno' && messages[i - 1]?.role !== 'velsuno' && <span className="msg-avatar"><VelsAvatar size={28} /></span>}
             <p>{m.body}</p>
             {m.card && <Card card={props.camera ? m.card : { ...m.card, actions: m.card.actions?.filter((a) => a.kind !== 'camera') }} live={m.id === lastVelsuno && !pending} onOp={sendOp} onReply={sendReply}
               onCamera={() => file.current?.click()} onCorrect={() => { setHint('Dime qué cambio, por ejemplo: "el carro es 900"'); input.current?.focus(); }} />}
