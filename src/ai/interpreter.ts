@@ -52,16 +52,65 @@ const SEMIMONTHLY = /\b(quincenal|cada quincena|quincena|cada 15 dias|dos veces 
 const MONTHLY = /\b(mensual|al mes|cada mes|mensualmente)\b/;
 const NEW_INCOME = /\b(otro ingreso|tambien (cobro|gano|recibo)|extra|freelance|cachuelo|negocio|alquilo)\b/;
 const MINIMUM = /\b(minimo|pago minimo)\b/;
+/**
+ * "No pago alquiler", "yo no pago agua", "alquiler no pago", "no tengo alquiler", "ya no pago luz": the payment does
+ * not apply. Only read inside a clause that names a payment, and never for "todavía/aún no pago" (not paid YET) or
+ * "no pago el total/mínimo" (how a card is paid): those are not "this payment does not exist".
+ */
+const NOT_MINE = /\b(no|ya no|nunca)\s+(lo |la |los |las )?(pago|pagamos|tengo|tenemos|uso|usamos)\b/;
+const NOT_YET = /\b(todavia|aun|este mes|hoy|total|minimo|completo|a tiempo|todo)\b/;
+/** "Eso no lo pago", "no lo tengo", "no aplica": about the payment Vels just asked for (the pending question). */
+const NOT_THIS = /^(eso |ese gasto |ese pago |esa |ese )?(no|ya no|nunca)\s+(lo|la|los|las)\s+(pago|tengo|pagamos|tenemos|uso)$|^no aplica$|^no (pago|tengo) (eso|ese|esa)( gasto| pago)?$|^(eso|ese gasto|ese pago) no (lo |la )?(pago|tengo|aplica)$/;
+const QUINCENA = /\b(en (la )?quincena|cada quincena|a la quincena|de quincena)\b/;
+const LOAN = /\b(prestamo|prestamos|me prestaron|credito (personal|vehicular|hipotecario|de consumo))\b/;
+const LOAN_TYPES: Array<[RegExp, string]> = [
+  [/\b(vehicular|carro|auto|camioneta|moto)\b/, 'vehicular'], [/\b(hipotecario|hipoteca|casa|depa|departamento|vivienda)\b/, 'hipotecario'],
+  [/\b(estudios|universidad|educativo|maestria)\b/, 'de estudios'], [/\b(personal|consumo|libre disponibilidad)\b/, 'personal'],
+];
+
+/**
+ * Loan facts in plain words: "Me prestaron 20 mil en BCP, pago 850 al mes, son 36 cuotas y ya pagué 10".
+ * Each number is read for what it is said to be: installment ("pago/cuota … al mes"), count of installments
+ * ("36 cuotas"), installments paid ("llevo/pagué 10"), balance ("me falta/debo"), original amount ("me prestaron",
+ * or the remaining amount when the rest is already read). The balance is never computed from the others.
+ */
+export interface LoanFacts { institution?: string; loanType?: string; principalMinor?: number; balanceMinor?: number; installmentMinor?: number;
+  installmentsTotal?: number; installmentsPaid?: number; installmentsLeft?: number; dueDay?: number; approx?: boolean }
+export function readLoan(t: string): LoanFacts {
+  const f: LoanFacts = {};
+  const bank = bankIn(t)[0];
+  if (bank) f.institution = bank;
+  const type = LOAN_TYPES.find(([re]) => re.test(t));
+  if (type) f.loanType = type[1];
+  const spans: Array<{ index: number; end: number }> = [];
+  const total = /\b(?:de |son |a |en )?(\d{1,3})\s*(cuotas|meses)\b/.exec(t);
+  if (total && !/\b(faltan?|quedan?)\s+$/.test(t.slice(0, total.index))) { f.installmentsTotal = Number(total[1]); spans.push({ index: total.index, end: total.index + total[0].length }); }
+  const left = /\b(?:me )?(?:faltan|quedan)\s+(\d{1,3})(\s*cuotas)?\b/.exec(t);
+  if (left) { f.installmentsLeft = Number(left[1]); spans.push({ index: left.index, end: left.index + left[0].length }); if (total && total.index > left.index) delete f.installmentsTotal; }
+  const paid = /\b(?:llevo|lleve|pague|he pagado|ya pague|van|tengo pagadas)\s+(\d{1,3})(\s*cuotas)?\b(?!\s*(mil|k\b|soles|dolares|[.,]\d))/.exec(t);
+  if (paid) { f.installmentsPaid = Number(paid[1]); spans.push({ index: paid.index, end: paid.index + paid[0].length }); }
+  const days = findDays(t);
+  if (days[0]) { f.dueDay = days[0].day; spans.push(...days); }
+  for (const a of findAmounts(t, spans)) {
+    const before = t.slice(Math.max(0, a.index - 22), a.index);
+    const after = t.slice(a.end, a.end + 14);
+    if (f.installmentMinor === undefined && (/\b(pago|cuota|cuotas de|mensualidad|abono)\b[^\d]*$/.test(before) || /^\s*(al mes|mensual|cada mes|por mes)\b/.test(after))) f.installmentMinor = a.minor;
+    else if (f.balanceMinor === undefined && /\b(falta|faltan|debo|saldo|queda|quedan|pendiente)\b[^\d]*$/.test(before)) f.balanceMinor = a.minor;
+    else if (f.principalMinor === undefined) f.principalMinor = a.minor;
+    if (a.approx) f.approx = true;
+  }
+  return f;
+}
 
 type Ctx = { t: 'card'; institution?: string; last4?: string } | { t: 'obligation'; kind: ObligationKind; name: string } | { t: 'income' }
   | { t: 'debt'; kind: 'personal' | 'loan'; name: string; institution?: string; lender?: string };
-const bankIn = (t: string) => BANKS.filter(([re]) => re.test(t)).map(([, code]) => code);
+export const bankIn = (t: string) => BANKS.filter(([re]) => re.test(t)).map(([, code]) => code);
 
 /** Splits on sentence/list boundaries but keeps "5,700", "entre el 9 y 10" and "15 y 30" together. */
 function clauses(t: string): string[] {
   return t
     .replace(/(\d)\s*(y|o|al|-)\s*(el\s+)?(\d)/g, '$1~$4') // numeric ranges survive the split
-    .split(/[;\n]|\.(?!\d)|,(?!\d{3})|\s(?:y(?!\s+medi)|pero|tambien|ademas|aparte)\s(?=[a-z])/)
+    .split(/[;\n]|\.(?!\d)|,(?!\d{3})|\s(?:y(?!\s+medi)|e|pero|tambien|ademas|aparte)\s(?=[a-z])/)
     .map((c) => c.replace(/~/g, ' y ').trim())
     .filter(Boolean);
 }
@@ -99,6 +148,10 @@ function spendingList(all: string): { items: Patch[]; rest: string } {
   return { items, rest: all.slice(0, start.index) + (end < 0 ? '' : tail.slice(end)) };
 }
 
+/** "Préstamo vehicular BCP", "Préstamo BCP", "Préstamo". */
+export const loanName = (type: string | null | undefined, institution: string | null | undefined) =>
+  `Préstamo${type ? ` ${type}` : ''}${institution ? ` ${BANK_LABEL[institution] ?? institution}` : ''}`.slice(0, 60);
+
 export function interpret(message: string): Interpretation {
   const spending = spendingList(fold(message));
   const all = spending.rest;
@@ -108,7 +161,9 @@ export function interpret(message: string): Interpretation {
   // The subject of the previous clause: "mi tarjeta BBVA…, debo 2,430, el mínimo es 284, vence el 19" is one card.
   let ctx = null as Ctx | null;
 
-  for (const c of clauses(all)) {
+  const parts = clauses(all);
+  for (let ci = 0; ci < parts.length; ci++) {
+    const c = parts[ci]!;
     const days = findDays(c);
     const last4 = LAST4.exec(c)?.[1];
     const skip = [...days, ...(last4 ? [{ index: c.indexOf(last4), end: c.indexOf(last4) + 4 }] : [])];
@@ -123,7 +178,36 @@ export function interpret(message: string): Interpretation {
 
     if (REMOVE.test(c)) {
       const target = obligation?.[2] ?? variable?.[1] ?? (CARD.test(c) ? 'tarjeta' : lender ? lender[1] : null);
-      if (target) { patches.push({ t: 'remove', name: target }); continue; }
+      if (target) { patches.push({ t: 'remove', name: target, declined: true }); continue; }
+    }
+    // "No pago alquiler": that payment does not apply (removed, never asked again) — not a new empty payment.
+    if ((obligation || variable) && NOT_MINE.test(c) && !NOT_YET.test(c) && !amount) {
+      patches.push({ t: 'remove', name: obligation?.[2] ?? variable![1], declined: true });
+      continue;
+    }
+    // "Eso no lo pago" without naming it: it answers the pending question (the payment Vels just asked about).
+    if (NOT_THIS.test(c.replace(/[.!¡¿?]/g, '').trim())) { bare = { ...(bare ?? {}), none: true }; continue; }
+    if (/\b(no tengo|no tenemos|sin|tampoco tengo)( ningun| ninguna)? (prestamos?|creditos?)\b/.test(c)) { patches.push({ t: 'done', group: 'loans' }); continue; }
+    if (/\b(no tengo|no tenemos|sin|tampoco tengo)( ninguna)? (tarjetas?|tarjeta de credito)\b/.test(c)) { patches.push({ t: 'done', group: 'cards' }); continue; }
+    // A loan is read as a whole: its numbers mean different things (amount lent, installment, count, paid).
+    if (LOAN.test(c) && !lender && !CARD.test(c)) {
+      let j = ci + 1;
+      const otherSubject = (x: string) => INCOME.test(x) || CARD.test(x) || BALANCE.test(x) || OBLIGATIONS.some(([re]) => re.test(x)) || VARIABLE.some(([re]) => re.test(x)) || LENDERS.some(([re]) => re.test(x)) || LOAN.test(x);
+      while (j < parts.length && !otherSubject(parts[j]!)) j++;
+      const text = parts.slice(ci, j).join(', ');
+      ci = j - 1;
+      const f = readLoan(text);
+      const institution = f.institution ?? (banksInMessage.length === 1 ? banksInMessage[0] : undefined);
+      patches.push({
+        t: 'debt', kind: 'loan', name: loanName(f.loanType, institution), ...(institution ? { institution } : {}),
+        ...(f.loanType ? { loanType: f.loanType } : {}), ...(f.principalMinor ? { principalMinor: f.principalMinor } : {}),
+        ...(f.balanceMinor ? { balanceMinor: f.balanceMinor, ...(f.approx ? { approx: true } : {}) } : {}),
+        ...(f.installmentMinor ? { installmentMinor: f.installmentMinor } : {}), ...(f.installmentsTotal ? { installmentsTotal: f.installmentsTotal } : {}),
+        ...(f.installmentsPaid !== undefined ? { installmentsPaid: f.installmentsPaid } : {}), ...(f.installmentsLeft !== undefined ? { installmentsLeft: f.installmentsLeft } : {}),
+        ...(f.dueDay ? { dueDay: f.dueDay } : {}),
+      });
+      ctx = null;
+      continue;
     }
     if (NO_DEBTS.test(c)) { patches.push({ t: 'done', group: 'debts' }); continue; }
     if (DONE_OBLIGATIONS.test(c)) { patches.push({ t: 'done', group: 'obligations' }); continue; }
@@ -171,6 +255,8 @@ export function interpret(message: string): Interpretation {
         t: 'obligation', kind, name: inst ? `${baseName} ${BANK_LABEL[inst]}` : baseName, ...amountFields(amount),
         ...(unknown && !amount ? { unknownAmount: true } : {}),
         ...(day ? { day: day.day, ...(day.dayMax ? { dayMax: day.dayMax } : {}), ...(day.approx ? { approxDay: true } : {}) } : {}),
+        // "Lo pago en quincena": a monthly payment on a 'quincena' is asked, never silently turned into a day.
+        ...(!day && (QUINCENA.test(c) || SEMIMONTHLY.test(c)) ? { quincena: true } : {}),
       });
       ctx = { t: 'obligation', kind, name: inst ? `${baseName} ${BANK_LABEL[inst]}` : baseName };
       continue;

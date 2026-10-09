@@ -42,9 +42,16 @@ export function domainWrites(d: Draft, userId: string): DomainWrites {
   }
   for (const x of d.debts) {
     if (x.balanceMinor !== null) {
+      // Loans keep what the person said: amount lent, installment and installments (debts columns). The balance is
+      // the one they gave, never principal − installments. The installment makes the engine plan the monthly payment.
+      const total = x.installmentsTotal ?? null;
+      const paid = x.installmentsPaid ?? (total !== null && x.installmentsLeft != null ? total - x.installmentsLeft : null);
       w.debts.push({
         user_id: userId, name: x.name.slice(0, 60), lender: (x.lender ?? x.institution)?.slice(0, 60) ?? null, currency: x.currency,
-        principal_minor: x.balanceMinor, balance_minor: x.balanceMinor, due_day: x.dueDay,
+        principal_minor: x.principalMinor ?? Math.max(x.balanceMinor, 1), balance_minor: x.balanceMinor, due_day: x.dueDay,
+        ...(x.kind === 'loan' && x.installmentMinor ? { installment_minor: x.installmentMinor } : {}),
+        ...(x.kind === 'loan' && total && total <= 600 ? { installments_total: total } : {}),
+        ...(x.kind === 'loan' && paid !== null && paid >= 0 && (total === null || paid <= total) ? { installments_paid: paid } : {}),
       });
     } else w.deferred.push(`${x.name}: falta el saldo`);
     // The card's monthly payment is an obligation (card payment is never an expense; it is a planned outflow).

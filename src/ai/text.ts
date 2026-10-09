@@ -23,12 +23,18 @@ export function findDays(t: string): Day[] {
     const window = b !== null && b - a <= 7;
     out.push({ day: a, dayMax: window ? b : null, second: b !== null && !window ? b : null, approx: !!m[1] || window, index: m.index!, end: m.index! + m[0].length });
   }
-  const first = /\b(el|cada|los) primero(s)?( de (cada |del? )?mes)?\b/.exec(t);
+  const first = /\b(el|cada|los) primero(s)?(?! dias)( de (cada |del? )?mes)?\b/.exec(t);
   if (first && !out.some((d) => d.index <= first.index && first.index < d.end)) {
     out.push({ day: 1, dayMax: null, second: null, approx: false, index: first.index, end: first.index + first[0].length });
   }
-  const eom = /\b(a )?fin(es)? de mes\b/.exec(t);
+  // "el último día del mes": the engine clamps day 31 to the month's real length (28/29/30/31) — exact, not a guess.
+  const last = /\b(el )?ultimo dia (del|de cada|de) mes\b/.exec(t);
+  if (last) out.push({ day: 31, dayMax: null, second: null, approx: false, index: last.index, end: last.index + last[0].length });
+  const eom = !last ? /\b(a )?fin(es)? de mes\b/.exec(t) : null;
   if (eom) out.push({ day: 30, dayMax: null, second: null, approx: true, index: eom.index, end: eom.index + eom[0].length });
+  // "los primeros días (del mes)": a window, kept as a window (1–5, estimated), never a made-up exact day.
+  const early = /\b(los |en los |a )?primeros dias( del mes| de cada mes| de mes)?\b/.exec(t);
+  if (early && !out.length) out.push({ day: 1, dayMax: 5, second: null, approx: true, index: early.index, end: early.index + early[0].length });
   return out;
 }
 

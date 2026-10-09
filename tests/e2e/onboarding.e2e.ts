@@ -35,19 +35,16 @@ await runSuite('onboarding', async ({ page, check }) => {
   await tap(page, 'Después');
   v = await lastVelsuno(page);
   check('"Después" moves on (unknown, never 0)', !v.includes('¿Cuánto dinero tienes disponible hoy') && !v.includes('Saldo de hoy S/ 0'), v);
-  check('next: a payment date that is missing (the card due day)', v.includes('¿Qué día vence la tarjeta bcp?'), v);
-  await send(page, 'el 19');
-  v = await lastVelsuno(page);
-  check('next: the payment amount that is missing', v.includes('¿Cuánto pagas de carro?'), v);
-
+  check('next: one payment at a time — the car (its day was given) needs its amount', v.includes('¿Cuánto pagas de carro?'), v);
   await send(page, '900');
   v = await lastVelsuno(page);
-  check('a bare answer fills the pending question', v.includes('Carro') && v.includes('S/ 900'), v);
-  check('next: the card minimum (not the total, not the balance)', v.includes('pago mínimo de la tarjeta bcp'), v);
+  check('a bare answer fills the pending question, said in one short line', v.includes('S/ 900') && v.toLowerCase().includes('carro') && !v.includes('Entendí'), v);
+  check('next: other fixed payments, before the card', v.includes('¿Tienes algún otro pago fijo?'), v);
 
   await send(page, 'no, el carro es 950');
   v = await lastVelsuno(page);
-  check('corrections replace the value', v.includes('Carro') && v.includes('S/ 950'), v);
+  check('corrections replace the value', v.includes('S/ 950'), v);
+  check('then the card, one field at a time: what is owed now', v.includes('¿Cuánto debes ahora en la tarjeta BCP?'), v);
 
   // Something the rules cannot read → the (fixture) provider is called and usage is recorded on the onboarding allowance.
   await send(page, 'me quedé misio antes de fin de mes');

@@ -17,12 +17,22 @@ export interface ObligationFact {
   id: string; name: string; kind: ObligationKind; currency: Currency;
   amountMinor: number | null; amountStatus: FactStatus;
   day: number | null; dayMax: number | null; dayStatus: FactStatus;
+  /** "Lo pago en quincena": for a MONTHLY payment this is ambiguous, so Vels asks "¿el 15?" before storing a day. */
+  dayHint?: 'quincena' | null;
 }
 export type DebtKind = 'card' | 'personal' | 'loan';
 export interface DebtFact {
   id: string; name: string; kind: DebtKind; lender: string | null; institution: string | null; last4: string | null; currency: Currency;
   balanceMinor: number | null; balanceStatus: FactStatus;
   minimumMinor: number | null; dueDay: number | null;
+  /** Loans (debts table columns): what was lent, the monthly installment and how many installments. Never derived:
+   *  the pending balance is asked, not computed from principal − installments (interest makes that wrong). */
+  loanType?: string | null;
+  principalMinor?: number | null;
+  installmentMinor?: number | null;
+  installmentsTotal?: number | null;
+  installmentsPaid?: number | null;
+  installmentsLeft?: number | null;
 }
 export interface AccountFact { id: string; institution: string; kind: 'bank' | 'card'; last4: string | null }
 export interface VariableFact { id: string; name: string; currency: Currency; amountMinor: number | null; amountStatus: FactStatus }
@@ -36,8 +46,10 @@ export interface Draft {
   balance: { currency: Currency; amountMinor: number | null; status: FactStatus } | null;
   /** Question keys already asked once (never nag twice). */
   asked: string[];
-  /** Groups the person said are complete ("no tengo más pagos"). */
-  done: Array<'obligations' | 'debts'>;
+  /** Groups the person said are complete ("no tengo más pagos", "no tengo tarjeta"). */
+  done: Array<'obligations' | 'debts' | 'cards' | 'loans'>;
+  /** Payments the person said do not apply ("no pago alquiler"): never asked about again. */
+  declined?: string[];
   /** The question waiting for an answer: a bare "950" or "no sé" applies here. */
   pending: string | null;
   /** Facts read from an image, shown for confirmation; never applied without it. */
@@ -53,17 +65,22 @@ export type Patch =
   | { t: 'income'; name?: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean;
       day?: number; dayMax?: number; secondDay?: number; frequency?: 'monthly' | 'semimonthly'; approxDay?: boolean; isNew?: boolean }
   | { t: 'obligation'; kind: ObligationKind; name: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean;
-      day?: number; dayMax?: number; approxDay?: boolean }
+      day?: number; dayMax?: number; approxDay?: boolean; quincena?: boolean }
   | { t: 'debt'; kind: DebtKind; name: string; lender?: string; institution?: string; last4?: string; currency?: Currency;
-      balanceMinor?: number; approx?: boolean; unknownBalance?: boolean; minimumMinor?: number; dueDay?: number }
+      balanceMinor?: number; approx?: boolean; unknownBalance?: boolean; minimumMinor?: number; dueDay?: number;
+      /** Internal: the draft debt a pending question is about (never from a provider). */
+      id?: string;
+      loanType?: string; principalMinor?: number; installmentMinor?: number; installmentsTotal?: number; installmentsPaid?: number; installmentsLeft?: number }
   | { t: 'account'; institution: string; kind: 'bank' | 'card'; last4?: string }
   | { t: 'variable'; name: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean }
   | { t: 'balance'; amountMinor?: number; currency?: Currency; unknown?: boolean }
-  | { t: 'remove'; name: string }
-  | { t: 'done'; group: 'obligations' | 'debts' };
+  | { t: 'remove'; name: string; declined?: boolean }
+  | { t: 'done'; group: 'obligations' | 'debts' | 'cards' | 'loans' };
 
 /** A value without a subject ("950", "el 10", "no sé"): it answers the pending question. */
-export interface Bare { amountMinor?: number; currency?: Currency; approx?: boolean; day?: number; dayMax?: number; unknown?: boolean; frequency?: 'monthly' | 'semimonthly' }
+export interface Bare { amountMinor?: number; currency?: Currency; approx?: boolean; day?: number; dayMax?: number; unknown?: boolean; frequency?: 'monthly' | 'semimonthly';
+  /** "Eso no lo pago" / "no lo tengo": the pending payment does not apply. */
+  none?: boolean }
 
 export interface Interpretation { patches: Patch[]; bare: Bare | null }
 
