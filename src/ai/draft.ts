@@ -482,11 +482,29 @@ export function shortReply(d: Draft, changed: readonly Changed[], answered: stri
     const c = others[0]!;
     if (c.ref === 'balance' && d.balance) out.push(d.balance.amountMinor === null ? 'Lo dejamos pendiente.' : `Listo, ${money(d.balance.amountMinor, d.balance.currency)} disponibles hoy.`);
     else if (c.ref?.startsWith('income:')) out.push(`Anotado: ${c.label.toLowerCase()}, ${c.value.replace(' · ', ', ')}.`);
-    else if (c.ref?.startsWith('debt:')) out.push(`Anotado: ${c.label.replace(/^Tarjeta/, 'tarjeta').replace(/^Préstamo/, 'préstamo')}${c.value.startsWith('Saldo por confirmar') && !c.value.includes(' · ') ? '' : `, ${c.value.replace('Saldo por confirmar · ', '').replace('Saldo por confirmar', '').replace(/ · /g, ', ').toLowerCase()}`}.`);
+    else if (c.ref?.startsWith('debt:')) out.push(debtRecap(d, c, answered));
     else if (c.ref?.startsWith('variable:')) out.push(`Listo, ${c.value.toLowerCase()} en ${c.label.toLowerCase()}.`);
     else out.push('Anotado.');
   } else if (others.length > 1) out.push('Ya lo tengo.');
   return out.join(' ').replace(/, \./g, '.').replace(/\s+/g, ' ').trim();
+}
+
+/** A card or loan answer: only the fact just given ("Listo, mínimo S/ 450."); a first mention names it with what came. */
+function debtRecap(d: Draft, c: Changed, answered: string | null): string {
+  const x = d.debts.find((v) => `debt:${v.id}` === c.ref);
+  const named = c.label.replace(/^Tarjeta/, 'tarjeta').replace(/^Préstamo/, 'préstamo');
+  const field = x && answered?.startsWith(`debt:${x.id}:`) ? answered.slice(`debt:${x.id}:`.length) : null;
+  if (x && field === 'balance' && x.balanceMinor !== null) return `Listo, debes ${x.balanceStatus === 'estimated' ? 'unos ' : ''}${money(x.balanceMinor, x.currency)}.`;
+  if (x && field === 'minimum' && x.minimumMinor) return `Listo, mínimo ${money(x.minimumMinor, x.currency)}.`;
+  if (x && field === 'installment' && x.installmentMinor) return `Listo, cuota de ${money(x.installmentMinor, x.currency)}.`;
+  if (x && field === 'day' && x.dueDay) return x.kind === 'card' ? `Perfecto. Vence el ${x.dueDay}.` : `Perfecto. La cuota queda para el ${x.dueDay}.`;
+  if (x && field === 'installments' && x.installmentsTotal) {
+    const paid = x.installmentsPaid ?? (x.installmentsLeft != null ? x.installmentsTotal - x.installmentsLeft : null);
+    return paid === null ? `Listo, ${x.installmentsTotal} cuotas.` : `Listo, llevas ${paid} de ${x.installmentsTotal} cuotas.`;
+  }
+  if (field === 'institution' || field === 'type') return `Anotado: ${named}.`;
+  const rest = c.value.replace('Saldo por confirmar · ', '').replace('Saldo por confirmar', '').replace(/ · /g, ', ');
+  return `Anotado: ${named}${rest ? `, ${rest.replace(/^Debes/, 'debes')}` : ''}.`;
 }
 
 export interface UpcomingItem { name: string; date: string; dateMax: string | null; amountMinor: number | null; currency: Currency; estimated: boolean }

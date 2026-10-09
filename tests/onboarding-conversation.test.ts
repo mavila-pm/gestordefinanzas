@@ -182,6 +182,26 @@ describe('cards and loans, one question at a time', () => {
   });
 });
 
+describe('card and loan answers: a short recap of only what was just said', () => {
+  it('"S/" keeps its case and earlier facts are not repeated', () => {
+    const { said } = chat(TODAY, ...START, 'no tengo más pagos', 'sí, BCP', '2400', '450', 'el 25', 'tengo un préstamo', 'BCP', 'Personal', '12 mil', '850', 'el 10', '36, llevo 10');
+    expect(said.slice(3)).toEqual([
+      'Anotado: tarjeta BCP. ¿Cuánto debes ahora en la tarjeta BCP?',
+      'Listo, debes S/ 2,400. ¿Cuál es el pago mínimo de la tarjeta BCP?',
+      'Listo, mínimo S/ 450. ¿Qué día vence el pago de la tarjeta BCP?',
+      'Perfecto. Vence el 25. ¿Tienes algún préstamo?',
+      'Anotado: préstamo. ¿Con qué banco o entidad es el préstamo?',
+      'Anotado: préstamo BCP. ¿Qué tipo de préstamo es?',
+      'Anotado: préstamo personal BCP. ¿Cuánto te falta pagar?',
+      'Listo, debes S/ 12,000. ¿Cuánto pagas cada mes?',
+      'Listo, cuota de S/ 850. ¿Qué día pagas la cuota?',
+      'Perfecto. La cuota queda para el 10. ¿De cuántas cuotas es y cuántas llevas pagadas?',
+      expect.stringMatching(/^Listo, llevas 10 de 36 cuotas\. ¿Cuánto gastas al mes en lo básico/),
+    ]);
+    expect(said.join(' ')).not.toMatch(/s\/ \d/);
+  });
+});
+
 describe('the end: what comes until the next income, from the person + the engine', () => {
   it('lists the next payments chronologically with today\'s balance', () => {
     const { said } = chat('2026-10-09', 'me pagan 4500 el 30', 'tengo 5000', 'agua 120 el 15, internet 90 el 20', 'no tengo más pagos', 'sí, BCP', '2400', '450', 'el 25', 'no tengo', 'unos 800');
