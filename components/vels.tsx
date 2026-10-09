@@ -6,6 +6,7 @@ import { assistantAction, velsOpenAction } from '../app/app/preguntar/actions';
 import type { ChatMessage } from '../src/ai/conversation';
 import dynamic from 'next/dynamic';
 import { Icon } from './ui/icon';
+import { VelsAvatar, VelsHeader } from './vels-identity';
 
 /** The chat (and its camera code) is not needed on every screen: it loads when Vels opens, in parallel with the data. */
 const loadChat = () => import('./chat').then((m) => m.Chat);
@@ -30,12 +31,12 @@ export function VelsBubble() {
   return (
     <>
       <button type="button" className="vels-fab" aria-label="Hablar con Vels" aria-haspopup="dialog" onClick={open} onPointerEnter={() => void loadChat()} data-testid="vels-fab">
-        <span aria-hidden="true">V</span>
+        <VelsAvatar size={44} />
       </button>
       <dialog ref={dialog} className="vels-panel" aria-labelledby="vels-title" data-testid="vels-panel"
         onClick={(e) => { if (e.target === dialog.current) dialog.current?.close(); }}>
         <div className="vels-head">
-          <h2 id="vels-title">Vels</h2>
+          <VelsHeader titleId="vels-title" />
           <button type="button" className="icon" aria-label="Cerrar" onClick={() => dialog.current?.close()}><Icon name="close" /></button>
         </div>
         {state

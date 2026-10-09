@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { startTransition, useActionState, useEffect, useOptimistic, useRef, useState } from 'react';
+import { startTransition, useActionState, useCallback, useEffect, useLayoutEffect, useOptimistic, useRef, useState } from 'react';
 import type { ChatMessage, ChatState, MessageCard } from '../src/ai/conversation';
+import { isNearBottom, onNewContent } from '../src/web/chat-scroll';
 import { Icon } from './ui/icon';
+import { VelsAvatar } from './vels-identity';
 
 /**
  * Velsuno conversation (onboarding and "Preguntar"). A column of short messages, compact fact cards and a
@@ -95,12 +97,49 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
   const [messages, addSent] = useOptimistic(state.messages, (cur, m: ChatMessage) => [...cur, m]);
   const [reading, setReading] = useState(false);
 
-  useEffect(() => { list.current?.lastElementChild?.scrollIntoView({ block: 'end' }); }, [messages, pending]);
+  // Scroll like a messaging app: follow new messages only at the bottom or right after the person sends; never pull
+  // a reader back down while they read older messages (a "new messages" button appears instead).
+  const atBottom = useRef(true);
+  const ownSend = useRef(false);
+  const seen = useRef(0);
+  const [jump, setJump] = useState(false);
+  const toBottom = useCallback((smooth = false) => {
+    const el = list.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' });
+    atBottom.current = true;
+    setJump(false);
+  }, []);
+  useLayoutEffect(() => { toBottom(); }, [toBottom]); // open at the latest message
+  const count = messages.length + (pending || reading ? 1 : 0);
+  useLayoutEffect(() => {
+    const grew = count > seen.current;
+    seen.current = count;
+    const action = onNewContent({ nearBottom: atBottom.current, ownSend: ownSend.current, grew });
+    ownSend.current = false;
+    if (action === 'stick') toBottom();
+    else if (action === 'notify') setJump(true);
+  }, [count, toBottom]);
+  useEffect(() => {
+    // Keyboard opening, a card expanding, fonts loading: if the reader was at the bottom, stay there.
+    const el = list.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => { if (atBottom.current) el.scrollTop = el.scrollHeight; });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const onScroll = () => {
+    const el = list.current;
+    if (!el) return;
+    atBottom.current = isNearBottom(el);
+    if (atBottom.current) setJump(false);
+  };
   const wasPending = useRef(false);
   useEffect(() => { if (wasPending.current && !pending) setReading(false); wasPending.current = pending; }, [pending]);
 
   const submit = (fd: FormData, echo?: string) => {
     lastSent.current = fd;
+    ownSend.current = true; // what the person sends brings the view back to the end
     startTransition(() => {
       if (echo) addSent({ id: `sent-${Date.now()}`, role: 'user', body: echo, card: null });
       formAction(fd);
@@ -124,9 +163,10 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
 
   return (
     <div className="chat" aria-label={props.label}>
-      <ol className="chat-list" ref={list} aria-live="polite">
-        {messages.map((m) => (
-          <li key={m.id} className={`msg ${m.role}`} data-testid={m.role === 'velsuno' ? 'velsuno-msg' : 'user-msg'}>
+      <ol className="chat-list" ref={list} aria-live="polite" onScroll={onScroll} data-testid="chat-list">
+        {messages.map((m, i) => (
+          <li key={m.id} className={`msg ${m.role}${m.role === 'velsuno' && messages[i - 1]?.role !== 'velsuno' ? ' first' : ''}`} data-testid={m.role === 'velsuno' ? 'velsuno-msg' : 'user-msg'}>
+            {m.role === 'velsuno' && messages[i - 1]?.role !== 'velsuno' && <span className="msg-avatar"><VelsAvatar size={26} /></span>}
             <p>{m.body}</p>
             {m.card && <Card card={props.camera ? m.card : { ...m.card, actions: m.card.actions?.filter((a) => a.kind !== 'camera') }} live={m.id === lastVelsuno && !pending} onOp={sendOp} onReply={sendReply}
               onCamera={() => file.current?.click()} onCorrect={() => { setHint('Dime qué cambio, por ejemplo: "el carro es 900"'); input.current?.focus(); }} />}
@@ -136,6 +176,11 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
           ? <li className="msg velsuno" role="status"><p className="muted">Leyendo…</p></li>
           : <li className="msg velsuno typing" aria-label="Escribiendo"><span /><span /><span /></li>)}
       </ol>
+      {jump && (
+        <button type="button" className="chat-jump" onClick={() => toBottom(true)} data-testid="chat-jump">
+          <span aria-hidden="true">↓</span> Ir al final
+        </button>
+      )}
       {state.error && (
         <p role="alert" className="chat-error">{state.error}{' '}
           {lastSent.current && <button type="button" className="link" onClick={() => lastSent.current && submit(lastSent.current)}>Reintentar</button>}
