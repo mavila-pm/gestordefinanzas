@@ -7,6 +7,7 @@ import type { AssistantAct } from './conversation';
 import type { CardPosition } from '../engine/cards';
 import { money } from './draft';
 import { findAmounts, fold } from './text';
+import { matchProvider } from '../domain/subscriptions';
 
 /**
  * Vels's answers (§19-§22, §69): a question → an Intent (local rules, or Gemini via vels-route.ts) → an answer
@@ -19,6 +20,7 @@ export type Intent =
   | { k: 'changed' } | { k: 'help' } | { k: 'connect_email' } | { k: 'unknown' } | { k: 'balance' } | { k: 'next_income' }
   | { k: 'card_limit' } | { k: 'organize' } | { k: 'pay_min' } | { k: 'owe'; amountMinor: number; currency: Currency; lender: string }
   | { k: 'estimate_basics'; amountMinor: number } | { k: 'apply_plan' }
+  | { k: 'subs_total' } | { k: 'subs_paid'; name: string } | { k: 'subs_pause'; name: string }
   | { k: 'pref_zero_debt'; on: boolean } | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number };
 
 const NAMES = ['carro', 'auto', 'alquiler', 'internet', 'luz', 'agua', 'gas', 'celular', 'telefono', 'tarjeta', 'seguro', 'colegio', 'universidad', 'netflix', 'spotify', 'gimnasio', 'prestamo', 'cable'];
@@ -28,6 +30,11 @@ export function detectIntent(message: string): Intent {
   const t = fold(message);
   const amount = findAmounts(t)[0];
   const name = nameIn(t);
+  // Mis suscripciones: totals, what was paid for one service, and pausing (only in Velsuno; never cancels the service).
+  const service = matchProvider(t)?.name ?? null;
+  if (service && /\b(pausa|pausar|pausala|cancela|cancelar|cancelala|dar de baja|da de baja|quita|quitar|ya no (pago|quiero))\b/.test(t)) return { k: 'subs_pause', name: service };
+  if (service && /\b(cuanto|que tanto) (pague|he pagado|gaste|he gastado|me cobraron|me ha cobrado)\b/.test(t)) return { k: 'subs_paid', name: service };
+  if (/\bsuscripcion(es)?\b/.test(t) && /\b(cuanto|cuantas|cuales|que|total|gasto|pago|cuestan)\b/.test(t)) return { k: 'subs_total' };
   // Vels (ADR-0011): card operating limit, organize until the next income, minimum vs total, "le debo X a Y", estimates.
   if (/\btarjeta\b/.test(t) && /\b(hasta cuanto|cuanto) (puedo|podria) (usar|gastar)\b|\blimite (real|de mi tarjeta)\b/.test(t)) return { k: 'card_limit' };
   // "Aplicar plan" (ADR-0013): saves reservations after confirmation; never pays or moves money.
@@ -90,6 +97,8 @@ export interface View {
   /** Plan inputs per currency, for what-if scenarios (simulated copies; nothing is written). */
   inputs?: Partial<Record<Currency, PlanInput>>;
   debtLinks?: Array<{ id: string; name: string; currency: Currency; balanceMinor: number; annualRateBp: number | null; obligationId: string | null }>;
+  /** Mis suscripciones (not ended): analytical monthly cost, next charge, and what was really paid this year. */
+  subscriptions?: Array<{ id: string; name: string; currency: Currency; amountMinor: number | null; monthlyMinor: number | null; nextDate: string | null; paidYearMinor: number; paidYearCount: number }>;
 }
 export type Action =
   | { type: 'link'; label: string; href: string }
@@ -212,6 +221,34 @@ export function answer(intent: Intent, v: View): Answer | null {
       return { text: 'Lo actualizo desde Dinero disponible para que no cambie un ingreso por error.', actions: [{ type: 'link', label: 'Editar ingreso', href: '/app/plan' }] };
     case 'debt_paid':
       return { text: 'Buena noticia. Marca la deuda como pagada en Próximos pagos para que deje de contarse.', actions: [{ type: 'link', label: 'Ver deudas', href: '/app/compromisos' }] };
+    case 'subs_total': {
+      const subs = v.subscriptions ?? [];
+      const link: Action = { type: 'link', label: 'Ver mis suscripciones', href: '/app/compromisos/suscripciones' };
+      if (!subs.length) return { text: 'Aún no tienes suscripciones registradas. ¿Agregamos Netflix, Spotify o la que pagues?', actions: [link] };
+      const byCur = new Map<Currency, number>();
+      for (const x of subs) if (x.monthlyMinor !== null) byCur.set(x.currency, (byCur.get(x.currency) ?? 0) + x.monthlyMinor);
+      const unknown = subs.filter((x) => x.monthlyMinor === null).length;
+      const total = [...byCur].map(([c, m]) => money(m, c)).join(' y ');
+      return {
+        text: `Tienes ${subs.length} ${subs.length === 1 ? 'suscripción' : 'suscripciones'}${total ? `: unos ${total} al mes (estimado)` : ''}.${unknown ? ` A ${unknown} le${unknown === 1 ? '' : 's'} falta el precio.` : ''}`,
+        rows: subs.slice(0, 6).map((x) => ({ label: x.name, value: x.amountMinor === null ? 'por confirmar' : `${money(x.amountMinor, x.currency)}${x.nextDate ? ` · ${shortDate(x.nextDate)}` : ''}` })),
+        actions: [link],
+      };
+    }
+    case 'subs_paid': {
+      const x = (v.subscriptions ?? []).find((s) => fold(s.name).includes(fold(intent.name)) || fold(intent.name).includes(fold(s.name)));
+      if (!x) return { text: `No tengo ${intent.name} entre tus suscripciones.`, actions: [{ type: 'link', label: 'Agregarla', href: '/app/compromisos/suscripciones' }] };
+      const link: Action = { type: 'link', label: `Ver ${x.name}`, href: `/app/compromisos/suscripciones?id=${x.id}` };
+      return x.paidYearCount
+        ? { text: `Este año pagaste ${money(x.paidYearMinor, x.currency)} por ${x.name} (${x.paidYearCount} ${x.paidYearCount === 1 ? 'cobro confirmado' : 'cobros confirmados'}).`, actions: [link] }
+        : { text: `Todavía no tengo cobros de ${x.name} confirmados este año.`, actions: [link] };
+    }
+    case 'subs_pause': {
+      const x = (v.subscriptions ?? []).find((s) => fold(s.name).includes(fold(intent.name)) || fold(intent.name).includes(fold(s.name)));
+      if (!x) return { text: `No tengo ${intent.name} entre tus suscripciones.` };
+      return { text: `Puedo pausarla o dejar de seguirla en Velsuno; confírmalo en su ficha. Esto no cancela tu suscripción en ${intent.name}: eso se hace en su web o app.`,
+        actions: [{ type: 'link', label: `Ir a ${x.name}`, href: `/app/compromisos/suscripciones?id=${x.id}` }] };
+    }
     case 'changed':
       return { text: 'En qué se fue tu dinero, por categoría y frente al mes anterior, está en Análisis.', actions: [{ type: 'link', label: 'Ver análisis', href: '/app/analisis' }] };
     case 'pref_zero_debt': {

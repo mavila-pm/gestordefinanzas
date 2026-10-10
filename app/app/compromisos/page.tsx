@@ -60,6 +60,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
     .filter((c) => c.dueDate <= horizon)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.name.localeCompare(b.name));
   const activeFixed = fixed.filter((f) => f.active);
+  const subscriptionCount = plan.obligationRows.filter((o) => o.kind === 'subscription' && o.active && !o.endedOn).length;
   const activeDebts = debts.filter((d) => d.active);
   const total = Object.entries(totals).map(([cur, v]) => formatMoney({ amountMinor: v!, currency: cur as 'PEN' | 'USD' })).join(' + ');
 
@@ -69,6 +70,14 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
         <h1>Próximos pagos</h1>
         <p>{items.length ? <>Estos son tus próximos pagos. <span data-testid="commitment-total">Total del mes: {total}</span></> : 'Anota tus pagos fijos y deudas para verlos venir.'}</p>
       </div>
+
+      <Link href="/app/compromisos/suscripciones" className="card row link-card" data-testid="subscriptions-link">
+        <span className="stack-sm" style={{ gap: 2 }}>
+          <strong>Mis suscripciones</strong>
+          <small className="muted">{subscriptionCount ? `${plural(subscriptionCount, 'activa', 'activas')} · cobros, historial y con qué las pagas` : 'Netflix, Spotify y los servicios que pagas cada mes'}</small>
+        </span>
+        <Icon name="chevron" size={18} />
+      </Link>
 
       {upcoming.length > 0 && (
         <section aria-labelledby="h-next" className="stack-sm">

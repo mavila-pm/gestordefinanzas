@@ -58,6 +58,7 @@
 | 20261010000039_user_preferences.sql | user_preferences (Vels style/proactive, primary currency/account via composite FK, 4 notice toggles; own-row RLS, no delete grant) | 2026-10-10 |
 | 20261010000040_cap_spent.sql | cap_spent + cap_spend() (Cap anti-bot single-use keys: SHA-256 hashes + expiry, no client grants on the table; function executable by anon/authenticated, invalid keys/TTL rejected; no DELETE, expired rows reused) | 2026-10-10 |
 | 20261010000041_cap_spend_ttl.sql | cap_spend TTL bound 1..600 s (was 3600; the redeem token lives 10 min) | 2026-10-10 |
+| 20261010000042_subscriptions.sql | fixed_expenses + provider (catalogue slug), card_id / account_id (composite FKs, at most one, set null on delete); subscriptions = obligations kind subscription | 2026-10-10 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

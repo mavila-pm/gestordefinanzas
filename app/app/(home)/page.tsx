@@ -28,6 +28,9 @@ import { limaDayLabel, monthLabel } from '../../../src/web/labels';
 import { creditSignals, creditUse, spendSlices, type CreditCardFacts } from '../../../src/engine/dashboard';
 import { loadCardViews } from '../../../lib/cards';
 import { fold } from '../../../src/ai/text';
+import { loadSubscriptions } from '../../../lib/subscriptions';
+import { nextCharge, subscriptionState, subscriptionTotals } from '../../../src/engine/subscriptions';
+import { SubLogo } from '../../../components/sub-logo';
 
 /**
  * Resumen: the situation in a glance — available money, fixed payments, what comes next, savings — then what
@@ -48,6 +51,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const planningLoad = loadPlanningData(supabase, now);
   // Card reads start at once; an error leaves the card block out instead of breaking Resumen.
   const cardsLoad = loadCardViews(supabase, planningLoad).catch(() => []);
+  const subsLoad = loadSubscriptions(supabase).catch(() => null);
   const [txRes, pendingRes, oldestRes, profileRes, budgets, commitmentData, everRes, planning, prefs] = await Promise.all([
     supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', windowFrom).lt('occurred_at', range.to)
       .order('occurred_at', { ascending: false }).limit(4000),
@@ -60,7 +64,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     planningLoad,
     loadPreferences(supabase),
   ]);
-  const cards = await cardsLoad;
+  const [cards, subsData] = await Promise.all([cardsLoad, subsLoad]);
 
   if (txRes.error) {
     return <main className="stack"><p role="alert" className="error">No se pudieron cargar tus movimientos.</p></main>;
@@ -110,6 +114,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   // A card already shown above is not repeated as a loan (onboarding may register it in both places).
   const cardNames = new Set(cards.map((c) => fold(c.name)));
   const loans = debts.filter((d) => !cardNames.has(fold(d.name)));
+  // Suscripciones: the next charges (planned, from the same engine as Próximos pagos) and the analytical monthly cost.
+  const subsSettled = new Map<string, Set<string>>();
+  for (const x of subsData?.settlements ?? []) (subsSettled.get(x.obligationId) ?? subsSettled.set(x.obligationId, new Set()).get(x.obligationId)!).add(x.period);
+  const subsNext = (subsData?.subs ?? []).filter((x) => subscriptionState(x, today) !== 'ended')
+    .map((x) => ({ x, n: nextCharge(x, today, subsSettled.get(x.id) ?? new Set()) })).filter((r) => r.n?.date)
+    .sort((a, b) => a.n!.date!.localeCompare(b.n!.date!)).slice(0, 3);
+  const subsTotals = subsData ? subscriptionTotals(subsData.subs, subsData.settlements, today) : [];
 
   const head = (
     <header className="home-head">
@@ -246,6 +257,24 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 </li>
               ))}
             </ul>
+          )}
+
+          {isCurrent && subsTotals.length > 0 && (
+            <section className="card stack-sm o-subs" aria-labelledby="h-subs" data-testid="home-subscriptions">
+              <div className="row"><h2 id="h-subs">Suscripciones</h2><Link href="/app/compromisos/suscripciones" className="section-link">Ver<Icon name="chevron" size={16} /></Link></div>
+              <small className="muted">{subsTotals.map((t) => `${money(t.monthlyMinor, t.currency)} al mes (estimado)`).join(' · ')}</small>
+              {subsNext.length > 0 && (
+                <ul className="plain stack-sm">
+                  {subsNext.map(({ x, n }) => (
+                    <li key={x.id} className="sub-mini">
+                      <SubLogo provider={x.provider} name={x.name} size={32} />
+                      <span className="setting-text"><span>{x.name}</span><small className="muted">{n!.overdue ? 'Venció' : 'Cobra'} el {shortDate(n!.date!)}</small></span>
+                      <strong className={`amount${n!.amountMinor === null ? ' unknown' : ''}`}>{n!.amountMinor === null ? 'Por confirmar' : money(n!.amountMinor, x.currency)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           )}
 
           {isCurrent && <div className="o-savings"><SavingsGoal netMinor={pen.netCashFlowMinor} goalMinor={planning.settings.PEN?.savingsGoalMinor ?? null} estimated={pen.savingsLabel === 'estimated'} /></div>}

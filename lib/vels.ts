@@ -1,5 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { loadSubscriptions } from './subscriptions';
+import { monthlyEquivalentMinor, nextCharge, subscriptionState } from '../src/engine/subscriptions';
 import { answer, compactView, detectIntent, proactiveNote, STYLE_INSTRUCTION, styleAnswer, velsSuggestions, type Answer, type View } from '../src/ai/vels-answers';
 import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
@@ -33,11 +35,15 @@ const UNSURE = /\b(no se|ni idea|tu dime|donde sea|cualquiera|como quieras|por d
 
 async function view(supabase: SupabaseClient): Promise<View> {
   const planning = loadPlanningData(supabase);
-  const [d, review, cards] = await Promise.all([
+  const [d, review, cards, subs] = await Promise.all([
     planning,
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
     loadCardViews(supabase, planning),
+    loadSubscriptions(supabase).catch(() => null),
   ]);
+  const year = d.today.slice(0, 4);
+  const settledBy = new Map<string, Set<string>>();
+  for (const x of subs?.settlements ?? []) (settledBy.get(x.obligationId) ?? settledBy.set(x.obligationId, new Set()).get(x.obligationId)!).add(x.period);
   const currencies = [...new Set<'PEN' | 'USD'>(['PEN', ...d.obligations.map((o) => o.currency), ...d.incomes.map((i) => i.currency), ...(Object.keys(d.balances) as Array<'PEN' | 'USD'>)])];
   return {
     today: d.today,
@@ -51,6 +57,11 @@ async function view(supabase: SupabaseClient): Promise<View> {
     recentIncome: d.recentIncome,
     timeline: planTimeline(d, 14),
     inputs: Object.fromEntries(currencies.map((c) => [c, planInputFor(d, c)])),
+    subscriptions: (subs?.subs ?? []).filter((x) => subscriptionState(x, d.today) !== 'ended').map((x) => {
+      const paid = (subs?.settlements ?? []).filter((p) => p.obligationId === x.id && p.status === 'paid' && p.amountMinor !== null && p.occurredOn?.startsWith(year));
+      return { id: x.id, name: x.name, currency: x.currency, amountMinor: x.amountMinor, monthlyMinor: monthlyEquivalentMinor(x),
+        nextDate: nextCharge(x, d.today, settledBy.get(x.id) ?? new Set())?.date ?? null, paidYearMinor: paid.reduce((n, p) => n + p.amountMinor!, 0), paidYearCount: paid.length };
+    }),
     debtLinks: d.debts.map((x) => ({ ...x, obligationId: d.obligationRows.find((o) => o.active && o.kind === 'card' && o.currency === x.currency && fold(o.name) === fold(x.name))?.id ?? null })),
   };
 }
