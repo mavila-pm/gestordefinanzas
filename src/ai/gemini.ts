@@ -1,5 +1,5 @@
 import { ApiError, GoogleGenAI, ThinkingLevel } from '@google/genai';
-import { AIProviderError, type AIProvider, type AIRequest, type AIResult, type AIUsage } from '../provider';
+import { AIError, type AIModel, type AIRequest, type AIResult, type AIUsage } from './model';
 
 /** The slice of the official SDK this adapter uses (injectable in tests: no network, no key). */
 export interface GeminiModels {
@@ -28,11 +28,10 @@ export const GEMINI_MIN_OUTPUT_TOKENS = 1024;
  * schema. Thinking LOW at least, no sampling parameters (Gemini 3.x). The SDK's own retries are off: lib/ai.ts decides retries (at most one, each reserved and recorded).
  * Usage from usageMetadata (thinking billed as output; image tokens split out of the prompt count).
  */
-export function geminiProvider(opts: { apiKey?: string; models?: GeminiModels }): AIProvider {
+export function gemini(opts: { apiKey?: string; models?: GeminiModels }): AIModel {
   const models: GeminiModels = opts.models ?? new GoogleGenAI({ apiKey: opts.apiKey, httpOptions: { retryOptions: { attempts: 1 } } }).models;
   return {
     name: 'gemini',
-    supportsVision: () => true,
     async complete(req: AIRequest): Promise<AIResult> {
       const started = Date.now();
       const contents = req.messages.map((m, i) => ({
@@ -51,7 +50,7 @@ export function geminiProvider(opts: { apiKey?: string; models?: GeminiModels })
             // No temperature / topP / topK: Gemini 3.x recommends the defaults and may refuse sampling overrides.
             maxOutputTokens: Math.max(req.maxOutputTokens, GEMINI_MIN_OUTPUT_TOKENS),
             thinkingConfig: { thinkingLevel: THINKING[req.reasoning] },
-            ...(req.json ? { responseMimeType: 'application/json' } : {}),
+            responseMimeType: 'application/json',
             ...(req.schema ? { responseJsonSchema: req.schema } : {}),
             abortSignal: ctrl.signal,
           },
@@ -66,17 +65,17 @@ export function geminiProvider(opts: { apiKey?: string; models?: GeminiModels })
       const usage: AIUsage = { input: Math.max((u.promptTokenCount ?? 0) - image, 0), output: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0), cached: u.cachedContentTokenCount ?? 0, image };
       const text = res.text ?? '';
       // Empty or blocked (safety, max tokens before any text): it cost tokens, it is not an answer.
-      if (!text.trim()) throw new AIProviderError('invalid_output', 'empty completion', false, usage);
+      if (!text.trim()) throw new AIError('invalid_output', 'empty completion', false, usage);
       return { text, usage, model: res.modelVersion ?? req.model, latencyMs: Date.now() - started };
     },
   };
 }
 
-/** SDK/network failure → provider-neutral kind. Never carries the provider's message (it may echo the request). */
-export function geminiError(e: unknown, aborted: boolean): AIProviderError {
-  if (aborted || (e as Error)?.name === 'AbortError') return new AIProviderError('timeout', 'provider timeout', true);
+/** SDK/network failure → a typed kind. Never carries the API's message (it may echo the request). */
+export function geminiError(e: unknown, aborted: boolean): AIError {
+  if (aborted || (e as Error)?.name === 'AbortError') return new AIError('timeout', 'provider timeout', true);
   const status = e instanceof ApiError ? e.status : typeof (e as { status?: unknown })?.status === 'number' ? (e as { status: number }).status : null;
-  if (status === 429) return new AIProviderError('rate_limited', 'provider rate limited', true, null, 429);
-  if (status !== null) return new AIProviderError('http', `provider http ${status}`, status >= 500, null, status);
-  return new AIProviderError('http', 'provider unreachable', true);
+  if (status === 429) return new AIError('rate_limited', 'provider rate limited', true, null, 429);
+  if (status !== null) return new AIError('http', `provider http ${status}`, status >= 500, null, status);
+  return new AIError('http', 'provider unreachable', true);
 }

@@ -1,40 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { domainWrites } from '../src/ai/apply';
 import { answer, detectIntent, type View } from '../src/ai/assistant';
-import { aiAvailability, aiConfig, providerFor } from '../src/ai/config';
+import { aiAvailable, aiConfig } from '../src/ai/config';
 import { mergePatches } from '../src/ai/draft';
 import { aiPlanFrom, allowance } from '../src/ai/entitlements';
 import { checkImage, sniff, stripJpeg, stripPng } from '../src/ai/image';
 import { interpret } from '../src/ai/interpreter';
 import { estimateCostMicroUsd, ratesFrom } from '../src/ai/pricing';
-import { geminiProvider } from '../src/ai/providers/gemini';
+import { gemini } from '../src/ai/gemini';
 import { minor, validateInterpretation, validateVision } from '../src/ai/schema';
 import { emptyDraft } from '../src/ai/types';
 import { proposalFrom } from '../src/ai/vision';
 import { buildPlan } from '../src/engine/planning';
 
-const req = { operation: 'onboarding_extract' as const, model: 'm', system: 's', messages: [{ role: 'user' as const, content: 'hola' }], json: true, maxOutputTokens: 100, reasoning: 'off' as const, timeoutMs: 1000 };
+const req = { operation: 'onboarding_extract' as const, model: 'm', system: 's', messages: [{ role: 'user' as const, content: 'hola' }], maxOutputTokens: 100, reasoning: 'off' as const, timeoutMs: 1000 };
 const fakeModels = (r: () => unknown) => ({ generateContent: async () => r() }) as never;
 
-describe('provider adapters (§26, §32): usage exactly as the provider reports it', () => {
+describe('Gemini (§26, §32): usage exactly as the API reports it', () => {
   it('Gemini: thinking tokens count as output, image tokens split from text, errors are typed', async () => {
-    const p = geminiProvider({ models: fakeModels(() => ({ text: '{}',
+    const p = gemini({ models: fakeModels(() => ({ text: '{}',
       usageMetadata: { promptTokenCount: 400, candidatesTokenCount: 20, thoughtsTokenCount: 5, promptTokensDetails: [{ modality: 'IMAGE', tokenCount: 258 }] } })) });
     expect((await p.complete(req)).usage).toEqual({ input: 142, output: 25, cached: 0, image: 258 });
-    const failing = (status: number) => geminiProvider({ models: fakeModels(() => { throw Object.assign(new Error('x'), { status }); }) });
+    const failing = (status: number) => gemini({ models: fakeModels(() => { throw Object.assign(new Error('x'), { status }); }) });
     await expect(failing(503).complete(req)).rejects.toMatchObject({ kind: 'http', retryable: true });
     await expect(failing(400).complete(req)).rejects.toMatchObject({ kind: 'http', retryable: false });
     await expect(failing(429).complete(req)).rejects.toMatchObject({ kind: 'rate_limited' });
   });
 
-  it('config: Gemini is the only provider; no key → no provider; fixture never on production', () => {
-    expect(aiConfig({}).provider).toBe('gemini');
-    expect(aiConfig({ AI_PROVIDER: 'none' }).provider).toBe('none');
-    expect(aiAvailability({})).toEqual({ text: false, vision: false });
-    expect(providerFor('gemini', {})).toBeNull();
-    expect(providerFor('gemini', { GEMINI_API_KEY: 'x' })?.name).toBe('gemini');
-    expect(aiConfig({ AI_PROVIDER: 'fixture', AI_ALLOW_FIXTURE: '1', VERCEL_ENV: 'production' }).provider).toBe('none');
-    expect(aiConfig({ AI_PROVIDER: 'fixture', AI_ALLOW_FIXTURE: '1' }).provider).toBe('fixture');
+  it('config: no key → no inference (never a crash); caps are bounded', () => {
+    expect(aiAvailable({})).toBe(false);
+    expect(aiAvailable({ GEMINI_API_KEY: 'x' })).toBe(true);
     expect(aiConfig({ AI_MAX_OUTPUT_ASSISTANT_ANSWER: '999999' }).maxOutput.assistant_answer).toBe(1024);
   });
 

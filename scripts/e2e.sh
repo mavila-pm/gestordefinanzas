@@ -79,7 +79,7 @@ if [[ ! -f .next/BUILD_ID ]] || [[ -n "$(find app components lib src next.config
 fi
 
 # 3. Start in its own process group and wait for a healthy answer (not a fixed sleep).
-AI_PROVIDER=fixture AI_ALLOW_FIXTURE=1 setsid node_modules/.bin/next start -p "$PORT" >"$LOG" 2>&1 &
+AI_FIXTURE=1 setsid node_modules/.bin/next start -p "$PORT" >"$LOG" 2>&1 &
 echo $! >"$PIDFILE"
 for _ in $(seq 1 60); do
   code="$(curl -s -o /dev/null -w '%{http_code}' "$BASE/login" || true)"

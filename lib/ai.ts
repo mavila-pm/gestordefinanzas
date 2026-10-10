@@ -1,16 +1,15 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { aiConfig, providerFor, type AIConfig } from '../src/ai/config';
-import { AIProviderError, ZERO_USAGE, type AIImage, type AIMessage, type AIProvider, type AIUsage } from '../src/ai/provider';
+import { aiConfig, aiModel, type AIConfig } from '../src/ai/config';
+import { AIError, ZERO_USAGE, type AIImage, type AIMessage, type AIModel, type AIUsage } from '../src/ai/model';
 import { estimateCostMicroUsd, ratesFrom } from '../src/ai/pricing';
-import { sanitizeUserText } from '../src/ai/sanitize';
 import type { Operation } from '../src/ai/types';
 
 /**
- * The only door to a provider (ADR-0006). Every call is: reserve (quota, rate limit, cost guards, under the
- * user's session) → provider (Gemini) → settle with the usage the provider reported. At most one retry, and only
- * for transient failures (timeout, 5xx, rate limit); 4xx and invalid output are final (§62).
- * Nothing here logs prompts, answers or images.
+ * The only door to Gemini (ADR-0006, ADR-0015). Every call is: reserve (quota, rate limit, cost guards, under the
+ * user's session) → Gemini → settle with the usage Gemini reported. At most one retry, and only for transient
+ * failures (timeout, 5xx, rate limit); 4xx and invalid output are final (§62). Every call asks for one JSON object;
+ * the caller validates it. Nothing here logs prompts, answers or images.
  */
 export type AIStop = 'ai_quota' | 'camera_quota' | 'ai_rate' | 'ai_budget' | 'too_many_images' | 'unavailable' | 'failed';
 export type InferResult = { ok: true; text: string; usage: AIUsage; provider: string; model: string } | { ok: false; reason: AIStop };
@@ -28,15 +27,14 @@ export function diagnose(d: { kind: string; status: number | null; model: string
 
 export async function infer(
   supabase: SupabaseClient,
-  req: { operation: Operation; system: string; messages: AIMessage[]; images?: AIImage[]; json: boolean; schema?: Record<string, unknown>; temperature?: number; maxOutputTokens?: number },
+  req: { operation: Operation; system: string; messages: AIMessage[]; images?: AIImage[]; schema?: Record<string, unknown>; maxOutputTokens?: number },
   validate: (text: string) => boolean = () => true,
   cfg: AIConfig = aiConfig(),
-  resolve: (p: AIConfig['provider']) => AIProvider | null = (p) => providerFor(p),
+  ai: AIModel | null = aiModel(),
 ): Promise<InferResult> {
   const camera = req.operation === 'vision_extract';
-  const provider = resolve(cfg.provider);
-  const model = camera ? cfg.visionModel : cfg.textModel;
-  if (!provider || !model || (camera && !provider.supportsVision(model))) return { ok: false, reason: 'unavailable' };
+  const model = cfg.model;
+  if (!ai) return { ok: false, reason: 'unavailable' };
 
   // Compact context: keep the most recent messages within the configured budget (§23, §40).
   const messages: AIMessage[] = [];
@@ -56,15 +54,14 @@ export async function infer(
     }
     const callId = (reserved.data as { call_id: number }).call_id;
     const settle = (usage: AIUsage, outcome: 'ok' | 'error' | 'timeout' | 'invalid_output', latency: number) => supabase.rpc('ai_record', {
-      p_call_id: callId, p_provider: provider.name, p_model: model.slice(0, 80), p_input: usage.input, p_output: usage.output, p_cached: usage.cached,
+      p_call_id: callId, p_provider: ai.name, p_model: model.slice(0, 80), p_input: usage.input, p_output: usage.output, p_cached: usage.cached,
       p_image: usage.image, p_cost_micro_usd: estimateCostMicroUsd(model, usage, rates), p_latency_ms: latency, p_attempt: attempt, p_outcome: outcome,
     });
     const started = Date.now();
     try {
-      const r = await provider.complete({ operation: req.operation, model, system: req.system, messages, images: req.images, json: req.json, schema: req.schema,
-        // A caller may ask for less output or more variety, never more than the configured cap.
-        maxOutputTokens: Math.min(req.maxOutputTokens ?? Infinity, cfg.maxOutput[req.operation]),
-        temperature: Math.min(Math.max(req.temperature ?? 0, 0), 1), reasoning: cfg.reasoning, timeoutMs: cfg.timeoutMs });
+      const r = await ai.complete({ operation: req.operation, model, system: req.system, messages, images: req.images, schema: req.schema,
+        // A caller may ask for less output, never more than the configured cap.
+        maxOutputTokens: Math.min(req.maxOutputTokens ?? Infinity, cfg.maxOutput[req.operation]), reasoning: cfg.reasoning, timeoutMs: cfg.timeoutMs });
       if (!validate(r.text)) {
         // A malformed answer is recorded (it cost tokens) but not retried: a retry would double the cost (§62).
         await settle(r.usage, 'invalid_output', r.latencyMs);
@@ -72,9 +69,9 @@ export async function infer(
         return { ok: false, reason: 'failed' };
       }
       await settle(r.usage, 'ok', r.latencyMs);
-      return { ok: true, text: r.text, usage: r.usage, provider: provider.name, model: r.model };
+      return { ok: true, text: r.text, usage: r.usage, provider: ai.name, model: r.model };
     } catch (e) {
-      const err = e instanceof AIProviderError ? e : new AIProviderError('http', 'unexpected', false);
+      const err = e instanceof AIError ? e : new AIError('http', 'unexpected', false);
       const latencyMs = Date.now() - started;
       await settle(err.usage ?? ZERO_USAGE, OUTCOME[err.kind] ?? 'error', latencyMs);
       diagnose({ kind: err.kind, status: err.status, model, latencyMs, attempt });
@@ -82,17 +79,6 @@ export async function infer(
     }
   }
   return { ok: false, reason: 'failed' };
-}
-
-/**
- * Generic text answer (the technical test route): same door as everything else (quota, rate limit, timeout, at most
- * one retry, usage recorded). User messages are sanitized here; the answer is untrusted text for the caller.
- * Never put account data (balances, movements) in this prompt.
- */
-export function generateAIResponse(supabase: SupabaseClient, opts: { messages: AIMessage[]; systemPrompt: string; temperature?: number; maxTokens?: number }): Promise<InferResult> {
-  const messages = opts.messages.map((m) => (m.role === 'user' ? { role: m.role, content: sanitizeUserText(m.content).text } : m));
-  return infer(supabase, { operation: 'assistant_answer', system: opts.systemPrompt, messages, json: false,
-    temperature: opts.temperature, maxOutputTokens: opts.maxTokens });
 }
 
 /** Human copy for a stop (§49): no urgency, never blocks the rest of the product. */

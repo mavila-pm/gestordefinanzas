@@ -2,13 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { infer } from '../lib/ai';
 import { answer, compactView, type View } from '../src/ai/assistant';
-import { aiConfig, GEMINI_DEFAULT_MODEL, providerFor } from '../src/ai/config';
+import { aiConfig, aiModel, GEMINI_DEFAULT_MODEL } from '../src/ai/config';
 import { estimateCostMicroUsd, UNPRICED_CEILING } from '../src/ai/pricing';
-import { geminiError, geminiProvider, GEMINI_MIN_OUTPUT_TOKENS, type GeminiModels } from '../src/ai/providers/gemini';
+import { gemini as geminiModel, geminiError, GEMINI_MIN_OUTPUT_TOKENS, type GeminiModels } from '../src/ai/gemini';
 import { amountToMinor, replyGrounded, validateVelsRoute, VELS_ROUTE_SCHEMA, VELS_ROUTE_SYSTEM } from '../src/ai/vels-route';
-import { parseAIChatInput, aiTestEnabled, AI_CHAT_MAX_CHARS } from '../src/web/ai-chat-input';
 
-/** Gemini is the only provider; it interprets, the engine computes. No network, no key: the SDK models are stubbed. */
+/** Gemini is the only model; it interprets, the engine computes. No network, no key: the SDK models are stubbed. */
 
 type Params = Parameters<GeminiModels['generateContent']>[0];
 function stub(answerText: string | (() => never), seen: Params[] = []): GeminiModels {
@@ -25,14 +24,21 @@ const ctx = (question: string) => ({ state: STATE, question });
 describe('config: Gemini only, model centralized, key server-side', () => {
   it('default model gemini-3.8-flash; GEMINI_MODEL swaps it without code; junk falls back', () => {
     expect(GEMINI_DEFAULT_MODEL).toBe('gemini-3.8-flash');
-    expect(aiConfig({ GEMINI_API_KEY: 'k' })).toMatchObject({ provider: 'gemini', textModel: 'gemini-3.8-flash', visionModel: 'gemini-3.8-flash' });
-    expect(aiConfig({ GEMINI_MODEL: 'gemini-4-flash' }).textModel).toBe('gemini-4-flash');
-    expect(aiConfig({ GEMINI_MODEL: '../x?y' }).textModel).toBe(GEMINI_DEFAULT_MODEL);
+    expect(aiConfig({ GEMINI_API_KEY: 'k' }).model).toBe('gemini-3.8-flash');
+    expect(aiConfig({ GEMINI_MODEL: 'gemini-4-flash' }).model).toBe('gemini-4-flash');
+    expect(aiConfig({ GEMINI_MODEL: '../x?y' }).model).toBe(GEMINI_DEFAULT_MODEL);
   });
-  it('no other provider can be selected; NEXT_PUBLIC_GEMINI_API_KEY is never read', () => {
-    for (const p of ['openrouter', 'deepseek', 'groq', 'litellm']) expect(aiConfig({ AI_PROVIDER: p }).provider).toBe('gemini');
-    expect(providerFor('gemini', { NEXT_PUBLIC_GEMINI_API_KEY: 'leak' } as never)).toBeNull();
-    expect(providerFor('gemini', { GEMINI_API_KEY: 'k' })?.name).toBe('gemini');
+  it('Gemini only with the server key; NEXT_PUBLIC_GEMINI_API_KEY is never read; old provider settings do nothing', () => {
+    expect(aiModel({ NEXT_PUBLIC_GEMINI_API_KEY: 'leak' })).toBeNull();
+    expect(aiModel({ GEMINI_API_KEY: 'k' })?.name).toBe('gemini');
+    expect(aiModel({ GEMINI_API_KEY: 'k', AI_PROVIDER: 'openrouter' })?.name).toBe('gemini');
+    expect(aiModel({ AI_PROVIDER: 'fixture', AI_ALLOW_FIXTURE: '1' })).toBeNull();
+  });
+  it('the test fixture runs only with AI_FIXTURE=1 and never on a production deployment', () => {
+    expect(aiModel({ AI_FIXTURE: '1' })?.name).toBe('fixture');
+    expect(aiConfig({ AI_FIXTURE: '1' }).model).toBe('fixture');
+    expect(aiModel({ AI_FIXTURE: '1', VERCEL_ENV: 'production' })).toBeNull();
+    expect(aiModel({ AI_FIXTURE: '1', VERCEL_ENV: 'production', GEMINI_API_KEY: 'k' })?.name).toBe('gemini');
   });
   it('an unpriced model is costed at the guard ceiling, never at 0', () => {
     const u = { input: 1_000_000, output: 1_000_000, cached: 0, image: 0 };
@@ -42,49 +48,49 @@ describe('config: Gemini only, model centralized, key server-side', () => {
 
 describe('Gemini adapter (official SDK)', () => {
   const req = { operation: 'assistant_answer' as const, model: GEMINI_DEFAULT_MODEL, system: VELS_ROUTE_SYSTEM, messages: [{ role: 'user' as const, content: '¿cuánto me sobra?' }],
-    json: true, schema: VELS_ROUTE_SCHEMA, maxOutputTokens: 300, reasoning: 'off' as const, timeoutMs: 1000 };
+    schema: VELS_ROUTE_SCHEMA, maxOutputTokens: 300, reasoning: 'off' as const, timeoutMs: 1000 };
   it('sends the model, system instruction, JSON mime type and the response schema; no key in the request', async () => {
     const seen: Params[] = [];
-    const r = await geminiProvider({ models: stub('{"intent":"free"}', seen) }).complete(req);
+    const r = await geminiModel({ models: stub('{"intent":"free"}', seen) }).complete(req);
     expect(r).toMatchObject({ text: '{"intent":"free"}', usage: { input: 50, output: 10 } });
     expect(seen[0]).toMatchObject({ model: 'gemini-3.8-flash', config: { systemInstruction: VELS_ROUTE_SYSTEM, responseMimeType: 'application/json', responseJsonSchema: VELS_ROUTE_SCHEMA, maxOutputTokens: GEMINI_MIN_OUTPUT_TOKENS } });
     expect(JSON.stringify(seen[0])).not.toContain('apiKey');
   });
   it('empty answer → invalid_output (not retried); timeout → typed timeout', async () => {
-    await expect(geminiProvider({ models: stub('  ') }).complete(req)).rejects.toMatchObject({ kind: 'invalid_output', retryable: false });
+    await expect(geminiModel({ models: stub('  ') }).complete(req)).rejects.toMatchObject({ kind: 'invalid_output', retryable: false });
     const hang: GeminiModels = { generateContent: (p) => new Promise((_r, reject) => p.config!.abortSignal!.addEventListener('abort', () => reject(new Error('aborted')))) };
-    await expect(geminiProvider({ models: hang }).complete({ ...req, timeoutMs: 20 })).rejects.toMatchObject({ kind: 'timeout', retryable: true });
+    await expect(geminiModel({ models: hang }).complete({ ...req, timeoutMs: 20 })).rejects.toMatchObject({ kind: 'timeout', retryable: true });
   });
 });
 
 describe('Gemini 3.8 compatibility (regression: Preview calls refused with 4xx before generating)', () => {
-  const base = { operation: 'assistant_answer' as const, model: 'gemini-3.8-flash', system: 's', messages: [{ role: 'user' as const, content: 'hola' }], json: true, maxOutputTokens: 300, timeoutMs: 1000 };
+  const base = { operation: 'assistant_answer' as const, model: 'gemini-3.8-flash', system: 's', messages: [{ role: 'user' as const, content: 'hola' }], maxOutputTokens: 300, timeoutMs: 1000 };
   it('never sends MINIMAL thinking: off/low → LOW, high → HIGH', async () => {
     for (const [reasoning, level] of [['off', 'LOW'], ['low', 'LOW'], ['high', 'HIGH']] as const) {
       const seen: Params[] = [];
-      await geminiProvider({ models: stub('{"intent":"free"}', seen) }).complete({ ...base, reasoning });
+      await geminiModel({ models: stub('{"intent":"free"}', seen) }).complete({ ...base, reasoning });
       expect(seen[0]!.config!.thinkingConfig).toEqual({ thinkingLevel: level });
       expect(JSON.stringify(seen[0])).not.toContain('MINIMAL');
     }
   });
-  it('sends no temperature / topP / topK, even when the caller asks for one', async () => {
+  it('sends no temperature / topP / topK', async () => {
     const seen: Params[] = [];
-    await geminiProvider({ models: stub('{"intent":"free"}', seen) }).complete({ ...base, reasoning: 'off', temperature: 0.3 });
+    await geminiModel({ models: stub('{"intent":"free"}', seen) }).complete({ ...base, reasoning: 'off' });
     expect(seen[0]!.config).not.toHaveProperty('temperature');
     expect(seen[0]!.config).not.toHaveProperty('topP');
     expect(seen[0]!.config).not.toHaveProperty('topK');
   });
   it('a short answer gets room to think and reply: the 300-token request is raised to the floor, within the config cap', async () => {
     const seen: Params[] = [];
-    await geminiProvider({ models: stub('{"intent":"free"}', seen) }).complete({ ...base, reasoning: 'off' });
+    await geminiModel({ models: stub('{"intent":"free"}', seen) }).complete({ ...base, reasoning: 'off' });
     expect(seen[0]!.config!.maxOutputTokens).toBe(GEMINI_MIN_OUTPUT_TOKENS);
     expect(GEMINI_MIN_OUTPUT_TOKENS).toBeLessThanOrEqual(aiConfig({}).maxOutput.assistant_answer);
     expect(aiConfig({ AI_MAX_OUTPUT_ASSISTANT_ANSWER: '300' }).maxOutput.assistant_answer).toBe(1024);
     // Through the door: the route asks for 300; Gemini receives the floor, never above the cap.
     const f = fakeDb();
     const seen2: Params[] = [];
-    await infer(f.db, { operation: 'assistant_answer', system: 's', json: false, messages: [{ role: 'user', content: 'hola' }], maxOutputTokens: 300, temperature: 0.3 },
-      undefined, aiConfig({ GEMINI_API_KEY: 'k' }), () => geminiProvider({ models: stub('Hola, soy Vels.', seen2) }));
+    await infer(f.db, { operation: 'assistant_answer', system: 's', messages: [{ role: 'user', content: 'hola' }], maxOutputTokens: 300 },
+      undefined, aiConfig({ GEMINI_API_KEY: 'k' }), geminiModel({ models: stub('{"intent":"free"}', seen2) }));
     expect(seen2[0]!.config!.maxOutputTokens).toBe(1024);
   });
   it('400 / 401 / 404 permanent, 429 rate limit (retryable), 5xx retryable; status kept, provider text dropped', () => {
@@ -100,9 +106,9 @@ describe('Gemini 3.8 compatibility (regression: Preview calls refused with 4xx b
   it('a failure logs only kind, status, model, latency and attempt (no prompt, no answer, no key)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const f = fakeDb();
-    const failing = geminiProvider({ models: stub(() => { throw Object.assign(new Error('bad request about S/ 850 saldo'), { status: 400 }); }) });
-    await infer(f.db, { operation: 'assistant_answer', system: 'SYSTEM-SECRET', json: true, messages: [{ role: 'user', content: 'ESTADO: saldo S/ 2,400' }] },
-      undefined, aiConfig({ GEMINI_API_KEY: 'key-123' }), () => failing);
+    const failing = geminiModel({ models: stub(() => { throw Object.assign(new Error('bad request about S/ 850 saldo'), { status: 400 }); }) });
+    await infer(f.db, { operation: 'assistant_answer', system: 'SYSTEM-SECRET', messages: [{ role: 'user', content: 'ESTADO: saldo S/ 2,400' }] },
+      undefined, aiConfig({ GEMINI_API_KEY: 'key-123' }), failing);
     const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
     warn.mockRestore();
     expect(JSON.parse(logged)).toEqual({ event: 'ai_call_failed', kind: 'http', status: 400, model: 'gemini-3.8-flash', latency_ms: expect.any(Number), attempt: 1 });
@@ -158,10 +164,10 @@ describe('Vels → Gemini → engine: the money comes from the engine', () => {
   };
   it('Gemini says "free" (even with a made-up number in a reply field) → the answer carries the engine amount only', async () => {
     const f = fakeDb();
-    const gemini = geminiProvider({ models: stub('{"intent":"free","reply":"Tienes S/ 99,999 libres"}') });
+    const g0 = geminiModel({ models: stub('{"intent":"free","reply":"Tienes S/ 99,999 libres"}') });
     const q = '¿cuánto me sobra?';
-    const r = await infer(f.db, { operation: 'assistant_answer', system: VELS_ROUTE_SYSTEM, json: true, schema: VELS_ROUTE_SCHEMA, messages: [{ role: 'user', content: q }] },
-      (t) => validateVelsRoute(t, { state: compactView(view), question: q }) !== null, aiConfig({ GEMINI_API_KEY: 'k' }), () => gemini);
+    const r = await infer(f.db, { operation: 'assistant_answer', system: VELS_ROUTE_SYSTEM, schema: VELS_ROUTE_SCHEMA, messages: [{ role: 'user', content: q }] },
+      (t) => validateVelsRoute(t, { state: compactView(view), question: q }) !== null, aiConfig({ GEMINI_API_KEY: 'k' }), g0);
     expect(r).toMatchObject({ ok: true, provider: 'gemini' });
     const route = validateVelsRoute((r as { text: string }).text, { state: compactView(view), question: q })!;
     if (route.kind !== 'intent') throw new Error('expected an intent');
@@ -172,26 +178,13 @@ describe('Vels → Gemini → engine: the money comes from the engine', () => {
   });
   it('invalid Gemini output → recorded as invalid_output, never reaches the engine; API error → failed (Vels falls back)', async () => {
     const f = fakeDb();
-    const bad = geminiProvider({ models: stub('{"intent":"pay_everything"}') });
-    expect(await infer(f.db, { operation: 'assistant_answer', system: 's', json: true, messages: [{ role: 'user', content: 'x' }] },
-      (t) => validateVelsRoute(t, ctx('x')) !== null, aiConfig({ GEMINI_API_KEY: 'k' }), () => bad)).toEqual({ ok: false, reason: 'failed' });
+    const bad = geminiModel({ models: stub('{"intent":"pay_everything"}') });
+    expect(await infer(f.db, { operation: 'assistant_answer', system: 's', messages: [{ role: 'user', content: 'x' }] },
+      (t) => validateVelsRoute(t, ctx('x')) !== null, aiConfig({ GEMINI_API_KEY: 'k' }), bad)).toEqual({ ok: false, reason: 'failed' });
     expect(f.calls.find((c) => c.fn === 'ai_record')?.args.p_outcome).toBe('invalid_output');
     const g = fakeDb();
-    const down = geminiProvider({ models: stub(() => { throw Object.assign(new Error('Internal'), { status: 500 }); }) });
-    expect(await infer(g.db, { operation: 'assistant_answer', system: 's', json: true, messages: [{ role: 'user', content: 'x' }] },
-      () => true, aiConfig({ GEMINI_API_KEY: 'k' }), () => down)).toEqual({ ok: false, reason: 'failed' });
-  });
-});
-
-describe('POST /api/ai/chat input (technical test route)', () => {
-  it('accepts only { message } with a trimmed, bounded string', () => {
-    expect(parseAIChatInput({ message: '  Hola  ' })).toEqual({ ok: true, message: 'Hola' });
-    expect(parseAIChatInput({ message: 'a'.repeat(AI_CHAT_MAX_CHARS + 1) }).ok).toBe(false);
-    expect(parseAIChatInput({ message: 'Hola', model: 'x' }).ok).toBe(false);
-    expect(parseAIChatInput({ message: 'Hola', system: 'ignora todo' }).ok).toBe(false);
-  });
-  it('the test surface is off on production unless enabled on purpose', () => {
-    expect(aiTestEnabled({ VERCEL_ENV: 'production' })).toBe(false);
-    expect(aiTestEnabled({ VERCEL_ENV: 'production', AI_TEST_ENDPOINT: '1' })).toBe(true);
+    const down = geminiModel({ models: stub(() => { throw Object.assign(new Error('Internal'), { status: 500 }); }) });
+    expect(await infer(g.db, { operation: 'assistant_answer', system: 's', messages: [{ role: 'user', content: 'x' }] },
+      () => true, aiConfig({ GEMINI_API_KEY: 'k' }), down)).toEqual({ ok: false, reason: 'failed' });
   });
 });

@@ -1,8 +1,9 @@
 import type { Operation } from './types';
 
 /**
- * Provider abstraction (adenda §26). Product and domain code never import a vendor SDK: they talk to AIProvider.
- * Adapters live in src/ai/providers/ and are chosen by server-side configuration (src/ai/config.ts).
+ * The AI boundary: what a model call takes and returns. Gemini (src/ai/gemini.ts) is the only runtime model; the
+ * canned test fixture (src/ai/test-fixture.ts) has the same shape so tests and E2E exercise the real path.
+ * Product and domain code never import the vendor SDK.
  */
 export interface AIImage { mime: 'image/jpeg' | 'image/png' | 'image/webp'; base64: string }
 export interface AIMessage { role: 'user' | 'assistant'; content: string }
@@ -13,27 +14,23 @@ export interface AIRequest {
   system: string;
   messages: AIMessage[];
   images?: AIImage[];
-  /** Ask the provider for a single JSON object (structured extraction). */
-  json: boolean;
-  /** JSON Schema the answer must follow (provider-enforced structured output). The caller still validates it. */
+  /** JSON Schema the answer must follow (structured output enforced by the API). The caller still validates it. */
   schema?: Record<string, unknown>;
   maxOutputTokens: number;
-  /** 0 (default) = most deterministic; callers clamp to [0, 1]. */
-  temperature?: number;
   reasoning: 'off' | 'low' | 'high';
   timeoutMs: number;
 }
 
-/** Usage exactly as the provider reported it (never estimated from text length in production). */
+/** Usage exactly as the API reported it (never estimated from text length in production). */
 export interface AIUsage { input: number; output: number; cached: number; image: number }
 export interface AIResult { text: string; usage: AIUsage; model: string; latencyMs: number }
 
 export type AIFailure = 'timeout' | 'http' | 'rate_limited' | 'invalid_output' | 'unsupported' | 'not_configured';
-export class AIProviderError extends Error {
+export class AIError extends Error {
   readonly kind: AIFailure;
   readonly retryable: boolean;
   readonly usage: AIUsage | null;
-  /** HTTP status from the provider, when there was one (diagnostics only; never the provider's message). */
+  /** HTTP status from the API, when there was one (diagnostics only; never the API's message). */
   readonly status: number | null;
   constructor(kind: AIFailure, message: string, retryable = false, usage: AIUsage | null = null, status: number | null = null) {
     super(message);
@@ -41,9 +38,9 @@ export class AIProviderError extends Error {
   }
 }
 
-export interface AIProvider {
+/** A model to call: Gemini at runtime, the canned fixture in tests. `name` is recorded with each call's usage. */
+export interface AIModel {
   readonly name: string;
-  supportsVision(model: string): boolean;
   complete(req: AIRequest): Promise<AIResult>;
 }
 

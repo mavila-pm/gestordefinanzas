@@ -2,13 +2,13 @@
  * Reproducible AI benchmark (ADR-0006, adenda §27, §59-§60). Scores extraction on SYNTHETIC cases:
  *   text:   tests/fixtures/ai/text-cases.json   (30 Spanish/Peruvian onboarding messages)
  *   vision: tests/fixtures/ai/vision/*.png       (10 synthetic statements, bills, receipts, screens)
- * Candidates: `local` (deterministic interpreter, zero cost) and any configured provider (AI_PROVIDER + key).
+ * Candidates: `local` (deterministic interpreter, zero cost) and `gemini` (needs GEMINI_API_KEY).
  * Metrics: field precision/recall (hallucinated facts = precision misses), valid JSON rate, latency, provider-
  * reported tokens and estimated cost. Nothing is persisted except the report under .e2e/bench/.
- * Run: node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/ai-bench.ts [local|gemini|fixture ...]
+ * Run: node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/ai-bench.ts [local] [gemini]
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { aiConfig, providerFor, type ProviderName } from '../src/ai/config.ts';
+import { aiConfig, aiModel } from '../src/ai/config.ts';
 import { mergePatches } from '../src/ai/draft.ts';
 import { checkImage } from '../src/ai/image.ts';
 import { interpret } from '../src/ai/interpreter.ts';
@@ -66,7 +66,7 @@ function score(expected: string[], got: string[]) {
   return { hit, expected: expected.length, extra: got.length - hit };
 }
 
-const which = (process.argv.slice(2).length ? process.argv.slice(2) : ['local']) as Array<'local' | ProviderName>;
+const which = (process.argv.slice(2).length ? process.argv.slice(2) : ['local']) as Array<'local' | 'gemini'>;
 const cases = (JSON.parse(readFileSync('tests/fixtures/ai/text-cases.json', 'utf8')) as { cases: TextCase[] }).cases;
 const visionExpected = JSON.parse(readFileSync('tests/fixtures/ai/vision/expected.json', 'utf8')) as Record<string, Record<string, unknown>>;
 const rates = ratesFrom();
@@ -77,9 +77,9 @@ for (const cand of which) {
   let hit = 0, total = 0, extra = 0, valid = 0, calls = 0, input = 0, output = 0, cost = 0;
   const latencies: number[] = [];
   const perCase: Array<Record<string, unknown>> = [];
-  const provider = cand === 'local' ? null : providerFor(cand);
-  if (cand !== 'local' && !provider) { console.log(`${cand}: not configured (needs its API key) — skipped`); continue; }
-  const cfg = aiConfig({ ...process.env, AI_PROVIDER: cand === 'local' ? 'none' : cand });
+  const provider = cand === 'local' ? null : aiModel();
+  if (cand !== 'local' && !provider) { console.log(`${cand}: not configured (needs GEMINI_API_KEY) — skipped`); continue; }
+  const cfg = aiConfig();
   for (const c of cases) {
     const setupFacts = c.setup ? flatten(draftFor({ ...c, message: '' }, { patches: [], bare: null })) : [];
     const t0 = Date.now();
@@ -87,7 +87,7 @@ for (const cand of which) {
     if (!provider) read = interpret(sanitizeUserText(c.message).text);
     else {
       try {
-        const r = await provider.complete({ operation: 'onboarding_extract', model: cfg.textModel, system: EXTRACT_SYSTEM, json: true, maxOutputTokens: cfg.maxOutput.onboarding_extract,
+        const r = await provider.complete({ operation: 'onboarding_extract', model: cfg.model, system: EXTRACT_SYSTEM, maxOutputTokens: cfg.maxOutput.onboarding_extract,
           reasoning: cfg.reasoning, timeoutMs: cfg.timeoutMs, messages: [{ role: 'user', content: `${c.pending ? `Pregunta pendiente: ${c.pending}` : 'Sin pregunta pendiente'}\n\nMensaje:\n${sanitizeUserText(c.message).text}` }] });
         calls++; input += r.usage.input; output += r.usage.output; cost += estimateCostMicroUsd(r.model, r.usage, rates);
         read = validateInterpretation(r.text);
@@ -101,10 +101,10 @@ for (const cand of which) {
     perCase.push({ id: c.id, ok: s.hit === s.expected && s.extra === 0, missed: c.facts.filter((f) => !got.includes(f)), extra: got.filter((f) => !c.facts.includes(f)) });
   }
 
-  // Vision (providers only).
+  // Vision (Gemini only).
   let vHit = 0, vTotal = 0, vValid = 0;
   const vision: Array<Record<string, unknown>> = [];
-  if (provider?.supportsVision(cfg.visionModel)) {
+  if (provider) {
     for (const file of readdirSync('tests/fixtures/ai/vision').filter((f) => f.endsWith('.png'))) {
       const id = file.replace('.png', '');
       const exp = visionExpected[id]!;
@@ -112,7 +112,7 @@ for (const cand of which) {
       if (!img.ok) continue;
       const t0 = Date.now();
       try {
-        const r = await provider.complete({ operation: 'vision_extract', model: cfg.visionModel, system: VISION_SYSTEM, json: true, maxOutputTokens: cfg.maxOutput.vision_extract,
+        const r = await provider.complete({ operation: 'vision_extract', model: cfg.model, system: VISION_SYSTEM, maxOutputTokens: cfg.maxOutput.vision_extract,
           reasoning: cfg.reasoning, timeoutMs: cfg.timeoutMs, images: [{ mime: img.mime, base64: Buffer.from(img.bytes).toString('base64') }], messages: [{ role: 'user', content: 'Extrae los datos.' }] });
         calls++; input += r.usage.input + r.usage.image; output += r.usage.output; cost += estimateCostMicroUsd(r.model, r.usage, rates);
         latencies.push(Date.now() - t0);

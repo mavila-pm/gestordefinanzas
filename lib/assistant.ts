@@ -122,7 +122,7 @@ export async function assistantTurn(supabase: SupabaseClient, userId: string, ra
   // Not recognised locally → Gemini interprets (structured, validated) → the engine answers. The model never computes money.
   const recent = history.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.body }));
   const ctx = { state: compactView(v), question: text };
-  const r = await infer(supabase, { operation: 'assistant_answer', system: VELS_ROUTE_SYSTEM, json: true, schema: VELS_ROUTE_SCHEMA,
+  const r = await infer(supabase, { operation: 'assistant_answer', system: VELS_ROUTE_SYSTEM, schema: VELS_ROUTE_SCHEMA,
     messages: [...recent, { role: 'user', content: `ESTADO:\n${ctx.state}\n\nPREGUNTA:\n${text}` }] }, (t) => validateVelsRoute(t, ctx) !== null);
   const route = r.ok ? validateVelsRoute(r.text, ctx) : null;
   if (route?.kind === 'intent' && await askIfMissing(supabase, userId, route.intent, v)) { await prune(supabase); return; }

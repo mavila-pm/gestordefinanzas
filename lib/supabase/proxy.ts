@@ -35,10 +35,10 @@ export async function updateSession(request: NextRequest) {
     login.search = `?next=${encodeURIComponent(request.nextUrl.pathname)}`;
     return NextResponse.redirect(login);
   }
-  // Writes (server actions, AI) from a new account that has not finished registration (18+, consents) are refused
+  // Writes (server actions, Vels included) from a new account that has not finished registration (18+, consents) are refused
   // here, not only by the page redirect: the steps are decided in SQL (my_registration, migration 029).
   const path = request.nextUrl.pathname;
-  if (user && request.method === 'POST' && (path.startsWith('/app') || path.startsWith('/bienvenida') || path.startsWith('/api/ai'))) {
+  if (user && request.method === 'POST' && (path.startsWith('/app') || path.startsWith('/bienvenida'))) {
     const { data } = await supabase.rpc('my_registration');
     const row = (Array.isArray(data) ? data[0] : data) as { required?: boolean } | null;
     if (row?.required) return NextResponse.json({ error: 'Completa tu registro para continuar.' }, { status: 403 });

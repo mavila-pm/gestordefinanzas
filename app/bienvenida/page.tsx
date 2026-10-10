@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { Chat } from '../../components/chat';
 import { Logo } from '../../components/ui/logo';
-import { aiAvailability } from '../../src/ai/config';
+import { aiAvailable } from '../../src/ai/config';
 import { onboardingConversation, onboardingResume, startOnboarding } from '../../lib/onboarding';
 import { registrationStep } from '../../lib/registration';
 import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
@@ -20,7 +20,6 @@ export default async function Bienvenida() {
   if (state.status === 'completed') redirect('/app');
   if (state.status === 'skipped') await onboardingResume(supabase, user.id);
   const messages = await onboardingConversation(supabase);
-  const { vision } = aiAvailability();
   return (
     <div className="onboarding">
       <header className="onboarding-top">
@@ -29,7 +28,7 @@ export default async function Bienvenida() {
       </header>
       <main className="onboarding-body" id="main">
         <h1 className="sr-only">Configura Velsuno conversando</h1>
-        <Chat initial={messages} send={onboardingAction} camera={vision} label="Conversación de bienvenida"
+        <Chat initial={messages} send={onboardingAction} camera={aiAvailable()} label="Conversación de bienvenida"
           placeholder="Escribe como te salga…" />
       </main>
     </div>

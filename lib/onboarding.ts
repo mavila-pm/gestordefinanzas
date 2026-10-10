@@ -137,7 +137,7 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   const partial = unreadNumbers(fold(text), read) > 0;
   if ((!read.patches.length && !read.bare) || partial) {
     const pendingQ = state.draft.pending ? `Pregunta pendiente: ${state.draft.pending}` : 'Sin pregunta pendiente';
-    const r = await infer(supabase, { operation: 'onboarding_extract', system: EXTRACT_SYSTEM, json: true,
+    const r = await infer(supabase, { operation: 'onboarding_extract', system: EXTRACT_SYSTEM,
       messages: [{ role: 'user', content: `${pendingQ}\nDatos ya registrados:\n${compactState(state.draft) || '(ninguno)'}\n\nMensaje:\n${text}` }] },
     (t) => validateInterpretation(t) !== null);
     if (r.ok) {
@@ -208,7 +208,7 @@ export async function readImages(supabase: SupabaseClient, files: File[], contex
     const rows = reused.rows.slice(0, 8).filter((r) => r && typeof r === 'object').map((r) => ({ label: String(r.label).slice(0, 40), value: String(r.value).slice(0, 60), doubtful: !!r.doubtful }));
     return { ok: true, readKey, reused: true, proposal: { title: reused.title.slice(0, 80), rows, patches: reusedPatches } };
   }
-  const r = await infer(supabase, { operation: 'vision_extract', system: VISION_SYSTEM, json: true, images,
+  const r = await infer(supabase, { operation: 'vision_extract', system: VISION_SYSTEM, images,
     messages: [{ role: 'user', content: `Extrae los datos. Contexto: ${context}` }] }, (t) => validateVision(t) !== null);
   images.length = 0; // discard the image data as soon as the read is done
   if (!r.ok) return { ok: false, text: STOP_TEXT[r.reason], stop: r.reason !== 'failed' };
