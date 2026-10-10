@@ -145,3 +145,10 @@ Before → after the polish (039). LCP ms: `/app` 276→156 · `/app/plan` 192�
 `/app/compromisos` 548→176. CLS `/app` 0.181→0.000 (the TTF font swap re-wrapped the hero legend; now a preloaded 24 KB WOFF2 subset via
 next/font). JS ~140 KB unchanged (framework). Note: CSS family names are case-insensitive, so the next/font const must not be named
 `manrope` (it collided with the tokens' `@font-face Manrope` and loaded both files).
+
+## Demo account for manual testing (DEV only)
+`DEMO_PASSWORD='…' scripts/qa/demo-account.sh > /tmp/demo.sql`, run it in the SQL Editor of `jeloegnvaxlfqjntbbyy`:
+one synthetic user `demo-<run>@gestordefinanzas.invalid` (Plus, registration and onboarding done) with ~6 months of
+movements (salary, rent, services, supermarkets, card purchases + card payment, ATM, own transfer, USD, refund, 2 to review,
+1 possible duplicate), fixed payments, card + statement, a loan with installments, budgets and balances. Insert-only,
+own namespace (`tests/db/demo-account.test.ts`). Remove: `delete from auth.users where email = 'demo-<run>@gestordefinanzas.invalid'`.
