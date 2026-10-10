@@ -25,6 +25,9 @@ import { RegisterMenu } from '../../../components/register-menu';
 import { SavingsGoal } from '../../../components/savings-goal';
 import { TrendBars } from '../../../components/trend-bars';
 import { limaDayLabel, monthLabel } from '../../../src/web/labels';
+import { creditSignals, creditUse, spendSlices, type CreditCardFacts } from '../../../src/engine/dashboard';
+import { loadCardViews } from '../../../lib/cards';
+import { fold } from '../../../src/ai/text';
 
 /**
  * Resumen: the situation in a glance — available money, fixed payments, what comes next, savings — then what
@@ -42,6 +45,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   // Six months for the trend (milestones compare with 2 previous months; alerts look back 90 days).
   const windowFrom = limaMonthRange(previousMonth(month, 5))!.from;
   // RLS scopes every query to the signed-in user; no user_id filter can widen it.
+  const planningLoad = loadPlanningData(supabase, now);
+  // Card reads start at once; an error leaves the card block out instead of breaking Resumen.
+  const cardsLoad = loadCardViews(supabase, planningLoad).catch(() => []);
   const [txRes, pendingRes, oldestRes, profileRes, budgets, commitmentData, everRes, planning, prefs] = await Promise.all([
     supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', windowFrom).lt('occurred_at', range.to)
       .order('occurred_at', { ascending: false }).limit(4000),
@@ -51,9 +57,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     loadBudgets(supabase),
     loadCommitmentData(supabase),
     supabase.from('transactions').select('id', { count: 'exact', head: true }),
-    loadPlanningData(supabase, now),
+    planningLoad,
     loadPreferences(supabase),
   ]);
+  const cards = await cardsLoad;
 
   if (txRes.error) {
     return <main className="stack"><p role="alert" className="error">No se pudieron cargar tus movimientos.</p></main>;
@@ -90,6 +97,19 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const nextDue = new Map(commitments.filter((c) => c.kind === 'debt').map((c) => [c.id, c.dueDate]));
   const trend = monthlyTrend(all, month, 'PEN', 6);
   const hasTrend = trend.filter((m) => m.incomeMinor > 0 || m.expensesMinor > 0).length >= 2;
+  const slices = spendSlices(pen.expensesByCategory);
+  // The next dated payment of the plan (same line the "Próximos pagos" list shows first).
+  const nextPay = available?.lines.filter((l) => (l.kind === 'payment' || l.kind === 'debt' || l.kind === 'overdue') && l.date)
+    .sort((a, b) => a.date!.localeCompare(b.date!))[0] ?? null;
+  const facts: CreditCardFacts[] = cards.map((c) => ({ name: c.name, currency: c.currency, limitMinor: c.position.limitMinor, usedMinor: c.position.usedMinor }));
+  const lines = (['PEN', 'USD'] as const).map((c) => creditUse(facts, c)).filter((x) => x !== null);
+  // Overdue = a planned payment past its date with no payment seen (plan engine), per currency, never mixed.
+  const plans = isCurrent ? (['PEN', 'USD'] as const).filter((c) => planning.obligations.some((o) => o.currency === c)).map((c) => planFor(planning, c)) : [];
+  const overdue = plans.length ? plans.reduce((n, p) => n + p.lines.filter((l) => l.kind === 'overdue').length, 0) : null;
+  const signals = isCurrent && (cards.length || overdue !== null) ? creditSignals(facts, overdue) : [];
+  // A card already shown above is not repeated as a loan (onboarding may register it in both places).
+  const cardNames = new Set(cards.map((c) => fold(c.name)));
+  const loans = debts.filter((d) => !cardNames.has(fold(d.name)));
 
   const head = (
     <header className="home-head">
@@ -115,7 +135,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   }
 
   return (
-    <main className="stack">
+    <main className="dash">
       {deleted === '1' && <p role="status" className="notice positive">Movimiento eliminado.</p>}
       {head}
       {!isCurrent && (
@@ -130,15 +150,35 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
       {pendingCount > 0 && prefs.notifyReview && (
         <Link href="/app/revisar" className="notice warning review-alert" data-testid="review-alert">
-          <span><strong>{plural(pendingCount, 'movimiento por revisar', 'movimientos por revisar')}</strong></span>
+          <span><strong>{plural(pendingCount, 'movimiento por revisar', 'movimientos por revisar')}</strong>
+            <small>Confírmalos para completar tu resumen.</small></span>
           <Icon name="chevron" size={18} />
         </Link>
       )}
 
       {milestone && <section className="milestone" data-testid="milestone" aria-label="Cierre de mes"><p>{milestone.text}</p></section>}
 
-      {/* 1. Dinero disponible */}
-      {available && <FreeHero p={available} />}
+      {/* Top: what can be used until the next income, then the month in four figures (PEN). */}
+      <div className={`dash-top${available ? '' : ' solo'}`}>
+        {available && <FreeHero p={available} />}
+        <section className="kpis" aria-label={`${monthLabel(month)} en soles`}>
+          <div className="kpi"><span>Ingresos</span><strong data-testid="income-PEN">{money(pen.incomeMinor, 'PEN')}</strong><small className="muted">Registrados</small></div>
+          <div className="kpi"><span>Gastos</span><strong data-testid="expenses-PEN">{money(pen.expensesMinor, 'PEN')}</strong><small className="muted">Registrados</small></div>
+          <div className="kpi"><span>Ahorro</span><strong data-testid="net-PEN">{signed(pen.netCashFlowMinor, 'PEN')}</strong>
+            <small className="muted" data-testid={pen.savingsLabel === 'estimated' ? 'data-health' : undefined}>{pen.savingsLabel === 'estimated' ? 'Estimado: hay movimientos por revisar' : 'Ingresos menos gastos'}</small></div>
+          {isCurrent && (nextPay ? (
+            <Link href="/app/compromisos" className="kpi link-kpi" data-testid="next-payment">
+              <span>Próximo pago</span>
+              <strong>{nextPay.amountMinor === null ? 'Por confirmar' : money(nextPay.amountMinor, 'PEN')}</strong>
+              <small className={nextPay.kind === 'overdue' ? 'error' : 'muted'}>{nextPay.label} · {nextPay.kind === 'overdue' ? `venció el ${shortDate(nextPay.date!)}` : `vence el ${shortDate(nextPay.date!)}`}</small>
+            </Link>
+          ) : (
+            <Link href="/app/compromisos" className="kpi link-kpi" data-testid="next-payment">
+              <span>Próximo pago</span><strong>Sin pagos</strong><small className="muted">Agrega tus pagos fijos</small>
+            </Link>
+          ))}
+        </section>
+      </div>
       {incomePlan && incomePlan.base && planning.recentIncome && (
         <div className="event-row" data-testid="income-event">
           <span>Entraron <strong>{money(incomePlan.base.amountMinor, 'PEN')}</strong><small className="muted">{planning.recentIncome.merchant ?? 'Ingreso'} · {shortDate(planning.recentIncome.date)}</small></span>
@@ -146,91 +186,124 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
       )}
 
-      {/* The month in one row: always the same three figures (PEN). */}
-      <section className="month-row" aria-label="Tu mes en soles">
-        <div className="month-figures">
-          <div><span>Ingresos</span><strong data-testid="income-PEN">{money(pen.incomeMinor, 'PEN')}</strong></div>
-          <div><span>Gastos</span><strong data-testid="expenses-PEN">{money(pen.expensesMinor, 'PEN')}</strong></div>
-          <div><span>Ahorro</span><strong data-testid="net-PEN">{signed(pen.netCashFlowMinor, 'PEN')}</strong></div>
+      {/* Two columns from 1024 px (what happened | what comes); one prioritized column on a phone (CSS order). */}
+      <div className="dash-cols">
+        <div className="col">
+          {hasTrend && (
+            <section className="card stack-sm o-trend" aria-labelledby="h-trend">
+              <div className="row"><h2 id="h-trend">Ingresos y gastos</h2><Link href={`/app/analisis?month=${month}`} className="section-link">Análisis<Icon name="chevron" size={16} /></Link></div>
+              <TrendBars months={trend} currency="PEN" testId="home-trend" />
+              {insight && !isCurrent && <p className="small muted" data-testid="insight">{insight.estimated ? 'Estimado: ' : ''}{insight.text}</p>}
+            </section>
+          )}
+
+          {slices.length > 0 && (
+            <section className="card stack-sm o-spend" aria-labelledby="h-spend" data-testid="spend-slices">
+              <div className="row"><h2 id="h-spend">En qué se fue tu dinero</h2><Link href={`/app/analisis?month=${month}`} className="section-link">Detalle<Icon name="chevron" size={16} /></Link></div>
+              <small className="muted">Gastos registrados en {monthLabel(month).toLowerCase()} · PEN{pen.savingsLabel === 'estimated' ? ' · sin contar los por revisar' : ''}</small>
+              <ul className="plain stack-sm">
+                {slices.map((sl) => (
+                  <li key={sl.category} className="cat-row">
+                    <span>{sl.category}</span><strong className="amount">{money(sl.amountMinor, 'PEN')}</strong>
+                    <span className="progress" aria-hidden="true"><span className="fill" style={{ width: `${Math.max(2, sl.ratio * 100)}%` }} /></span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <section className="card stack-sm o-recent" aria-labelledby="h-recent">
+            <div className="row"><h2 id="h-recent">Movimientos recientes</h2><Link href={`/app/movimientos?month=${month}`} className="section-link">Ver todos<Icon name="chevron" size={16} /></Link></div>
+            {txs.length === 0 ? <p className="muted">Aún no hay movimientos en {monthLabel(month).toLowerCase()}.</p> : (
+              <ul className="tx-list" data-testid="tx-list">
+                {txs.slice(0, 6).map((t) => <li key={t.id}><TxRow t={t} when={limaDayLabel(t.occurredAt)} /></li>)}
+              </ul>
+            )}
+          </section>
         </div>
-        {pen.savingsLabel === 'estimated' && <small className="muted" data-testid="data-health">Estimado: hay movimientos por revisar.</small>}
-      </section>
 
-      {/* 2. Gastos fijos */}
-      {commitments.length > 0 && (
-        <Link href="/app/compromisos" className="card row link-card" data-testid="commitments">
-          <span className="stack-sm" style={{ gap: 2 }}>
-            <strong>Gastos fijos del mes</strong>
-            <small className="muted">{Object.entries(fixedTotals).map(([c, v]) => money(v!, c as Currency)).join(' + ')} en {plural(commitments.length, 'pago', 'pagos')}</small>
-          </span>
-          <Icon name="chevron" size={18} />
-        </Link>
-      )}
+        <div className="col">
+          {available && <div className="o-coming"><ComingUp p={available} /></div>}
+          {commitments.length > 0 && (
+            <Link href="/app/compromisos" className="card row link-card o-coming" data-testid="commitments">
+              <span className="stack-sm" style={{ gap: 2 }}>
+                <strong>Gastos fijos del mes</strong>
+                <small className="muted">{Object.entries(fixedTotals).map(([c, v]) => money(v!, c as Currency)).join(' + ')} en {plural(commitments.length, 'pago', 'pagos')}</small>
+              </span>
+              <Icon name="chevron" size={18} />
+            </Link>
+          )}
 
-      {/* 3. Próximos pagos */}
-      {available && <ComingUp p={available} />}
+          {alerts.length > 0 && (
+            <ul className="plain attention o-alerts" data-testid="alerts" aria-label="Para tener en cuenta">
+              {alerts.map((a) => (
+                <li key={a.code} data-alert={a.code}>
+                  <Link href={a.href ?? '/app'} className={`item ${a.level.toLowerCase()}`}>
+                    <Icon name={a.level === 'INFORMATIONAL' ? 'alerts' : 'review'} />
+                    <span className="text">{a.text}</span>
+                    <Icon name="chevron" size={18} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
 
-      {/* 4. Ahorro */}
-      {isCurrent && <SavingsGoal netMinor={pen.netCashFlowMinor} goalMinor={planning.settings.PEN?.savingsGoalMinor ?? null} estimated={pen.savingsLabel === 'estimated'} />}
+          {isCurrent && <div className="o-savings"><SavingsGoal netMinor={pen.netCashFlowMinor} goalMinor={planning.settings.PEN?.savingsGoalMinor ?? null} estimated={pen.savingsLabel === 'estimated'} /></div>}
 
-      {alerts.length > 0 && (
-        <ul className="plain attention" data-testid="alerts" aria-label="Para tener en cuenta">
-          {alerts.map((a) => (
-            <li key={a.code} data-alert={a.code}>
-              <Link href={a.href ?? '/app'} className={`item ${a.level.toLowerCase()}`}>
-                <Icon name={a.level === 'INFORMATIONAL' ? 'alerts' : 'review'} />
-                <span className="text">{a.text}</span>
-                <Icon name="chevron" size={18} />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+          {(cards.length > 0 || loans.length > 0) && (
+            <section className="card stack-sm o-credit" aria-labelledby="h-debts">
+              <div className="row"><h2 id="h-debts">Tarjetas y deudas</h2><Link href="/app/tarjetas" className="section-link">Ver<Icon name="chevron" size={16} /></Link></div>
+              {lines.map((l) => (
+                <div key={l.currency} className="credit-line" data-testid={`credit-use-${l.currency}`}>
+                  <span className="row"><span className="muted small">Línea total · {l.currency}</span><strong className="amount">{money(l.limitMinor, l.currency)}</strong></span>
+                  <span className="progress" aria-hidden="true"><span className={`fill${l.ratio >= 0.3 ? ' warning' : ''}`} style={{ width: `${Math.min(100, Math.max(2, l.ratio * 100))}%` }} /></span>
+                  <small className="muted">Usas el {Math.round(l.ratio * 100)}% ({money(l.usedMinor, l.currency)}){l.withoutData ? ` · sin dato de ${plural(l.withoutData, 'tarjeta', 'tarjetas')}` : ''}</small>
+                </div>
+              ))}
+              <ul className="plain stack-sm debt-mini" data-testid="home-debts">
+                {cards.slice(0, 4).map((c) => (
+                  <li key={c.id} data-testid="home-card">
+                    <span>{c.name}</span>
+                    <strong className={`amount${c.position.billed?.amountMinor == null ? ' unknown' : ''}`}>{c.position.billed?.amountMinor == null ? 'por confirmar' : money(c.position.billed.amountMinor, c.currency)}</strong>
+                    <small className="muted" style={{ gridColumn: '1 / -1' }}>
+                      {[c.statementDay ? `Cierra el ${c.statementDay}` : null, c.position.billed ? `paga hasta el ${shortDate(c.position.billed.dueDate)}` : c.paymentDay ? `paga hasta el ${c.paymentDay}` : null].filter(Boolean).join(' · ') || 'Faltan sus fechas'}
+                    </small>
+                  </li>
+                ))}
+                {loans.slice(0, 4).map((d) => (
+                  <li key={d.id}>
+                    <span>{d.name}</span><strong className="amount">{money(d.balanceMinor, d.currency)}</strong>
+                    <small className="muted" style={{ gridColumn: '1 / -1' }}>
+                      {[d.installmentMinor ? `Cuota ${money(d.installmentMinor, d.currency)}` : null, nextDue.get(d.id) ? `vence el ${shortDate(nextDue.get(d.id)!)}` : null,
+                        d.installmentsTotal ? `${d.installmentsPaid} de ${d.installmentsTotal} cuotas` : null].filter(Boolean).join(' · ') || 'Saldo pendiente'}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+              {signals.length > 0 && (
+                <div className="credit-health stack-xs" data-testid="credit-health">
+                  <h3>Tu salud crediticia</h3>
+                  <ul className="plain stack-xs">
+                    {signals.map((sg) => <li key={sg.code + sg.text} className={`signal ${sg.level}`}><i aria-hidden="true" />{sg.text}</li>)}
+                  </ul>
+                  <small className="muted">Con lo que registras en Velsuno. No es tu calificación en Infocorp ni en la SBS.</small>
+                </div>
+              )}
+            </section>
+          )}
 
-      {hasTrend && (
-        <section className="card stack-sm" aria-labelledby="h-trend">
-          <div className="row"><h2 id="h-trend">Ingresos y gastos</h2><Link href={`/app/analisis?month=${month}`} className="section-link">Análisis<Icon name="chevron" size={16} /></Link></div>
-          <TrendBars months={trend} currency="PEN" testId="home-trend" />
-          {insight && !isCurrent && <p className="small muted" data-testid="insight">{insight.estimated ? 'Estimado: ' : ''}{insight.text}</p>}
-        </section>
-      )}
-
-      {debts.length > 0 && (
-        <section className="card stack-sm" aria-labelledby="h-debts">
-          <div className="row"><h2 id="h-debts">Tarjetas y préstamos</h2><Link href="/app/compromisos#deudas" className="section-link">Ver<Icon name="chevron" size={16} /></Link></div>
-          <ul className="plain stack-sm debt-mini" data-testid="home-debts">
-            {debts.slice(0, 4).map((d) => (
-              <li key={d.id}>
-                <span>{d.name}</span><strong className="amount">{money(d.balanceMinor, d.currency)}</strong>
-                <small className="muted" style={{ gridColumn: '1 / -1' }}>
-                  {[d.installmentMinor ? `Cuota ${money(d.installmentMinor, d.currency)}` : null, nextDue.get(d.id) ? `vence el ${shortDate(nextDue.get(d.id)!)}` : null,
-                    d.installmentsTotal ? `${d.installmentsPaid} de ${d.installmentsTotal} cuotas` : null].filter(Boolean).join(' · ') || 'Saldo pendiente'}
-                </small>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {usd && (
-        <section className="card" aria-label="Resumen USD">
-          <div className="row"><h2>En dólares</h2></div>
-          <div className="grid" style={{ marginTop: 8 }}>
-            <div><span className="muted small">Ingresos</span><p className="big" data-testid="income-USD">{money(usd.incomeMinor, 'USD')}</p></div>
-            <div><span className="muted small">Gastos</span><p className="big" data-testid="expenses-USD">{money(usd.expensesMinor, 'USD')}</p></div>
-            <div><span className="muted small">Ahorro</span><p className="big" data-testid="net-USD">{signed(usd.netCashFlowMinor, 'USD')}</p></div>
-          </div>
-        </section>
-      )}
-
-      <section aria-label="Movimientos recientes">
-        <div className="row"><h2>Movimientos recientes</h2><Link href={`/app/movimientos?month=${month}`} className="section-link">Ver todos<Icon name="chevron" size={16} /></Link></div>
-        {txs.length === 0 ? <p className="muted">Aún no hay movimientos en {monthLabel(month).toLowerCase()}.</p> : (
-          <ul className="tx-list" data-testid="tx-list">
-            {txs.slice(0, 6).map((t) => <li key={t.id}><TxRow t={t} when={limaDayLabel(t.occurredAt)} /></li>)}
-          </ul>
-        )}
-      </section>
+          {usd && (
+            <section className="card o-usd" aria-label="Resumen USD">
+              <div className="row"><h2>En dólares</h2></div>
+              <div className="kpis three" style={{ marginTop: 8 }}>
+                <div className="kpi"><span>Ingresos</span><strong data-testid="income-USD">{money(usd.incomeMinor, 'USD')}</strong></div>
+                <div className="kpi"><span>Gastos</span><strong data-testid="expenses-USD">{money(usd.expensesMinor, 'USD')}</strong></div>
+                <div className="kpi"><span>Ahorro</span><strong data-testid="net-USD">{signed(usd.netCashFlowMinor, 'USD')}</strong></div>
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
     </main>
   );
 }

@@ -49,15 +49,19 @@ export function detectIntent(message: string): Intent {
     const d = t.match(/\b(\d{1,2})\s*dias?\b/);
     return { k: 'what_delay', days: d ? Number(d[1]) : null };
   }
+  // "¿Qué pasa si gasto S/300?" is the same simulation as "¿me alcanza para 300?" (copy, never written).
+  if (hypo && amount && /\b(gast|compr)(o|ara|aria|ar)\b/.test(t)) return { k: 'can_spend', amountMinor: amount.minor, currency: amount.currency ?? 'PEN' };
   if (hypo && name && amount && /\b(sube|subiera|aumenta|aumentara|cuesta|costara|fuera)\b/.test(t)) return { k: 'what_bill', name, amountMinor: amount.minor };
   if (/\b(puedo|me alcanza|alcanza|podria) .*(gastar|comprar|pagar|para)\b|\bme alcanza\b/.test(t) && amount) return { k: 'can_spend', amountMinor: amount.minor, currency: amount.currency ?? 'PEN' };
+  if (/\bme alcanza\b|\bllego a fin de mes\b/.test(t)) return { k: 'free' };
   if (/\bpor que\b.*\b(libre|tengo solo|me queda|poco)\b|\bexplica(me)?\b.*\blibre\b|\bmuestrame por que\b/.test(t)) return { k: 'why_free' };
   if (/\b(cuanto|que) (puedo gastar|tengo libre|queda libre|me queda|tengo disponible)\b|\bdinero libre\b|\bcuanto (hay|queda) libre\b/.test(t)) return { k: 'free' };
   if (/\b(que|cuales) pag(o|os)\b.*\bprimero\b|\bque pago primero\b|\bpriorizo\b/.test(t)) return { k: 'pay_first' };
   if (/\b(esta semana|proximos dias|que viene)\b/.test(t)) return { k: 'upcoming', range: 'week' };
   if (/\b(que|cuales) (tengo que|debo) pagar\b|\bproximos pagos\b|\bque pagos (tengo|vienen)\b|\bque vence\b/.test(t)) return { k: 'upcoming', range: 'next' };
+  if (/\bcuando (pago|tengo que pagar|debo pagar|vence|vencen)\b/.test(t)) return { k: 'upcoming', range: 'next' };
   if (/\b(como voy|como estoy|resumen)\b/.test(t)) return { k: 'how' };
-  if (/\b(que cambio|por que gaste mas|gaste mas)\b/.test(t)) return { k: 'changed' };
+  if (/\b(que cambio|por que gaste mas|gaste mas|en que (se me fue|se fue|gaste)|a donde se (me )?fue)\b/.test(t)) return { k: 'changed' };
   if (/\b(ya me pagaron|me pagaron|me depositaron|cobre|llego (mi|el) sueldo)\b/.test(t)) return { k: 'got_paid' };
   if (/\b(cambie de sueldo|nuevo sueldo|ahora gano|me subieron|me bajaron)\b/.test(t)) return { k: 'income_changed', amountMinor: amount?.minor ?? null };
   if (/\b(ya (la |lo )?pague|termine de pagar|cancele)\b.*\b(deuda|prestamo)\b/.test(t)) return { k: 'debt_paid', name: name ?? 'deuda' };
@@ -209,7 +213,7 @@ export function answer(intent: Intent, v: View): Answer | null {
     case 'debt_paid':
       return { text: 'Buena noticia. Marca la deuda como pagada en Próximos pagos para que deje de contarse.', actions: [{ type: 'link', label: 'Ver deudas', href: '/app/compromisos' }] };
     case 'changed':
-      return { text: 'La comparación con el mes anterior está en Análisis.', actions: [{ type: 'link', label: 'Ver análisis', href: '/app/analisis' }] };
+      return { text: 'En qué se fue tu dinero, por categoría y frente al mes anterior, está en Análisis.', actions: [{ type: 'link', label: 'Ver análisis', href: '/app/analisis' }] };
     case 'pref_zero_debt': {
       const act: Action = { type: 'act', label: intent.on ? 'Sí, guardar' : 'Sí, cambiar', act: 'set_pref', fields: { key: 'allow_zero_for_debt', value: intent.on ? 'on' : 'off' } };
       if (!intent.on) return { text: 'Entendido: mantengo tu colchón aunque pagues deuda. ¿Lo cambio?', actions: [act] };

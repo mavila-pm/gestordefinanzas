@@ -657,3 +657,48 @@ html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-mo
 .account-text { display: grid; min-width: 0; }
 .account-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .topbar-avatar { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; border-radius: 50%; }
+
+/* ── Resumen as a dashboard: one prioritized column (phone), 2 columns (tablet), wide grid (desktop) ───────────── */
+main.dash { display: grid; gap: var(--space-16); max-width: 1360px; }
+.dash-top { display: grid; gap: var(--space-12); }
+.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-8); }
+.kpi { display: grid; gap: 2px; align-content: start; min-width: 0; padding: var(--space-16); border-radius: var(--radius-card);
+  background: var(--surface-default); color: inherit; text-decoration: none; }
+.kpi > span { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--text-muted); }
+.kpi > strong { font-size: 20px; line-height: 28px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kpi > small { font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
+.card .kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); } .card .kpi { padding: 0; background: none; }
+a.link-kpi { min-height: 44px; }
+@media (hover: hover) { a.link-kpi:hover { box-shadow: inset 0 0 0 1px var(--border-subtle); } }
+.review-alert > span { display: grid; } .review-alert small { font-weight: 400; }
+/* Phone: the column wrappers vanish and each block takes its priority (what comes before what happened). */
+.dash-cols, .dash-cols > .col { display: contents; }
+.o-coming { order: 1; } .o-alerts { order: 2; } .o-savings { order: 3; } .o-spend { order: 4; } .o-credit { order: 5; }
+.o-trend { order: 6; } .o-recent { order: 7; } .o-usd { order: 8; }
+.credit-line { display: grid; gap: 6px; }
+.credit-health { border-top: 1px solid var(--border-subtle); padding-top: var(--space-12); gap: var(--space-8); }
+.credit-health h3 { font-size: 14px; line-height: 20px; }
+.signal { display: flex; align-items: baseline; gap: var(--space-8); font-size: 14px; line-height: 20px; }
+.signal i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+.signal.good i { background: var(--semantic-success); } .signal.watch i { background: var(--semantic-warning); }
+.debt-mini .amount.unknown { color: var(--semantic-warning); font-size: 14px; }
+@media (min-width: 768px) {
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .dash-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-16); align-items: start; order: 1; }
+  .dash-cols > .col { display: flex; flex-direction: column; gap: var(--space-16); min-width: 0; }
+  .dash-cols > .col > * { order: 0; }
+  main.analysis { max-width: 1200px; }
+  .an-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-16); align-items: start; }
+  .an-grid > .span-all { grid-column: 1 / -1; }
+}
+@media (min-width: 1024px) {
+  main.dash { padding: var(--space-32) var(--space-32) var(--space-48); gap: var(--space-24); }
+  .dash-top { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--space-16); }
+  .dash-top.solo { grid-template-columns: minmax(0, 1fr); }
+  .dash-top:not(.solo) .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi { padding: var(--space-16) var(--space-24); } .kpi > strong { font-size: 24px; line-height: 32px; }
+  .dash-cols { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--space-24); }
+  .dash-cols > .col { gap: var(--space-24); }
+  main.analysis { padding-left: var(--space-32); padding-right: var(--space-32); }
+}
+@media (min-width: 1440px) { .dash-top:not(.solo) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }

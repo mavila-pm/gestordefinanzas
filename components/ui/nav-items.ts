@@ -25,3 +25,5 @@ export const MOBILE: Item[] = [
 /** Destinations reached through "Más" on mobile, so that tab stays active on them. */
 export const MORE_ITEMS = [PRIMARY[3]!, PRIMARY[4]!, REVIEW, ...MONEY_SETUP, { href: '/app/ajustes', match: '/app/ajustes', label: 'Ajustes', icon: 'settings' } as Item];
 export const UNDER_MORE = MORE_ITEMS.map((i) => i.match).concat('/app/importar');
+/** Desktop sidebar: the main hierarchy plus Cuentas y tarjetas (room is not scarce there), after Próximos pagos. */
+export const SIDEBAR: Item[] = [...PRIMARY.slice(0, 4), MONEY_SETUP[0]!, ...PRIMARY.slice(4)];

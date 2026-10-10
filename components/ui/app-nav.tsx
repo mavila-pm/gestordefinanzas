@@ -3,7 +3,7 @@
 import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon } from './icon';
-import { MOBILE, PRIMARY, REVIEW, UNDER_MORE, type Item } from './nav-items';
+import { MOBILE, REVIEW, SIDEBAR, UNDER_MORE, type Item } from './nav-items';
 
 /** Marks the tapped item while its page loads: the tap answers at once, even before the server does. */
 function Pending() {
@@ -38,7 +38,7 @@ export function SidebarNav({ pending }: { pending: number }) {
   const path = usePathname();
   return (
     <nav aria-label="Principal">
-      <ul className="nav-list"><Links items={pending > 0 ? [PRIMARY[0]!, PRIMARY[1]!, REVIEW, ...PRIMARY.slice(2)] : PRIMARY} path={path} pending={pending} testBadge /></ul>
+      <ul className="nav-list"><Links items={pending > 0 ? [SIDEBAR[0]!, SIDEBAR[1]!, REVIEW, ...SIDEBAR.slice(2)] : SIDEBAR} path={path} pending={pending} testBadge /></ul>
     </nav>
   );
 }

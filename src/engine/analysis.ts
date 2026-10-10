@@ -61,6 +61,23 @@ export function topMerchants(txs: readonly Transaction[], month: string, currenc
   return [...by.values()].filter((m) => m.totalMinor > 0).sort((a, b) => b.totalMinor - a.totalMinor).slice(0, limit);
 }
 
+/**
+ * Where the money came from: confirmed income per source (the movement's name), largest first, with its share.
+ * It says how much entered from each source, not how much each one leaves: that needs its costs, which are not tracked.
+ */
+export function incomeSources(txs: readonly Transaction[], month: string, currency: Currency, limit = 5): Array<MerchantTotal & { ratio: number }> {
+  const by = new Map<string, MerchantTotal>();
+  for (const t of txs) {
+    if (t.currency !== currency || t.occurredAt.slice(0, 7) !== month || t.status !== 'confirmed' || financialEffect(t.type) !== 'income') continue;
+    const merchant = t.merchantNormalized ?? t.merchantRaw ?? 'Sin nombre';
+    const e = by.get(merchant) ?? { merchant, totalMinor: 0, count: 0 };
+    e.totalMinor += t.amountMinor; e.count += 1;
+    by.set(merchant, e);
+  }
+  const total = [...by.values()].reduce((s, m) => s + m.totalMinor, 0);
+  return [...by.values()].sort((a, b) => b.totalMinor - a.totalMinor).slice(0, limit).map((m) => ({ ...m, ratio: m.totalMinor / total }));
+}
+
 /** Change in percent, rounded; null when there is no base to compare with (a new category is not "+∞%"). */
 export function percentChange(currentMinor: number, previousMinor: number): number | null {
   return previousMinor > 0 ? Math.round(((currentMinor - previousMinor) / previousMinor) * 100) : null;

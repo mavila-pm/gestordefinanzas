@@ -6,7 +6,7 @@ import { monthLabel } from '../../../src/web/labels';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import {
-  compareMonths, fixedVsVariable, monthlyTrend, percentChange, previousMonth, relevantChanges, savingsProgress, savingsRate, topMerchants,
+  compareMonths, fixedVsVariable, monthlyTrend, incomeSources, percentChange, previousMonth, relevantChanges, savingsProgress, savingsRate, topMerchants,
 } from '../../../src/engine/analysis';
 import { budgetStatus } from '../../../src/engine/budgets';
 import { monthCommitments } from '../../../src/engine/commitments';
@@ -61,7 +61,7 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
   const canGoBack = !floor || month > floor;
 
   return (
-    <main className="stack narrow-md">
+    <main className="stack analysis">
       <header className="row">
         <div className="page-head">
           <h1>Análisis</h1>
@@ -79,6 +79,7 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
         const trend = monthlyTrend(txs, month, currency, trendMonths);
         const months = trend.filter((t) => t.incomeMinor > 0 || t.expensesMinor > 0).length;
         const top = topMerchants(txs, month, currency);
+        const sources = incomeSources(txs, month, currency);
         // The month in progress is partial: a drop against a whole previous month is not real yet, a rise already is.
         const changes = relevantChanges(cmp).filter((c) => month !== current || c.pct > 0);
         const split = fixedVsVariable(txs, month, currency, fixedIds);
@@ -87,23 +88,23 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
         const signed = (v: number) => `${v < 0 ? '−' : ''}${m(v)}`;
         const cats = cmp.categories.filter((c) => c.currentMinor > 0 || c.previousMinor > 0);
         return (
-          <div key={currency} className="stack" data-testid={`analysis-${currency}`}>
-            {currency === 'USD' && <h2>En dólares</h2>}
+          <div key={currency} className="stack an-grid" data-testid={`analysis-${currency}`}>
+            {currency === 'USD' && <h2 className="span-all">En dólares</h2>}
 
             {/* A. Resumen del mes */}
-            <section aria-label={`Resumen del mes ${currency}`} className="card stat-grid">
+            <section aria-label={`Resumen del mes ${currency}`} className="card stat-grid span-all">
               <div><span className="muted small">Ingresos</span><p className="big">{m(s.incomeMinor)}</p></div>
               <div><span className="muted small">Gastos</span><p className="big" data-testid={`an-expenses-${currency}`}>{m(s.expensesMinor)}</p></div>
               <div><span className="muted small">Ahorro</span><p className="big" data-testid={`an-net-${currency}`}>{signed(s.netCashFlowMinor)}</p></div>
               <div><span className="muted small">Tasa de ahorro</span><p className="big" data-testid={`an-rate-${currency}`}>{rate === null ? '—' : `${rate}%`}</p></div>
             </section>
             {s.pendingCount > 0 && (
-              <p className="notice warning small"><span>{plural(s.pendingCount, 'movimiento por revisar aún no cuenta', 'movimientos por revisar aún no cuentan')}. <Link href="/app/revisar">Revisar</Link></span></p>
+              <p className="notice warning small span-all"><span>{plural(s.pendingCount, 'movimiento por revisar aún no cuenta', 'movimientos por revisar aún no cuentan')}. <Link href="/app/revisar">Revisar</Link></span></p>
             )}
 
             {/* F. Cambios relevantes */}
             {changes.length > 0 && (
-              <section aria-labelledby={`chg-${currency}`} className="stack-sm">
+              <section aria-labelledby={`chg-${currency}`} className="stack-sm span-all">
                 <h2 id={`chg-${currency}`}>Lo que cambió</h2>
                 <ul className="plain stack-sm" data-testid={`an-insight-${currency}`}>{changes.map((c) => <li key={c.category}>{c.text}</li>)}</ul>
               </section>
@@ -145,6 +146,22 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
                   <div><dt><i className="variable" />Variables</dt><dd>{m(split.variableMinor)}</dd></div>
                 </dl>
                 {split.fixedMinor === 0 && <small className="muted">Cuando confirmes el pago de un gasto fijo, aparecerá aquí.</small>}
+              </section>
+            )}
+
+            {/* E2. Ingresos por fuente */}
+            {sources.length > 0 && (
+              <section aria-labelledby={`src-h-${currency}`} className="card stack-sm" data-testid={`sources-${currency}`}>
+                <h2 id={`src-h-${currency}`}>De dónde entró tu dinero</h2>
+                <ul className="plain stack-sm">
+                  {sources.map((x) => (
+                    <li key={x.merchant} className="cat-row">
+                      <span>{x.merchant}</span><strong className="amount">{m(x.totalMinor)}</strong>
+                      <span className="progress" aria-hidden="true"><span className="fill" style={{ width: `${Math.max(2, x.ratio * 100)}%` }} /></span>
+                    </li>
+                  ))}
+                </ul>
+                <small className="muted">Ingresos confirmados, agrupados por el nombre del movimiento.</small>
               </section>
             )}
 
