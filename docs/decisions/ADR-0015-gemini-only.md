@@ -25,6 +25,6 @@ means deterministic-only Vels, never a broken thread.
   small `AIModel` shape; `aiModel()` (`src/ai/config.ts`) returns Gemini when `GEMINI_API_KEY` is set, otherwise null (Vels
   stays deterministic). `AI_PROVIDER` and `AI_ALLOW_FIXTURE` are no longer read.
 - The canned fixture is test support (`src/ai/test-fixture.ts`): unit tests inject it directly; E2E starts `next start` with
-  `AI_FIXTURE=1` (ignored when `VERCEL_ENV=production`).
+  `AI_FIXTURE=1` (ignored on any Vercel deployment: Preview or production).
 - The temporary test surface `/app/prueba-ia` + `POST /api/ai/chat` (`generateAIResponse`, `AI_TEST_ENDPOINT`) is removed:
   Gemini is verified through Vels itself.

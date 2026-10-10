@@ -34,10 +34,11 @@ describe('config: Gemini only, model centralized, key server-side', () => {
     expect(aiModel({ GEMINI_API_KEY: 'k', AI_PROVIDER: 'openrouter' })?.name).toBe('gemini');
     expect(aiModel({ AI_PROVIDER: 'fixture', AI_ALLOW_FIXTURE: '1' })).toBeNull();
   });
-  it('the test fixture runs only with AI_FIXTURE=1 and never on a production deployment', () => {
+  it('the test fixture runs only with AI_FIXTURE=1 and never on a Vercel deployment (Preview or production)', () => {
     expect(aiModel({ AI_FIXTURE: '1' })?.name).toBe('fixture');
     expect(aiConfig({ AI_FIXTURE: '1' }).model).toBe('fixture');
     expect(aiModel({ AI_FIXTURE: '1', VERCEL_ENV: 'production' })).toBeNull();
+    expect(aiModel({ AI_FIXTURE: '1', VERCEL_ENV: 'preview' })).toBeNull();
     expect(aiModel({ AI_FIXTURE: '1', VERCEL_ENV: 'production', GEMINI_API_KEY: 'k' })?.name).toBe('gemini');
   });
   it('an unpriced model is costed at the guard ceiling, never at 0', () => {

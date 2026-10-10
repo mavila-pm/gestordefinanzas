@@ -8,7 +8,7 @@ import type { Operation } from './types';
  *   GEMINI_API_KEY (server only; never NEXT_PUBLIC_; without it Vels answers deterministically)
  *   GEMINI_MODEL (default GEMINI_DEFAULT_MODEL)   AI_TIMEOUT_MS   AI_REASONING=off|low|high
  *   AI_MAX_INPUT_CHARS   AI_MAX_OUTPUT_<OPERATION>   AI_PRICES (JSON, see pricing.ts)
- *   AI_FIXTURE=1 → canned test fixture instead of Gemini (E2E only; ignored on a production deployment)
+ *   AI_FIXTURE=1 → canned test fixture instead of Gemini (local/CI E2E only; ignored on any Vercel deployment)
  */
 export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash';
 
@@ -24,7 +24,8 @@ type Env = Record<string, string | undefined>;
 const int = (v: string | undefined, d: number, min: number, max: number) => { const n = Number(v); return Number.isInteger(n) && n >= min && n <= max ? n : d; };
 /** Model IDs are plain tokens ("gemini-3.8-flash"): anything else falls back to the default. */
 const modelId = (v: string | undefined) => (v && /^[a-z0-9][a-z0-9.-]{2,60}$/i.test(v.trim()) ? v.trim() : GEMINI_DEFAULT_MODEL);
-const fixtureOn = (env: Env) => env.AI_FIXTURE === '1' && env.VERCEL_ENV !== 'production';
+/** The canned fixture runs only in a local/CI `next start` (E2E): never on a Vercel deployment, where real accounts live. */
+const fixtureOn = (env: Env) => env.AI_FIXTURE === '1' && !env.VERCEL_ENV;
 
 export function aiConfig(env: Env = process.env): AIConfig {
   return {

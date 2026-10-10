@@ -23,7 +23,7 @@ Preconditions: every P0 in `docs/MVP.md` checked, CI green on the release commit
 | `SUPPORT_EMAIL` | config | contact mailbox |
 | `GEMINI_API_KEY` (+ `AI_PRICES` for the model) | secret / config | only if AI goes live (privacy decision: paid tier, no training on prompts); otherwise leave unset |
 | `DATABASE_URL`, `INBOUND_EMAIL_SECRET`, `INGEST_EMAIL_DOMAIN` | secret | only when the Email Bridge provider exists |
-Do NOT set `AI_FIXTURE` in production (it is ignored there anyway).
+Do NOT set `AI_FIXTURE` on Vercel (ignored on Preview and production anyway).
 
 ## 4. Release
 1. PO approves and merges the release branch into `main` (PR mavila-pm/gestordefinanzas#1); Vercel builds Production.
