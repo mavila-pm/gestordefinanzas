@@ -41,3 +41,18 @@ export function allowance(plan: AIPlan, simulated: boolean, cfg: Record<string, 
     reached: used >= limit,
   };
 }
+
+/**
+ * "Uso de Vels" for Ajustes → Plan y uso: percent of the current allowance and when it renews. Real data only:
+ * without a configured limit there is no percent (null), never an invented one. Monthly allowances renew on the
+ * 1st of next month (Lima calendar, same bucket ai_reserve uses); a trial allowance ends with the trial.
+ */
+export interface VelsUsage { percent: number | null; resetAt: string | null; renews: 'monthly' | 'trial_end' | null }
+export function velsUsage(a: Pick<Allowance, 'plan' | 'conversation'>, now: Date, trialEndsAt: string | null): VelsUsage {
+  const { used, limit } = a.conversation;
+  const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : null;
+  if (a.plan === 'trial') return { percent, resetAt: trialEndsAt ? new Date(Date.parse(trialEndsAt) - 5 * 3600_000).toISOString().slice(0, 10) : null, renews: trialEndsAt ? 'trial_end' : null };
+  const lima = new Date(now.getTime() - 5 * 3600_000);
+  const next = new Date(Date.UTC(lima.getUTCFullYear(), lima.getUTCMonth() + 1, 1));
+  return { percent, resetAt: next.toISOString().slice(0, 10), renews: 'monthly' };
+}
