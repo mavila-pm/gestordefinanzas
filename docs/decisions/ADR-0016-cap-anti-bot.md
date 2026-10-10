@@ -21,7 +21,10 @@ first, before the lockout counter or Supabase Auth, so a bot can neither send em
 
 Replay store: `cap_spent` (migration 040) keeps SHA-256 hashes + expiry; RLS on, no table grants; `cap_spend()` is
 SECURITY DEFINER for anon/authenticated (the app has no service role). An anon caller can at most spend random keys
-(table growth); it cannot mint a valid token without `CAP_SECRET`. Purge of expired rows: separate decision (DELETE → PO).
+(table growth, bounded per key to 600 s by migration 041); it cannot mint a valid token without `CAP_SECRET`.
+Open (PO, contains DELETE): purge expired rows, e.g. `delete from public.cap_spent where expires_at < now() - interval '1 hour';`
+on a schedule, together with the pending login_throttle purge (…035). The PoW is cheap for a native solver: Cap adds
+friction and stops email sending by scripts; the login lockout remains the brute-force control.
 
 ## Consequences
 - `CAP_SECRET` must exist in every environment, or nobody can sign in, sign up or recover a password.

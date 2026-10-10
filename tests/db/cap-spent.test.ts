@@ -46,7 +46,8 @@ describe.skipIf(!DATABASE_URL)('cap_spent', () => {
     await asRole(pool, 'anon', null, async (c) => {
       expect(await errorCode(c, `select public.cap_spend('bad', 60)`)).toBe('22023');
       expect(await errorCode(c, `select public.cap_spend('r:AAAAAAAAAAAAAAAAAAAAAA', 0)`)).toBe('22023');
-      expect(await errorCode(c, `select public.cap_spend('r:AAAAAAAAAAAAAAAAAAAAAA', 99999)`)).toBe('22023');
+      expect(await errorCode(c, `select public.cap_spend('r:AAAAAAAAAAAAAAAAAAAAAA', 601)`)).toBe('22023'); // 041: max 600 s
+      expect(await errorCode(c, `select public.cap_spend('r:AAAAAAAAAAAAAAAAAAAAAA', 600)`)).toBeNull();
       expect(await errorCode(c, 'select * from public.cap_spent')).toBe('42501');
       expect(await errorCode(c, `insert into public.cap_spent values (repeat('a', 64), now())`)).toBe('42501');
     });

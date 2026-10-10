@@ -28,7 +28,8 @@ export function capSecret(env: Record<string, string | undefined> = process.env)
 
 /** Spends a key once while it is valid: true = first use, false = already used. May throw (store down). */
 export type Spend = (key: string, ttlSeconds: number) => Promise<boolean>;
-const ttlSeconds = (ms: number) => Math.min(3600, Math.max(1, Math.ceil(ms / 1000)));
+/** The database accepts 1..600 s (migration 041): the redeem token, the longest-lived key, lasts 10 min. */
+const ttlSeconds = (ms: number) => Math.min(600, Math.max(1, Math.ceil(ms / 1000)));
 
 export async function newChallenge(secret: string, scope: CapScope, params: ChallengeParams = DEFAULT_PARAMS) {
   const r = await generateChallenge(secret, { ...params, scope, expiresMs: CHALLENGE_TTL_MS });

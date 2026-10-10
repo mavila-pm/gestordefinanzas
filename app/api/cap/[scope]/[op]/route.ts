@@ -19,6 +19,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ sco
   }
   if (op === 'challenge') return json(await newChallenge(secret, scope));
 
+  // Refuse an oversized body before reading it; the length is checked again after reading (header may be absent).
+  if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY) return json({ success: false }, 413);
   const raw = await request.text();
   if (raw.length > MAX_BODY) return json({ success: false }, 413);
   let body: unknown = null;

@@ -57,6 +57,7 @@
 | 20261010000038_savings_goal.sql | savings_goal (planning_settings.savings_goal_minor: explicit monthly goal, 1..1e11, own rows by existing RLS) | 2026-10-10 |
 | 20261010000039_user_preferences.sql | user_preferences (Vels style/proactive, primary currency/account via composite FK, 4 notice toggles; own-row RLS, no delete grant) | 2026-10-10 |
 | 20261010000040_cap_spent.sql | cap_spent + cap_spend() (Cap anti-bot single-use keys: SHA-256 hashes + expiry, no client grants on the table; function executable by anon/authenticated, invalid keys/TTL rejected; no DELETE, expired rows reused) | 2026-10-10 |
+| 20261010000041_cap_spend_ttl.sql | cap_spend TTL bound 1..600 s (was 3600; the redeem token lives 10 min) | 2026-10-10 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
