@@ -1,0 +1,81 @@
+import { ApiError, GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { AIError, type AIModel, type AIRequest, type AIResult, type AIUsage } from './model';
+
+/** The slice of the official SDK this adapter uses (injectable in tests: no network, no key). */
+export interface GeminiModels {
+  generateContent(params: Parameters<GoogleGenAI['models']['generateContent']>[0]): Promise<{
+    text?: string;
+    modelVersion?: string;
+    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; cachedContentTokenCount?: number;
+      promptTokensDetails?: Array<{ modality?: string; tokenCount?: number }> };
+  }>;
+}
+
+/**
+ * Gemini 3.x accepts thinkingLevel LOW | MEDIUM | HIGH only (MINIMAL is refused with a 400, which is what broke the
+ * first Preview calls). "off" in our config means "as little as the model allows": LOW.
+ */
+export const THINKING: Record<AIRequest['reasoning'], ThinkingLevel> = { off: ThinkingLevel.LOW, low: ThinkingLevel.LOW, high: ThinkingLevel.HIGH };
+/**
+ * Thinking tokens count inside maxOutputTokens on Gemini 3.x: below this floor a short answer can come back empty
+ * (all budget spent thinking). Cost stays bounded by the per-operation cap in config.ts and the SQL budgets.
+ */
+export const GEMINI_MIN_OUTPUT_TOKENS = 1024;
+
+/**
+ * Gemini adapter on the official SDK (@google/genai). Server only: the key comes from the caller (config.ts reads
+ * GEMINI_API_KEY) and is never logged or returned. Structured output via responseJsonSchema when the request has a
+ * schema. Thinking LOW at least, no sampling parameters (Gemini 3.x). The SDK's own retries are off: lib/ai.ts decides retries (at most one, each reserved and recorded).
+ * Usage from usageMetadata (thinking billed as output; image tokens split out of the prompt count).
+ */
+export function gemini(opts: { apiKey?: string; models?: GeminiModels }): AIModel {
+  const models: GeminiModels = opts.models ?? new GoogleGenAI({ apiKey: opts.apiKey, httpOptions: { retryOptions: { attempts: 1 } } }).models;
+  return {
+    name: 'gemini',
+    async complete(req: AIRequest): Promise<AIResult> {
+      const started = Date.now();
+      const contents = req.messages.map((m, i) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }, ...(i === req.messages.length - 1 ? (req.images ?? []).map((img) => ({ inlineData: { mimeType: img.mime, data: img.base64 } })) : [])],
+      }));
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), req.timeoutMs);
+      let res: Awaited<ReturnType<GeminiModels['generateContent']>>;
+      try {
+        res = await models.generateContent({
+          model: req.model,
+          contents,
+          config: {
+            systemInstruction: req.system,
+            // No temperature / topP / topK: Gemini 3.x recommends the defaults and may refuse sampling overrides.
+            maxOutputTokens: Math.max(req.maxOutputTokens, GEMINI_MIN_OUTPUT_TOKENS),
+            thinkingConfig: { thinkingLevel: THINKING[req.reasoning] },
+            responseMimeType: 'application/json',
+            ...(req.schema ? { responseJsonSchema: req.schema } : {}),
+            abortSignal: ctrl.signal,
+          },
+        });
+      } catch (e) {
+        throw geminiError(e, ctrl.signal.aborted);
+      } finally {
+        clearTimeout(timer);
+      }
+      const u = res.usageMetadata ?? {};
+      const image = (u.promptTokensDetails ?? []).filter((d) => d.modality === 'IMAGE').reduce((s, d) => s + (d.tokenCount ?? 0), 0);
+      const usage: AIUsage = { input: Math.max((u.promptTokenCount ?? 0) - image, 0), output: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0), cached: u.cachedContentTokenCount ?? 0, image };
+      const text = res.text ?? '';
+      // Empty or blocked (safety, max tokens before any text): it cost tokens, it is not an answer.
+      if (!text.trim()) throw new AIError('invalid_output', 'empty completion', false, usage);
+      return { text, usage, model: res.modelVersion ?? req.model, latencyMs: Date.now() - started };
+    },
+  };
+}
+
+/** SDK/network failure → a typed kind. Never carries the API's message (it may echo the request). */
+export function geminiError(e: unknown, aborted: boolean): AIError {
+  if (aborted || (e as Error)?.name === 'AbortError') return new AIError('timeout', 'provider timeout', true);
+  const status = e instanceof ApiError ? e.status : typeof (e as { status?: unknown })?.status === 'number' ? (e as { status: number }).status : null;
+  if (status === 429) return new AIError('rate_limited', 'provider rate limited', true, null, 429);
+  if (status !== null) return new AIError('http', `provider http ${status}`, status >= 500, null, status);
+  return new AIError('http', 'provider unreachable', true);
+}

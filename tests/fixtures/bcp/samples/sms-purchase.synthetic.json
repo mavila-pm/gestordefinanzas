@@ -1,0 +1,14 @@
+{
+  "fixtureStatus": "SYNTHETIC_FIXTURE",
+  "evidence": "Sender 19896 and 'BCP Alertas:' prefix observed; purchase wording assumed.",
+  "raw": {
+    "channel": "sms",
+    "sender": "19896",
+    "body": "BCP Alertas: Realizaste un consumo de S/ 45.00 con tu Tarjeta de Credito *1234 en CHIFA EL DRAGON el 21/09/2026 13:40.",
+    "receivedAt": "2026-09-21T18:41:00Z"
+  },
+  "expected": {
+    "outcome": "created",
+    "transaction": { "type": "credit_card_purchase", "amountMinor": 4500, "cardLast4": "1234", "category": "Alimentación", "status": "confirmed" }
+  }
+}

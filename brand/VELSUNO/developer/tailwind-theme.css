@@ -1,0 +1,15 @@
+/* Tailwind v4: import design-tokens.css first, then this file. */
+@theme inline {
+ --color-background:var(--bg-primary);
+ --color-surface:var(--surface-default);
+ --color-foreground:var(--text-primary);
+ --color-muted:var(--text-secondary);
+ --color-brand:var(--brand-primary);
+ --color-accent:var(--brand-accent);
+ --color-income:var(--semantic-income);
+ --color-expense:var(--semantic-expense);
+ --color-review:var(--semantic-review);
+ --color-error:var(--semantic-error);
+ --font-sans:Manrope,system-ui,sans-serif;
+ --radius-card:24px;
+}

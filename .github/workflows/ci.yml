@@ -1,0 +1,32 @@
+# Checks every push and PR: typecheck + unit, DB tests on a throwaway Postgres (migrations, RLS, A/B), build.
+# No secrets: the build uses placeholder public Supabase values; E2E (real project) stays manual (docs/runbooks/e2e.md).
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck + unit tests
+        run: npm run check
+      - name: DB tests (throwaway PostgreSQL 16)
+        run: PG_BIN=/usr/lib/postgresql/16/bin npm run test:db
+      - name: Build
+        run: npm run build
