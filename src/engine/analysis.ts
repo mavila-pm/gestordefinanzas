@@ -123,3 +123,27 @@ export function fixedVsVariable(txs: readonly Transaction[], month: string, curr
   }
   return { fixedMinor, variableMinor: Math.max(0, variableMinor) };
 }
+
+export interface InstrumentSpend { id: string | null; kind: 'card' | 'account' | null; totalMinor: number; count: number }
+
+/**
+ * Where the spending was paid from: confirmed spending (refunds reduce it) per card or account, largest first; spending
+ * with no card/account linked is one row with id null ("Sin tarjeta ni cuenta"). One currency; card payments and own
+ * transfers are not spending, so they never appear here.
+ */
+export function spendByInstrument(txs: ReadonlyArray<Transaction & { cardId?: string | null; accountId?: string | null }>, month: string, currency: Currency): InstrumentSpend[] {
+  const by = new Map<string, InstrumentSpend>();
+  for (const t of txs) {
+    if (t.currency !== currency || t.occurredAt.slice(0, 7) !== month || t.status !== 'confirmed') continue;
+    const effect = financialEffect(t.type);
+    if (effect !== 'expense' && effect !== 'expense_reduction') continue;
+    const kind = t.cardId ? 'card' : t.accountId ? 'account' : null;
+    const id = t.cardId ?? t.accountId ?? null;
+    const key = `${kind}:${id}`;
+    const e = by.get(key) ?? { id, kind, totalMinor: 0, count: 0 };
+    e.totalMinor += effect === 'expense' ? t.amountMinor : -t.amountMinor;
+    if (effect === 'expense') e.count++;
+    by.set(key, e);
+  }
+  return [...by.values()].filter((x) => x.totalMinor > 0).sort((a, b) => b.totalMinor - a.totalMinor);
+}

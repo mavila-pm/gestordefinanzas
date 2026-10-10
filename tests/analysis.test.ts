@@ -128,3 +128,25 @@ describe('sync history labels (§52)', () => {
       .toEqual({ channel: 'Otra fuente', outcome: 'Procesado', linkable: true });
   });
 });
+
+import { spendByInstrument } from '../src/engine/analysis';
+describe('spending by card or account', () => {
+  it('confirmed spending per instrument; card payments, own transfers, other currencies and pending never count', () => {
+    const rows = [
+      { ...tx({ type: 'credit_card_purchase', amountMinor: 10000 }), cardId: 'visa', accountId: null },
+      { ...tx({ type: 'credit_card_purchase', amountMinor: 5000 }), cardId: 'visa', accountId: null },
+      { ...tx({ type: 'refund', direction: 'inflow', amountMinor: 2000 }), cardId: 'visa', accountId: null },
+      { ...tx({ type: 'credit_card_payment', amountMinor: 13000 }), cardId: 'visa', accountId: 'aho' },
+      { ...tx({ type: 'expense', amountMinor: 4000 }), cardId: null, accountId: 'aho' },
+      { ...tx({ type: 'internal_transfer', direction: 'neutral', amountMinor: 90000 }), cardId: null, accountId: 'aho' },
+      { ...tx({ type: 'expense', amountMinor: 700 }), cardId: null, accountId: null },
+      { ...tx({ type: 'expense', amountMinor: 9999, status: 'review_required' }), cardId: 'visa', accountId: null },
+      { ...tx({ type: 'expense', amountMinor: 5555, currency: 'USD' }), cardId: 'visa', accountId: null },
+    ];
+    expect(spendByInstrument(rows, '2026-09', 'PEN')).toEqual([
+      { id: 'visa', kind: 'card', totalMinor: 13000, count: 2 },
+      { id: 'aho', kind: 'account', totalMinor: 4000, count: 1 },
+      { id: null, kind: null, totalMinor: 700, count: 1 },
+    ]);
+  });
+});

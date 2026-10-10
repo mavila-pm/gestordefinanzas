@@ -6,13 +6,15 @@ import { monthLabel } from '../../../src/web/labels';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import {
-  compareMonths, fixedVsVariable, monthlyTrend, incomeSources, percentChange, previousMonth, relevantChanges, savingsProgress, savingsRate, topMerchants,
+  compareMonths, fixedVsVariable, monthlyTrend, incomeSources, spendByInstrument, percentChange, previousMonth, relevantChanges, savingsProgress, savingsRate, topMerchants,
 } from '../../../src/engine/analysis';
 import { budgetStatus } from '../../../src/engine/budgets';
 import { monthCommitments } from '../../../src/engine/commitments';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';
-import { loadBudgets, loadCommitmentData, loadEntitlements } from '../../../lib/queries';
+import { loadBudgets, loadCatalog, loadCommitmentData, loadEntitlements } from '../../../lib/queries';
+import { loadSubscriptions } from '../../../lib/subscriptions';
+import { subscriptionTotals } from '../../../src/engine/subscriptions';
 import { historyStart, visibleMonth } from '../../../src/domain/entitlements';
 import { limaToday, shortDate } from '../../../src/domain/dates';
 
@@ -41,17 +43,22 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
   const floor = start ? previousMonth(start, -1) : null;
   const month = visibleMonth(requested && limaMonthRange(requested) ? requested : current, floor && floor <= current ? floor : start);
   const trendMonths = start ? Math.min(TREND_MONTHS, monthsBetween(start, month) + 1) : TREND_MONTHS;
-  const [txRes, settled, budgets, commitmentData, settings] = await Promise.all([
-    supabase.from('transactions').select(TRANSACTION_SELECT)
+  const [txRes, settled, budgets, commitmentData, settings, catalog, subs] = await Promise.all([
+    supabase.from('transactions').select(`${TRANSACTION_SELECT},card_id,account_id`)
       .gte('occurred_at', limaMonthRange(previousMonth(month, trendMonths - 1))!.from).lt('occurred_at', limaMonthRange(month)!.to)
       .order('occurred_at').limit(6000),
     supabase.from('plan_settlements').select('transaction_id').not('fixed_expense_id', 'is', null).not('transaction_id', 'is', null).like('period', `${month}%`).limit(500),
     loadBudgets(supabase),
     loadCommitmentData(supabase),
     supabase.from('planning_settings').select('savings_goal_minor').eq('currency', 'PEN').maybeSingle(),
+    loadCatalog(supabase),
+    loadSubscriptions(supabase).catch(() => null),
   ]);
   if (txRes.error) return <main className="stack"><p role="alert" className="error">No se pudo cargar el análisis.</p></main>;
-  const txs = (txRes.data as unknown as TransactionRow[]).map(rowToTransaction);
+  const txs = (txRes.data as unknown as Array<TransactionRow & { card_id: string | null; account_id: string | null }>).map((r) => ({ ...rowToTransaction(r), cardId: r.card_id, accountId: r.account_id }));
+  const instrumentName = new Map<string, string>([...catalog.cards.map((c) => [c.id, `${c.alias} ···· ${c.last4}`] as const), ...catalog.accounts.map((a) => [a.id, a.last4 ? `${a.alias} ···· ${a.last4}` : a.alias] as const)]);
+  // Subscriptions: an analytical monthly cost (projection) shown apart from confirmed spending — only for the current month.
+  const subTotals = subs && month === current ? subscriptionTotals(subs.subs, subs.settlements, limaToday()) : [];
   const fixedIds = new Set((settled.data ?? []).map((r) => r.transaction_id as string));
   const currencies = (['PEN', 'USD'] as const).filter((c, i) => i === 0 || txs.some((t) => t.currency === c));
   const goalMinor = settings.data?.savings_goal_minor == null ? null : Number(settings.data.savings_goal_minor);
@@ -80,6 +87,8 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
         const months = trend.filter((t) => t.incomeMinor > 0 || t.expensesMinor > 0).length;
         const top = topMerchants(txs, month, currency);
         const sources = incomeSources(txs, month, currency);
+        const byInstrument = spendByInstrument(txs, month, currency);
+        const subTotal = subTotals.find((x) => x.currency === currency && (x.active > 0 || x.paidMonthCount > 0)) ?? null;
         // The month in progress is partial: a drop against a whole previous month is not real yet, a rise already is.
         const changes = relevantChanges(cmp).filter((c) => month !== current || c.pct > 0);
         const split = fixedVsVariable(txs, month, currency, fixedIds);
@@ -146,6 +155,34 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
                   <div><dt><i className="variable" />Variables</dt><dd>{m(split.variableMinor)}</dd></div>
                 </dl>
                 {split.fixedMinor === 0 && <small className="muted">Cuando confirmes el pago de un gasto fijo, aparecerá aquí.</small>}
+              </section>
+            )}
+
+            {/* E1. Con qué pagaste */}
+            {byInstrument.length > 0 && (
+              <section aria-labelledby={`ins-h-${currency}`} className="card stack-sm" data-testid={`instruments-${currency}`}>
+                <h2 id={`ins-h-${currency}`}>Con qué pagaste</h2>
+                <ul className="plain stack-sm">
+                  {byInstrument.map((x) => (
+                    <li key={`${x.kind}:${x.id}`} className="cat-row">
+                      <span>{x.id ? instrumentName.get(x.id) ?? (x.kind === 'card' ? 'Tarjeta' : 'Cuenta') : 'Sin tarjeta ni cuenta'}</span><strong className="amount">{m(x.totalMinor)}</strong>
+                      <span className="progress" aria-hidden="true"><span className="fill" style={{ width: `${Math.max(2, (x.totalMinor / byInstrument[0]!.totalMinor) * 100)}%` }} /></span>
+                    </li>
+                  ))}
+                </ul>
+                <small className="muted">Gastos confirmados. Pagar la tarjeta o pasar plata entre tus cuentas no cuenta aquí.</small>
+              </section>
+            )}
+
+            {/* E1b. Suscripciones: proyección, aparte de lo confirmado */}
+            {subTotal && (
+              <section aria-labelledby={`subs-h-${currency}`} className="card stack-sm" data-testid={`an-subs-${currency}`}>
+                <div className="row"><h2 id={`subs-h-${currency}`}>Suscripciones</h2><Link href="/app/compromisos/suscripciones" className="section-link">Ver<Icon name="chevron" size={16} /></Link></div>
+                <div className="stat-grid">
+                  <div><span className="muted small">Costo mensual (estimado)</span><p className="big">{m(subTotal.monthlyMinor)}</p></div>
+                  <div><span className="muted small">Pagado este mes</span><p className="big">{m(subTotal.paidMonthMinor)}</p></div>
+                </div>
+                <small className="muted">{plural(subTotal.active, 'suscripción activa', 'suscripciones activas')}{subTotal.monthlyUnknown ? ` · ${subTotal.monthlyUnknown} sin precio` : ''}. Lo pagado son cobros confirmados; el costo mensual es una proyección.</small>
               </section>
             )}
 
