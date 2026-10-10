@@ -1,6 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { answer, compactView, detectIntent, velsSuggestions, type Answer, type View } from '../src/ai/assistant';
+import { answer, compactView, detectIntent, velsSuggestions, type Answer, type View } from '../src/ai/vels-answers';
 import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
 import { fold } from '../src/ai/text';
@@ -21,9 +21,9 @@ import { loadMessages, readImages } from './onboarding';
 import { loadPlanningData, planFor, planInputFor, planTimeline } from './planning';
 
 /**
- * "Preguntar" (§19-§22, §69): the assistant reads the structured financial state (planning engine), never the
- * whole history. Deterministic intents answer most questions at zero AI cost; a provider only phrases answers
- * the rules do not cover, with a compact state + the last few messages. Thread is capped (older messages pruned).
+ * Vels turns (panel and /app/preguntar, §19-§22, §69): reads the structured financial state (planning engine),
+ * never the whole history. Local intents answer most questions at zero AI cost; Gemini only interprets what the
+ * rules do not cover, with a compact state + the last few messages. Thread is capped (older messages pruned).
  */
 const KEEP = 40;
 const NOT_UNDERSTOOD = 'No te entendí bien. ¿Me lo dices de otra forma?';
@@ -80,7 +80,7 @@ async function prune(supabase: SupabaseClient) {
   if (ids.length) await supabase.from('conversation_messages').delete().in('id', ids);
 }
 
-export async function assistantTurn(supabase: SupabaseClient, userId: string, raw: string): Promise<void> {
+export async function velsTurn(supabase: SupabaseClient, userId: string, raw: string): Promise<void> {
   const { text } = sanitizeUserText(raw);
   if (!text) return;
   // One parallel step instead of three sequential round trips: the engine view doesn't depend on the thread.
@@ -203,7 +203,7 @@ async function collectTurn(supabase: SupabaseClient, userId: string, text: strin
 }
 
 /** Buttons in assistant answers: deterministic domain writes, never inference (§55). */
-export async function assistantAct(supabase: SupabaseClient, userId: string, act: string, fields: Record<string, string>): Promise<string> {
+export async function velsAct(supabase: SupabaseClient, userId: string, act: string, fields: Record<string, string>): Promise<string> {
   if (act === 'patch_obligation') {
     const amount = Number(fields.amount);
     const minor = Math.round(amount * 100);
@@ -280,7 +280,7 @@ export async function assistantAct(supabase: SupabaseClient, userId: string, act
  * proposal is kept in the Velsuno message row (never sent to the browser) until "Confirmar"; nothing is written
  * before that. The image itself is never stored.
  */
-export async function assistantImages(supabase: SupabaseClient, userId: string, files: File[]): Promise<void> {
+export async function velsImages(supabase: SupabaseClient, userId: string, files: File[]): Promise<void> {
   const read = await readImages(supabase, files, 'consulta posterior a la configuración', (b) => say(supabase, userId, 'user', b), 'assistant');
   if (!read.ok) { if ('text' in read) await say(supabase, userId, 'velsuno', read.text, read.stop ? { stop: true } : null); return; }
   const { proposal } = read;
@@ -293,7 +293,7 @@ export async function assistantImages(supabase: SupabaseClient, userId: string, 
 }
 
 /** Only the latest Velsuno message can be confirmed: an older proposal (or a second tap) writes nothing. */
-export async function assistantVision(supabase: SupabaseClient, userId: string, confirm: boolean): Promise<void> {
+export async function velsVision(supabase: SupabaseClient, userId: string, confirm: boolean): Promise<void> {
   const { data: last } = await supabase.from('conversation_messages').select('id,card').eq('thread', 'assistant').eq('role', 'velsuno')
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
   const patches = validPatches((last?.card as MessageCard | null)?.vision);
@@ -324,7 +324,7 @@ export async function assistantVision(supabase: SupabaseClient, userId: string, 
   await prune(supabase);
 }
 
-export async function clearAssistant(supabase: SupabaseClient) {
+export async function clearVels(supabase: SupabaseClient) {
   await supabase.from('conversation_messages').delete().eq('thread', 'assistant');
 }
 

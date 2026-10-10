@@ -1,7 +1,7 @@
 /**
  * Secrets never travel further than this function (adenda §16-§17): CVV, PIN, passwords, OTP/verification codes
  * and bank keys are dropped; full card/account numbers keep only their last 4 digits; DNI numbers are dropped.
- * Applied to every user message BEFORE it is stored, logged or sent to a provider. Fixed patterns only.
+ * Applied to every user message BEFORE it is stored, logged or sent to Gemini. Fixed patterns only.
  */
 const SECRET = /\b(cvv2?|cvc|c[oó]digo de seguridad|pin|clave(?: de internet| digital| token)?|contrase[nñ]a|password|otp|token|c[oó]digo de verificaci[oó]n|c[oó]digo sms)\b\s*(?:es|era|:|=|#)?\s*[A-Za-z0-9*•-]{3,}/gi;
 const DNI = /\b(dni|documento)\s*(?:n[°º.]?|nro\.?|:|#)?\s*\d{8}\b/gi;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { domainWrites } from '../src/ai/apply';
-import { answer, detectIntent, type View } from '../src/ai/assistant';
+import { answer, detectIntent, type View } from '../src/ai/vels-answers';
 import { aiAvailable, aiConfig } from '../src/ai/config';
 import { mergePatches } from '../src/ai/draft';
 import { aiPlanFrom, allowance } from '../src/ai/entitlements';
@@ -182,7 +182,7 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(b.actions!.some((x) => x.type === 'act')).toBe(false);
   });
   it('Vels openers: from real state and the current screen, max 3, deterministic', async () => {
-    const { velsSuggestions } = await import('../src/ai/assistant');
+    const { velsSuggestions } = await import('../src/ai/vels-answers');
     expect(velsSuggestions(view, '/app/compromisos')).toContain('¿Qué pago primero?');
     expect(velsSuggestions(view, '/app/tarjetas')[0]).toBe('¿Hasta cuánto puedo usar la tarjeta?');
     expect(velsSuggestions({ ...view, recentIncome: { amountMinor: 1, currency: 'PEN', date: '2026-09-27' } }, '/app')[0]).toBe('Organiza mi dinero');

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Chat } from '../../../components/chat';
 import { VelsHeader } from '../../../components/vels-identity';
-import { velsOpen } from '../../../lib/assistant';
+import { velsOpen } from '../../../lib/vels';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import type { ChatMessage } from '../../../src/ai/conversation';
 import { assistantAction, clearAssistantAction } from './actions';

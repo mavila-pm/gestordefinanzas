@@ -19,7 +19,7 @@ import { loadProfile } from './queries';
 
 /**
  * Conversational onboarding turn logic (ADR-0006). The structured draft is the memory; messages are the short
- * visible conversation. Deterministic first: the local interpreter reads most messages at zero cost; a provider
+ * visible conversation. Deterministic first: the local interpreter reads most messages at zero cost; Gemini
  * is called when nothing could be read OR the reading left numbers unused (partial), and only if one is configured.
  * Either way the output goes through the same validation and merge: the model never writes money by itself. Taps (summary, start, confirm) never call AI.
  */
@@ -141,7 +141,7 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
       messages: [{ role: 'user', content: `${pendingQ}\nDatos ya registrados:\n${compactState(state.draft) || '(ninguno)'}\n\nMensaje:\n${text}` }] },
     (t) => validateInterpretation(t) !== null);
     if (r.ok) {
-      // A provider answer that read nothing never replaces a partial deterministic reading.
+      // A Gemini answer that read nothing never replaces a partial deterministic reading.
       const ai = validateInterpretation(r.text)!;
       if (ai.patches.length || ai.bare || !partial) read = ai;
     }

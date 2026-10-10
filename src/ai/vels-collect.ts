@@ -1,6 +1,6 @@
 import type { Currency } from '../domain/money';
 import { addDays } from '../domain/dates';
-import type { Intent, View } from './assistant';
+import type { Intent, View } from './vels-answers';
 import { money } from './draft';
 import { interpret } from './interpreter';
 import { fold, UNKNOWN } from './text';

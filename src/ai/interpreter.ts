@@ -6,7 +6,7 @@ import type { Bare, DebtKind, Interpretation, Patch } from './types';
 /**
  * Deterministic Spanish interpreter (no provider, no cost): reads messy messages like
  * "Me pagan 5,700 el 5, uso BCP, pago el carro como el 10, debo en la tarjeta y le debo plata a mi pareja".
- * It only extracts what is literally there; anything it cannot read is left for a provider (if enabled) or asked.
+ * It only extracts what is literally there; anything it cannot read is left for Gemini (if configured) or asked.
  */
 
 export const BANKS: Array<[RegExp, string]> = [

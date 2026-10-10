@@ -377,7 +377,7 @@ export function pendingReply(d: Draft, text: string): MergeResult | null {
 
 /**
  * How many numbers in the message the deterministic reading did NOT use (amounts and days). Above 0 the reading is
- * partial ("gasto 200 en carro y 100 en comida" read as one item): the provider, when enabled, reads it instead.
+ * partial ("gasto 200 en carro y 100 en comida" read as one item): Gemini, when configured, reads it instead.
  */
 export function unreadNumbers(folded: string, read: { patches: readonly Patch[]; bare: Bare | null }): number {
   const numbers = (folded.match(/\d+(?:[.,]\d+)*/g) ?? []).length;
@@ -421,7 +421,7 @@ export function summarize(d: Draft): Summary {
   return { groups, pending };
 }
 
-/** Compact text of the draft for a provider prompt (§23): facts, not transcript. */
+/** Compact text of the draft for the Gemini prompt (§23): facts, not transcript. */
 export function compactState(d: Draft): string {
   const s = summarize(d);
   const lines = s.groups.flatMap((g) => g.items.map((i) => `${g.title}: ${i.label} = ${i.value}`));

@@ -9,8 +9,8 @@ import { money } from './draft';
 import { findAmounts, fold } from './text';
 
 /**
- * Assistant after onboarding (§19-§22, §69): questions are routed to deterministic domain answers first. Numbers
- * always come from the planning engine; a provider is only asked when no intent matches (and only if enabled).
+ * Vels's answers (§19-§22, §69): a question → an Intent (local rules, or Gemini via vels-route.ts) → an answer
+ * built from the planning engine. Every number comes from the engine; Gemini never computes money.
  */
 export type Intent =
   | { k: 'free' } | { k: 'can_spend'; amountMinor: number; currency: Currency } | { k: 'upcoming'; range: 'week' | 'next' }
@@ -101,7 +101,7 @@ function missingText(p: Plan): string | null {
   return m ? m.text : null;
 }
 
-/** Deterministic answer, or null when the question needs a provider (unknown intent). */
+/** Deterministic answer, or null when the question needs Gemini (unknown intent). */
 export function answer(intent: Intent, v: View): Answer | null {
   const p = primary(v);
   switch (intent.k) {
@@ -332,7 +332,7 @@ function freeText(r: ScenarioResult): string {
   return r.freeAfterMinor >= 0 ? `te quedan ${money(r.freeAfterMinor, r.currency)} libres${est}${before}.` : `te faltarían ${money(-r.freeAfterMinor, r.currency)}${est}${before}.`;
 }
 
-/** Compact, number-complete state for a provider (§23): facts computed by the engine, not the transcript. */
+/** Compact, number-complete state for Gemini (§23): facts computed by the engine, not the transcript. */
 export function compactView(v: View): string {
   const lines: string[] = [`Hoy: ${v.today}`];
   for (const p of v.plans) {

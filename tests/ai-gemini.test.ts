@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { infer } from '../lib/ai';
-import { answer, compactView, type View } from '../src/ai/assistant';
+import { answer, compactView, type View } from '../src/ai/vels-answers';
 import { aiConfig, aiModel, GEMINI_DEFAULT_MODEL } from '../src/ai/config';
 import { estimateCostMicroUsd, UNPRICED_CEILING } from '../src/ai/pricing';
 import { gemini as geminiModel, geminiError, GEMINI_MIN_OUTPUT_TOKENS, type GeminiModels } from '../src/ai/gemini';

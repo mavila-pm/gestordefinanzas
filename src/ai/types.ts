@@ -60,7 +60,7 @@ export const emptyDraft = (): Draft => ({
   incomes: [], obligations: [], debts: [], accounts: [], variable: [], balance: null, asked: [], done: [], pending: null, vision: null,
 });
 
-/** One change the interpreter (local rules, a provider, or a vision read) proposes. Always validated before merge. */
+/** One change the interpreter (local rules, Gemini, or a vision read) proposes. Always validated before merge. */
 export type Patch =
   | { t: 'income'; name?: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean;
       day?: number; dayMax?: number; secondDay?: number; frequency?: 'monthly' | 'semimonthly'; approxDay?: boolean; isNew?: boolean }
@@ -68,7 +68,7 @@ export type Patch =
       day?: number; dayMax?: number; approxDay?: boolean; quincena?: boolean }
   | { t: 'debt'; kind: DebtKind; name: string; lender?: string; institution?: string; last4?: string; currency?: Currency;
       balanceMinor?: number; approx?: boolean; unknownBalance?: boolean; minimumMinor?: number; dueDay?: number;
-      /** Internal: the draft debt a pending question is about (never from a provider). */
+      /** Internal: the draft debt a pending question is about (never from Gemini). */
       id?: string;
       loanType?: string; principalMinor?: number; installmentMinor?: number; installmentsTotal?: number; installmentsPaid?: number; installmentsLeft?: number }
   | { t: 'account'; institution: string; kind: 'bank' | 'card'; last4?: string }

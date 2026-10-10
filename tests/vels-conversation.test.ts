@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildPlan, type ExpectedIncome } from '../src/engine/planning';
-import { answer, type View } from '../src/ai/assistant';
+import { answer, type View } from '../src/ai/vels-answers';
 import { readReply, relativeDate } from '../src/ai/vels-collect';
 
 /**
@@ -60,8 +60,8 @@ function fakeDb() {
   return { from: q } as never;
 }
 async function turn(text: string) {
-  const { assistantTurn } = await import('../lib/assistant');
-  await assistantTurn(fakeDb(), 'u1', text);
+  const { velsTurn } = await import('../lib/vels');
+  await velsTurn(fakeDb(), 'u1', text);
   return store.messages.at(-1)!;
 }
 async function engineAnswer(intent: Parameters<typeof answer>[0]) {

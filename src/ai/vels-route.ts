@@ -1,4 +1,4 @@
-import type { Intent } from './assistant';
+import type { Intent } from './vels-answers';
 import { findAmounts, fold } from './text';
 
 /**

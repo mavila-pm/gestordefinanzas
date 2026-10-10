@@ -18,7 +18,7 @@ const RESERVE_ERRORS: readonly AIStop[] = ['ai_quota', 'camera_quota', 'ai_rate'
 const OUTCOME: Record<string, 'error' | 'timeout' | 'invalid_output'> = { timeout: 'timeout', invalid_output: 'invalid_output' };
 
 /**
- * Safe diagnostic for a failed call: normalized kind, HTTP status, model, latency, attempt. Never the provider's
+ * Safe diagnostic for a failed call: normalized kind, HTTP status, model, latency, attempt. Never Gemini's
  * message, the prompt, the answer, account data or the key.
  */
 export function diagnose(d: { kind: string; status: number | null; model: string; latencyMs: number; attempt: number }): void {
