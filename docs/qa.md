@@ -19,3 +19,7 @@ Must-haves:
 - Agent config only (`.claude/`, docs): N0 = validate JSON/frontmatter + `scripts/qa/test-guard.sh`; no app tests.
 - Secrets: `scripts/qa/secrets.sh` before pushing new config or env-related code.
 - VERIFIED requires the level risk.sh reports. Fixture/synthetic evidence never verifies a real provider or bank template.
+- Chat layout (no server, no account): `npm run build && node scripts/qa/chat-layout.mjs [screenshot-dir]` — Vels page,
+  panel and onboarding at 390×844 with 34 messages (list scrolls, page does not, header/avatar sizes).
+- Language reading quality (synthetic cases): `node --experimental-strip-types --import ./scripts/ts-resolve.mjs
+  scripts/ai-bench.ts local [gemini]` → `.e2e/bench/`; `gemini` needs `GEMINI_API_KEY`.

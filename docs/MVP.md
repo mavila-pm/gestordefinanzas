@@ -57,9 +57,9 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
   - Terminado cuando: un usuario Free no puede exceder un límite ni llamando la acción directamente (test DB).
 - [ ] **P1 — IA real verificada y decisión de privacidad**
   - Estado: Gemini único proveedor (bloque 049, ADR-0015); sin clave en este entorno (llamada real NO VERIFICADA).
-  - Falta: clave en Preview, prueba en `/app/prueba-ia`, `scripts/ai-bench.ts` con datos sintéticos, decidir proveedor y retención de datos.
+  - Falta: clave en Preview, una pregunta a Vels fuera de las reglas locales, `scripts/ai-bench.ts gemini` con datos sintéticos, decisión de retención de datos.
   - Depende de: PO (clave, privacidad). Riesgo: bajo (la app funciona sin IA; respuestas deterministas cuestan 0).
-  - Terminado cuando: benchmark registrado en `docs/ai/provider-evaluation.md` y `AI_PROVIDER` decidido para Preview/Production.
+  - Terminado cuando: llamada real verificada en Preview y resultado del benchmark anotado en `docs/status.md`.
 - [x] **P1 — Exportar mis datos** (Movimientos → Exportar CSV, historial completo).
   - Autoeliminación de cuenta **retirada del alcance** por decisión del PO (2026-10-08): sin botón, acción ni RPC; la migración 028
     nunca se aplicó y se eliminó. Las solicitudes de supresión (Ley 29733) se atienden por el contacto de privacidad y un
@@ -82,7 +82,6 @@ Leyenda: **P0** bloquea el MVP · **P1** necesario para un MVP sólido · **P2**
 - [ ] **P2 — Observabilidad** (§60): logs estructurados existen en webhook e IA; falta monitoreo/alertas de fallos de parser, sync y auth.
 - [ ] **P2 — Pagos parciales y fondos de reserva** en el motor de planificación (`src/engine/planning.ts`) — "next work" en status.
 - [ ] **P2 — Lectura de estados de cuenta con cámara** (requiere proveedor de IA con visión).
-- [ ] **P2 — Retirar `/app/prueba-ia`** cuando exista el asistente definitivo (hoy apagado en producción por defecto).
 - [ ] **P2 — Categorías propias del usuario** y política de edición directa de tarjetas/cuentas/presupuestos/deudas (ADR-0003).
 
 ## P3 — Futuro / nice-to-have

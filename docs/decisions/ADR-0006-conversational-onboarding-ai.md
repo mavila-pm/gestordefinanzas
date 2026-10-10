@@ -25,7 +25,7 @@ reconciled in ADR-0007.
    accounts/cards, balance_snapshots and planning_settings under the user's session (RLS). A debt with unknown
    balance is not created (nothing invented); it stays pending. Created ids are recorded in
    `onboarding_states.applied` so a demo reset removes exactly those rows.
-5. **Provider abstraction** (§26, §29, §62). `AIProvider` interface; adapters: OpenAI-compatible (DeepSeek),
+5. **Provider abstraction** (§26, §29, §62) — *superseded by ADR-0015: Gemini is the only model; no abstraction, switch or fallback provider remains.* `AIProvider` interface; adapters: OpenAI-compatible (DeepSeek),
    Gemini, and a deterministic `fixture` (tests/demo only, refused on production). Server-side config only
    (`src/ai/config.ts`): provider, text/vision/fallback model, timeout, reasoning, max input/output per
    operation. Default is `none`: the product works fully without AI. One retry for transient failures only; a
@@ -77,7 +77,7 @@ IMAGE → TEMPORARY PROCESSING → STRUCTURED FACTS → USER CONFIRMATION → DI
 
 ## Not done yet (honest scope)
 
-- No real provider is enabled: needs PO choice + API key (see docs/ai/provider-evaluation.md). Without it,
+- No real provider is enabled: needs PO choice + API key (resolved by ADR-0015: Gemini). Without it,
   inference paths return "no disponible" and the deterministic features cover the common cases.
 - Camera inside "Preguntar" (§70) and "observed replaces estimated" suggestions (§68): done in ADR-0007.
 - Voice is not shown (§11). Internal cost dashboard (§82) is SQL over `ai_calls` (queries in the runbook), no UI.

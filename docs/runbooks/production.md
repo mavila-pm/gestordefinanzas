@@ -23,13 +23,13 @@ Preconditions: every P0 in `docs/MVP.md` checked, CI green on the release commit
 | `SUPPORT_EMAIL` | config | contact mailbox |
 | `GEMINI_API_KEY` (+ `AI_PRICES` for the model) | secret / config | only if AI goes live (privacy decision: paid tier, no training on prompts); otherwise leave unset |
 | `DATABASE_URL`, `INBOUND_EMAIL_SECRET`, `INGEST_EMAIL_DOMAIN` | secret | only when the Email Bridge provider exists |
-Do NOT set `AI_TEST_ENDPOINT` or `AI_ALLOW_FIXTURE` in production.
+Do NOT set `AI_FIXTURE` in production (it is ignored there anyway).
 
 ## 4. Release
 1. PO approves and merges the release branch into `main` (PR mavila-pm/gestordefinanzas#1); Vercel builds Production.
 2. Smoke test on `https://<domain>` (5 min): `/` loads · signup with a real inbox → email arrives < 1 min → link opens
    `/auth/confirm` → `/bienvenida` · finish onboarding · `/app` shows Dinero libre · add a manual movement · log out / log in ·
-   password recovery email arrives · `/privacidad` shows the contact · `/app/prueba-ia` returns 404.
+   password recovery email arrives · `/privacidad` shows the contact.
 3. If any step fails: Vercel → Deployments → previous production deployment → **Promote** (instant rollback); DB migrations are
    additive, so the previous build keeps working.
 

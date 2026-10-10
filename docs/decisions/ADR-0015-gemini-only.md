@@ -3,10 +3,9 @@
 Date: 2026-10-08 · Status: accepted (PO request) · Supersedes the provider choice in block 040 (OpenRouter/DeepSeek).
 
 ## Decision
-- One provider for the MVP: Gemini through the official SDK `@google/genai` (`src/ai/providers/gemini.ts`). Model ID in one
+- One provider for the MVP: Gemini through the official SDK `@google/genai` (`src/ai/gemini.ts`). Model ID in one
   place: `GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash'` (`src/ai/config.ts`), overridable with `GEMINI_MODEL`. Key `GEMINI_API_KEY`,
-  server only. OpenRouter/DeepSeek adapters, the fallback chain and `generalAIConfig` are removed. `AI_PROVIDER=none` turns AI off;
-  `fixture` stays for tests (never production).
+  server only. OpenRouter/DeepSeek adapters, the fallback chain and `generalAIConfig` are removed.
 - Vels: local rules first (0 AI cost). Unrecognised → Gemini returns a structured route (`VELS_ROUTE_SCHEMA`, enforced with
   `responseJsonSchema`) → `validateVelsRoute` (enum intents, amount + currency must be read in the question by the local parser `findAmounts`, free replies may only repeat
   numbers present in the state or question) → the existing engine (`answer()`) computes. Invalid → recorded as invalid_output,
@@ -20,3 +19,12 @@ Date: 2026-10-08 · Status: accepted (PO request) · Supersedes the provider cho
 ## Consequences
 Simpler config and one privacy review (Gemini terms: use the paid tier so prompts are not used for training). A Gemini outage
 means deterministic-only Vels, never a broken thread.
+
+## Amendment 2026-10-10 — no provider abstraction left
+- `AIProvider`/`ProviderName`/`providerFor()` and the provider switch are gone. `src/ai/model.ts` holds the call types and a
+  small `AIModel` shape; `aiModel()` (`src/ai/config.ts`) returns Gemini when `GEMINI_API_KEY` is set, otherwise null (Vels
+  stays deterministic). `AI_PROVIDER` and `AI_ALLOW_FIXTURE` are no longer read.
+- The canned fixture is test support (`src/ai/test-fixture.ts`): unit tests inject it directly; E2E starts `next start` with
+  `AI_FIXTURE=1` (ignored when `VERCEL_ENV=production`).
+- The temporary test surface `/app/prueba-ia` + `POST /api/ai/chat` (`generateAIResponse`, `AI_TEST_ENDPOINT`) is removed:
+  Gemini is verified through Vels itself.

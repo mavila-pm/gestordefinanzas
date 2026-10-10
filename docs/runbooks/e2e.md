@@ -114,7 +114,7 @@ honesty rules). Full regression: 163 + 24 = **187/187**; visual 132 screenshots,
 
 ## Conversational onboarding + AI usage (ADR-0006) — 2026-09-28
 New suite `onboarding` (seed s12: s12a first-time user, demo-allowlisted; s12b another user with its own
-conversation/usage/income). `scripts/e2e.sh` starts the server with `AI_PROVIDER=fixture AI_ALLOW_FIXTURE=1`, so
+conversation/usage/income). `scripts/e2e.sh` starts the server with `AI_FIXTURE=1` (canned test answers from `src/ai/test-fixture.ts`), so
 inference paths (reservation, validation, usage recording, camera) run with synthetic answers and the synthetic
 images of `tests/fixtures/ai/vision` (regenerate with `scripts/gen-vision-fixtures.ts`). Every other probe user
 is seeded with onboarding completed. Full regression: 187 + 38 = **225/225**; visual 144 screenshots (adds

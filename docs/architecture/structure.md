@@ -14,20 +14,23 @@ tests/
   fixtures/bcp/      SYNTHETIC_FIXTURE builders + samples/ (golden, REAL_ANONYMIZED or SYNTHETIC)
 supabase/migrations/ Versioned SQL schema + RLS (supabase/tests/: local-only shim)
 scripts/test-db.sh   Throwaway PostgreSQL for DB tests
-  ai/                Interpreter, prompts, draft (onboarding memory), assistant intents, providers/ (gemini via
-                     @google/genai, fixture), vels-route (Gemini → engine intent), config (env → provider), pricing, sanitize, entitlements
-  web/               Pure helpers for the web layer (form validation, Lima dates, labels, CSV, AI test input)
+  domain/dates.ts    Lima calendar days + date labels (one place for engine, Vels and screens)
+  ai/                Language → validated facts. Onboarding: interpreter (local rules), draft (memory + next question),
+                     schema (validation), apply (draft → DB rows), vision. Vels: vels-answers (intents → engine answers),
+                     vels-route (Gemini → intent), vels-collect (missing facts), vels-social. Model: gemini.ts (@google/genai),
+                     model.ts (call types), config.ts (env → Gemini), pricing, sanitize, entitlements; test-fixture.ts = TEST SUPPORT
+  web/               Pure helpers for the web layer (form validation, labels, CSV)
 app/                 Next.js 16 App Router. Public: /, (auth)/{login,signup,forgot-password,reset-password}, /auth/confirm.
                      /bienvenida = onboarding (app/app/layout.tsx redirects there until it is completed).
                      /app/* = product: (home) Resumen, movimientos (list, [id], nuevo), revisar, plan, preguntar (Vels),
                      analisis, presupuestos, compromisos, tarjetas, reglas, conexiones, importar, cuenta, ajustes, mas,
-                     exportar (CSV route), prueba-ia (temporary AI test). Writes: app/app/actions.ts, app/app/plan/actions.ts,
+                     exportar (CSV route). Writes: app/app/actions.ts, app/app/plan/actions.ts,
                      app/app/preguntar/actions.ts, app/bienvenida/actions.ts, app/auth/actions.ts.
-                     API: app/api/inbound/email (webhook), app/api/ai/chat (AI test).
+                     API: app/api/inbound/email (webhook).
 proxy.ts             Root proxy: refreshes the session cookie, guards /app/* and /bienvenida (lib/supabase/proxy.ts)
 lib/                 Server-only. supabase/ (SSR clients, authUser), queries.ts (reads under RLS), planning.ts
-                     (loads + runs the planning engine), ai.ts (ONLY door to AI providers: quota → provider → record),
-                     assistant.ts (Vels), onboarding.ts, cards.ts, learning.ts, plan-applications.ts, idempotency.ts,
+                     (loads + runs the planning engine), ai.ts (ONLY door to Gemini: quota → call → record),
+                     vels.ts (Vels turns), onboarding.ts, cards.ts, learning.ts, plan-applications.ts, idempotency.ts,
                      env.ts (public env + site URL), server-db.ts (privileged pool, webhooks only)
 components/          React components (forms, chat, sheets, tx rows); components/ui/ = design system (icon, logo,
                      sheet, nav, theme). Copy/visual rules: .claude/rules/frontend.md
@@ -52,13 +55,13 @@ Swapping a synthetic template for a real one touches only `adapters/<bank>/` and
 | Persistence | `src/infrastructure/{postgres,supabase}/`, `lib/queries.ts`, `app/app/actions.ts` | `db/*` |
 | RLS / privileges / A-B isolation guard | `supabase/migrations/` | `db/rls` (must stay green), `db/secure-writes` |
 | Splits (Dividir gasto) | `src/domain/allocations.ts`, `components/split-editor.tsx`, `set_transaction_split` | `splits`, `db/splits`, E2E `splits` |
-| Conversational onboarding, Preguntar, AI entitlements (ADR-0006) | `src/ai/*`, `lib/ai.ts`, `lib/onboarding.ts`, `lib/assistant.ts`, `app/bienvenida/`, `app/app/preguntar/`, `components/chat.tsx` | `ai-interpreter`, `ai-core`, `db/ai`, E2E `onboarding`, `scripts/ai-bench.ts` |
+| Conversational onboarding, Preguntar, AI entitlements (ADR-0006) | `src/ai/*`, `lib/ai.ts`, `lib/onboarding.ts`, `lib/vels.ts`, `app/bienvenida/`, `app/app/preguntar/`, `components/chat.tsx` | `ai-interpreter`, `ai-core`, `db/ai`, E2E `onboarding`, `scripts/ai-bench.ts` |
 | Cash-flow planning (ADR-0005) | `src/engine/planning.ts`, `lib/planning.ts`, `app/app/plan/`, `src/web/planning-input.ts` | `planning`, `db/planning`, E2E `cashflow` |
 | Profile names (presentation only) | `src/domain/profile.ts`, `components/profile-fields.tsx` | `profile` |
 | Design system / shell | `app/globals.css`, `components/ui/*`, `components/tx-row.tsx`, `src/web/labels.ts` | E2E `visual` |
 | Observed vs planned, recurrence, scenarios, applied plans, card statements (ADR-0007/0008/0010/0013/0014) | `src/engine/{observed,recurring,scenarios,applied,cards}.ts`, `lib/{plan-applications,cards}.ts` | `observed`, `recurring`, `scenarios`, `applied`, `cards`, `db/*`, E2E `income-link` |
-| Vels (ADR-0011) | `src/ai/assistant.ts` (deterministic intents), `lib/assistant.ts`, `components/vels.tsx`, `components/chat.tsx` | `ai-core`, E2E `vels` |
-| AI provider: Gemini only (ADR-0015) | `src/ai/config.ts`, `src/ai/providers/gemini.ts` (@google/genai), `src/ai/vels-route.ts`, `lib/ai.ts` (`infer`), `app/api/ai/chat/` | `ai-gemini`, `ai-resilience`, `ai-core` |
+| Vels (ADR-0011) | `src/ai/vels-answers.ts` (intents → engine answers), `src/ai/vels-*.ts`, `lib/vels.ts`, `components/vels.tsx`, `components/chat.tsx` | `ai-core`, E2E `vels` |
+| Gemini, the only model (ADR-0015) | `src/ai/config.ts` (`aiModel`), `src/ai/gemini.ts` (@google/genai), `src/ai/model.ts`, `src/ai/vels-route.ts`, `lib/ai.ts` (`infer`) | `ai-gemini`, `ai-resilience`, `ai-core` |
 | E2E (real Supabase) | `scripts/e2e.sh`, `tests/e2e/{lib.ts,seed.sql,cleanup.sql}` | 10 suites + `visual` + `perf` |
 | CI | `.github/workflows/ci.yml` | `check` + `test:db` + `build` per push/PR |
 

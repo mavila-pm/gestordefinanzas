@@ -27,20 +27,27 @@ Navegador (React 19, Server Components + Server Actions)
 Next.js 16 App Router (Vercel)  ── proxy.ts: refresca sesión y protege /app/* y /bienvenida
    ├─ app/…/page.tsx          lecturas con la sesión del usuario (lib/queries.ts, lib/planning.ts)
    ├─ app/…/actions.ts        escrituras validadas (src/web/*-input.ts) → funciones SQL seguras
-   ├─ app/api/…/route.ts      webhook de email, prueba de IA
+   ├─ app/api/…/route.ts      webhook de email
    ▼
 src/ (TypeScript puro, testeable)          lib/ (servidor: Supabase, IA, consultas)
-   domain → ingestion → engine → ai           lib/ai.ts = única puerta a proveedores de IA
+   domain → ingestion → engine → ai           lib/ai.ts = única puerta a Gemini (cuota → llamada → registro)
    ▼
 Supabase PostgreSQL: RLS por usuario, funciones security definer para escrituras, auditoría append-only
 ```
-Regla central: **FUENTE → EVENTO NORMALIZADO → MOTOR FINANCIERO**. El código específico de un banco vive solo en
-`src/ingestion/adapters/`. El dinero se calcula con el motor determinista; la IA solo interpreta (ADR-0006).
+Dos flujos, nada más:
+```
+Dinero:   ENTRADAS (email/SMS del banco, manual, Vels) → NORMALIZACIÓN (src/ingestion) → MOTOR FINANCIERO (src/engine)
+          → BASE DE DATOS / PLANIFICACIÓN (Supabase, lib/planning.ts) → VELS / PANTALLAS
+Lenguaje: PERSONA → VELS → INTÉRPRETE LOCAL (src/ai/interpreter.ts, vels-answers.ts) o GEMINI (src/ai/gemini.ts vía lib/ai.ts)
+          → HECHOS ESTRUCTURADOS VALIDADOS (schema.ts, vels-route.ts) → MOTOR FINANCIERO → RESPUESTA DE VELS
+```
+El código específico de un banco vive solo en `src/ingestion/adapters/`. El dinero lo calcula el motor determinista;
+Gemini solo interpreta (ADR-0006, ADR-0015). Invariantes financieros: `.claude/rules/financial.md`.
 Mapa detallado de módulos y tests: [`docs/architecture/structure.md`](docs/architecture/structure.md).
 
 ## Stack
 Next.js 16 · React 19 · TypeScript 5.9 · Supabase (PostgreSQL, Auth, RLS) · Vercel · Vitest · Playwright (`playwright-core`).
-Sin librerías de UI ni de animación: CSS propio con los tokens de `brand/VELSUNO/`. Dependencias de runtime: 7.
+Sin librerías de UI ni de animación: CSS propio con los tokens de `brand/VELSUNO/`. Dependencias de runtime: 8.
 
 ## Estructura de carpetas
 | Ruta | Contenido |
@@ -79,7 +86,6 @@ cp .env.example .env.local   # completa los valores públicos de Supabase
 | `GEMINI_API_KEY` | **secreta, servidor** | IA de Vels y onboarding (único proveedor). Sin ella, Vels responde solo con reglas |
 | `GEMINI_MODEL` | servidor, opcional | modelo (por defecto `gemini-3.8-flash`, en `src/ai/config.ts`) |
 | `AI_PRICES` | servidor, opcional | precio real del modelo (micro-USD por 1M tokens) para los topes de costo |
-| `AI_PROVIDER` | servidor, opcional | `none` apaga la IA |
 | `DATABASE_URL`, `INBOUND_EMAIL_SECRET`, `INGEST_EMAIL_DOMAIN` | **secretas, servidor** | Email Bridge (sin ellas el webhook responde 503) |
 
 Lista completa y comentada: [`.env.example`](.env.example). La service role de Supabase **nunca** se usa en la app.
@@ -121,7 +127,6 @@ CI (GitHub Actions, `.github/workflows/ci.yml`): `check` + `test:db` + `build` e
 |---|---|---|
 | `GET /auth/confirm` | route | confirma email / recuperación de contraseña (token_hash) |
 | `POST /api/inbound/email` | route | webhook Email Bridge (HMAC + anti-replay; 503 sin configurar) |
-| `POST /api/ai/chat` | route | prueba técnica de IA (sesión, mismo origen, solo `message`; apagado en producción) |
 | `GET /app/exportar` | route | exporta movimientos a CSV (protegido contra inyección de fórmulas) |
 | `app/app/actions.ts` | server actions | movimientos, revisión, tarjetas, cuentas, presupuestos, deudas, reglas, splits |
 | `app/app/plan/actions.ts` | server actions | Dinero libre: saldo, ingresos, pagos, aplicar plan, escenarios |
