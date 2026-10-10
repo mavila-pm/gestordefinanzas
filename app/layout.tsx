@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import { cookies } from 'next/headers';
+import { reduceMotionFrom, textSizeFrom } from '../src/web/preferences';
 import './globals.css';
 
 /**
@@ -30,10 +31,14 @@ export const viewport: Viewport = {
 const SYSTEM_THEME = `document.documentElement.dataset.theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const chosen = (await cookies()).get('vs-theme')?.value;
+  const jar = await cookies();
+  const chosen = jar.get('vs-theme')?.value;
   const theme = chosen === 'light' || chosen === 'dark' ? chosen : undefined;
+  // Device preferences (Ajustes → Apariencia / Accesibilidad), applied on the server: no flash, no layout jump.
+  const text = textSizeFrom(jar.get('vs-text')?.value);
+  const motion = reduceMotionFrom(jar.get('vs-motion')?.value) ? 'reduce' : undefined;
   return (
-    <html lang="es-PE" data-theme={theme} className={velsunoSans.variable} suppressHydrationWarning>
+    <html lang="es-PE" data-theme={theme} data-text={text === 'md' ? undefined : text} data-motion={motion} className={velsunoSans.variable} suppressHydrationWarning>
       <head>{!theme && <script dangerouslySetInnerHTML={{ __html: SYSTEM_THEME }} />}</head>
       <body>{children}</body>
     </html>

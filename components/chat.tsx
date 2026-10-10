@@ -106,7 +106,7 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
   const toBottom = useCallback((smooth = false) => {
     const el = list.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' });
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches && document.documentElement.dataset.motion !== 'reduce' ? 'smooth' : 'auto' });
     atBottom.current = true;
     setJump(false);
   }, []);

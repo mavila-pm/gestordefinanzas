@@ -13,7 +13,7 @@ export async function setDemoPlanAction(_p: ActionState, form: FormData): Promis
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.rpc('set_demo_plan', { p_plan: value });
   if (error) return { error: 'Esta cuenta no tiene modo demo.' };
-  revalidatePath('/app/cuenta');
+  revalidatePath('/app/ajustes/plan');
   return { message: value ? 'Simulación activada. Tu suscripción real no cambió.' : 'Volviste a tu plan real.' };
 }
 

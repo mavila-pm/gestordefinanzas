@@ -597,3 +597,63 @@ input:hover:not(:focus):not(:disabled), select:hover:not(:focus):not(:disabled),
 .split-bar .seg { min-width: 0; } .split-bar .fixed, .legend-row i.fixed { background: var(--text-primary); opacity: .8; } .split-bar .variable, .legend-row i.variable { background: var(--semantic-expense); }
 .legend-row { display: flex; gap: var(--space-24); margin: 0; } .legend-row div { display: grid; gap: 2px; } .legend-row dt { font-size: 12px; color: var(--text-secondary); } .legend-row dd { margin: 0; font-weight: 600; }
 .legend-row i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+
+/* Ajustes → Accesibilidad. Text size scales the whole interface (px-based tokens), so cards, tables, Vels and
+   navigation keep their proportions. Reduced motion: chosen here OR asked by the device (media query above). */
+html[data-text="sm"] body { zoom: .9375; }
+html[data-text="lg"] body { zoom: 1.125; }
+html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-motion="reduce"] *::after {
+  animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important;
+}
+
+/* Ajustes layout: sidebar of sections + content on desktop; a list that opens each section on mobile. */
+.settings-shell { display: grid; gap: var(--space-24); max-width: 1040px; margin: 0 auto; padding: var(--space-24) var(--space-16) var(--space-48); }
+.settings-shell > main { padding: 0; max-width: 680px; margin: 0; }
+.settings-nav { display: none; }
+.settings-list ul, .settings-nav ul { display: grid; gap: 2px; }
+.settings-list a { display: flex; align-items: center; gap: var(--space-12); min-height: 56px; padding: 0 var(--space-16); background: var(--surface-default); color: var(--text-primary); text-decoration: none; font-weight: 500; }
+.settings-list li:first-child a { border-radius: var(--radius-card) var(--radius-card) 0 0; } .settings-list li:last-child a { border-radius: 0 0 var(--radius-card) var(--radius-card); }
+.settings-list a > span { flex: 1; }
+.settings-list a > svg:last-child { color: var(--text-muted); }
+@media (min-width: 900px) {
+  .settings-shell { grid-template-columns: 220px minmax(0, 1fr); align-items: start; padding-top: var(--space-32); }
+  .settings-nav { display: block; position: sticky; top: var(--space-24); }
+  .settings-nav a { display: flex; align-items: center; gap: var(--space-12); min-height: 40px; padding: 0 var(--space-12); border-radius: var(--radius-control); color: var(--text-secondary); text-decoration: none; font-weight: 500; }
+  .settings-nav a:hover { background: var(--bg-secondary); color: var(--text-primary); }
+  .settings-nav a[aria-current="page"] { background: var(--surface-default); color: var(--text-primary); box-shadow: inset 3px 0 0 var(--brand-accent); }
+  .settings-mobile-only { display: none; }
+}
+@media (max-width: 899px) { .settings-desktop-only { display: none; } }
+.settings-back { display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); text-decoration: none; font-weight: 500; min-height: 44px; }
+@media (min-width: 900px) { .settings-back { display: none; } }
+.settings-section { display: grid; gap: var(--space-8); }
+.settings-section + .settings-section { margin-top: var(--space-32); }
+.settings-section-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); margin: 0; text-transform: none; }
+.settings-rows { background: var(--surface-default); border-radius: var(--radius-card); padding: 0 var(--space-16); }
+.settings-row, .settings-switch, .settings-choice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); min-height: 60px; padding: var(--space-12) 0; color: var(--text-primary); text-decoration: none; flex-wrap: wrap; }
+.settings-rows > * + * { border-top: 1px solid var(--border-subtle); }
+.settings-row-text { display: grid; gap: 2px; flex: 1 1 200px; min-width: 0; }
+.settings-row-label { font-weight: 600; font-size: 15px; }
+.settings-row-value { color: var(--text-secondary); text-align: right; overflow-wrap: anywhere; }
+.settings-choice { display: block; }
+.settings-choice legend { padding: 0; margin-bottom: var(--space-8); float: left; width: 100%; }
+.settings-choice .segments { clear: both; }
+.settings-choice > small { display: block; margin-top: var(--space-8); }
+.settings-section + form.settings-section:not(:has(> .settings-section-title)) { margin-top: var(--space-16); }
+.settings-switch input[type="checkbox"] { appearance: none; width: 44px; min-width: 44px; height: 26px; min-height: 26px; border-radius: var(--radius-pill); background: var(--border-control); position: relative; cursor: pointer; transition: background var(--duration-fast) var(--ease-standard); border: 0; padding: 0; }
+.settings-switch input[type="checkbox"]::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-default); transition: transform var(--duration-fast) var(--ease-standard); }
+.settings-switch input[type="checkbox"]:checked { background: var(--action-bg); }
+.settings-switch input[type="checkbox"]:checked::after { transform: translateX(18px); background: var(--action-fg); }
+.settings-switch input[type="checkbox"]:disabled { opacity: .6; cursor: not-allowed; }
+.settings-switch input[type="checkbox"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.usage-meter { display: grid; gap: var(--space-8); padding: var(--space-16) 0; }
+.avatar-initial { display: inline-grid; place-items: center; flex: none; border-radius: 50%; background: var(--brand-accent); color: var(--brand-primary); font-weight: 700; }
+.swatch { display: inline-block; width: 18px; height: 18px; border-radius: 50%; vertical-align: -4px; margin-right: 6px; box-shadow: inset 0 0 0 1px var(--border-subtle); }
+.swatch.citrico { background: var(--brand-accent); }
+
+/* Account entry: avatar → Ajustes (sidebar foot on desktop, topbar on mobile). */
+.sidebar .account-entry { display: flex; align-items: center; gap: var(--space-12); min-height: 52px; padding: var(--space-8) var(--space-12); border-radius: 12px; color: inherit; text-decoration: none; }
+.sidebar .account-entry:hover { background: var(--surface-default); }
+.account-text { display: grid; min-width: 0; }
+.account-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.topbar-avatar { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; border-radius: 50%; }

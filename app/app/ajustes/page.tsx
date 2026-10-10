@@ -1,78 +1,33 @@
-import Link from 'next/link';
-import { ActionForm } from '../../../components/action-form';
-import { ChangePasswordForm } from '../../../components/change-password-form';
-import { ProfileFields } from '../../../components/profile-fields';
-import { Icon } from '../../../components/ui/icon';
-import { Sheet } from '../../../components/ui/sheet';
-import { ThemeControl } from '../../../components/ui/theme-control';
-import { loadProfile } from '../../../lib/queries';
-import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
-import { shortFullName } from '../../../src/domain/profile';
 import { logout } from '../../auth/actions';
-import { saveProfileAction } from '../actions';
+import { SettingsNav } from '../../../components/settings-client';
+import { Avatar } from '../../../components/settings';
+import { createSupabaseServerClient } from '../../../lib/supabase/server';
+import { preferredName } from '../../../src/domain/profile';
+import { loadProfileData } from './load-profile';
+import { maskEmail, ProfileView } from './profile-view';
 
 export const metadata = { title: 'Ajustes' };
 
+/** Mobile: the list of sections (each opens its own screen). Desktop: the sidebar is in the layout; Perfil shows here. */
 export default async function Settings() {
   const supabase = await createSupabaseServerClient();
-  const [profile, user] = await Promise.all([loadProfile(supabase), authUser(supabase)]);
-  const name = shortFullName(profile);
+  const p = await loadProfileData(supabase);
+  const name = preferredName(p);
   return (
-    <main className="stack narrow-md">
-      <h1>Ajustes</h1>
-
-      <section className="group" aria-labelledby="g-profile">
-        <h2 id="g-profile" className="group-title">Perfil</h2>
-        <div className="rows">
-          <div className="setting">
-            <span className="setting-text">
-              <strong data-testid="profile-name">{name ?? 'Aún no nos dijiste tu nombre'}</strong>
-              <small className="muted">{user?.email}</small>
-            </span>
-            <Sheet label="Editar" triggerClassName="link" title="Tus datos" testId="profile-sheet" triggerLabel="Editar perfil">
-              <div className="sheet-body">
-                <ActionForm action={saveProfileAction} label="Perfil">
-                  <ProfileFields givenNames={profile.givenNames ?? ''} familyNames={profile.familyNames ?? ''} displayName={profile.displayName ?? ''} />
-                  <small className="muted">Te llamamos por el último campo. Tus nombres completos se guardan tal cual.</small>
-                  <button type="submit" className="wide">Guardar</button>
-                </ActionForm>
-              </div>
-            </Sheet>
-          </div>
+    <main className="stack" id="main" data-testid="settings">
+      <div className="settings-mobile-only stack-sm">
+        <h1>Ajustes</h1>
+        <div className="row card" style={{ justifyContent: 'flex-start', gap: 12, padding: 16 }}>
+          <Avatar name={name} size={44} />
+          <div><strong>{name ?? 'Tu cuenta'}</strong>{p.email && <p className="muted small">{maskEmail(p.email)}</p>}</div>
         </div>
-      </section>
-
-      <section className="group" aria-labelledby="g-look">
-        <h2 id="g-look" className="group-title">Apariencia</h2>
-        <div className="rows"><div className="setting"><ThemeControl hideLegend /></div></div>
-      </section>
-
-      <section className="group" aria-labelledby="g-data">
-        <h2 id="g-data" className="group-title">Datos</h2>
-        <div className="rows">
-          <a href="/app/exportar?month=all" className="setting link-row">
-            <span className="setting-text"><strong>Descargar mis movimientos</strong><small className="muted">Archivo CSV para Excel</small></span>
-            <Icon name="chevron" size={18} />
-          </a>
-        </div>
-      </section>
-
-      <section className="group" aria-labelledby="g-account">
-        <h2 id="g-account" className="group-title">Cuenta</h2>
-        <div className="rows">
-          <div className="setting">
-            <span className="setting-text"><strong>Contraseña</strong></span>
-            <Sheet label="Cambiar contraseña" triggerClassName="link" title="Cambiar contraseña" testId="password-sheet">
-              <div className="sheet-body"><ChangePasswordForm /></div>
-            </Sheet>
-          </div>
-          <Link href="/app/cuenta" className="setting link-row">
-            <span className="setting-text"><strong>Plan</strong></span>
-            <Icon name="chevron" size={18} />
-          </Link>
-          <form action={logout} className="setting"><button type="submit" className="link" style={{ paddingLeft: 0 }}>Cerrar sesión</button></form>
-        </div>
-      </section>
+        <SettingsNav variant="list" />
+        <form action={logout}><button type="submit" className="link" style={{ paddingLeft: 0 }}>Cerrar sesión</button></form>
+      </div>
+      <div className="settings-desktop-only stack">
+        <h1>Perfil</h1>
+        <ProfileView p={p} />
+      </div>
     </main>
   );
 }

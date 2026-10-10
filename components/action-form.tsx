@@ -14,6 +14,8 @@ export function ActionForm(props: {
   className?: string;
   label?: string;
   closeOnSuccess?: boolean;
+  /** Saves as soon as a control changes (switches, segmented choices): no separate "Guardar" button. */
+  autoSubmit?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(props.action, {});
   const sheet = useSheet();
@@ -29,7 +31,8 @@ export function ActionForm(props: {
     last.current = state;
   }, [state, sheet, props.closeOnSuccess]);
   return (
-    <form action={formAction} className={props.className ?? 'stack'} aria-label={props.label} aria-busy={pending}>
+    <form action={formAction} className={props.className ?? 'stack'} aria-label={props.label} aria-busy={pending}
+      onChange={props.autoSubmit ? (e) => e.currentTarget.requestSubmit() : undefined}>
       <input type="hidden" name="client_ref" value={clientRef} />
       <fieldset disabled={pending} className="bare">{props.children}</fieldset>
       {state.error && <p role="alert" className="error">{state.error}</p>}
