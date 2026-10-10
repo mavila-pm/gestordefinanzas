@@ -102,9 +102,14 @@ export async function createCardAction(_prev: ActionState, form: FormData): Prom
   const { supabase, user } = await session();
   if (!user) return { error: errorText('not_authenticated') };
   const c = parsed.value;
+  // Optional credit details in the same step (corte, pago, línea): validated by the cycle parser; blank = unknown.
+  const wantsCycle = c.kind === 'credit' && ['statementDay', 'paymentDay', 'limit'].some((k) => typeof form.get(k) === 'string' && String(form.get(k)).trim());
+  const cycle = wantsCycle ? parseCardCycleForm((k) => form.get(k)) : null;
+  if (cycle && !cycle.ok) return { error: 'Revisa los días (1 al 31) y la línea.' };
   // Cards are user-owned rows protected by RLS (user_id must equal the session user).
   const { data: card, error } = await supabase.from('cards').insert({
     user_id: user.id, alias: c.alias, institution_code: c.institution, kind: c.kind, currency: c.currency, last4: c.last4,
+    ...(cycle?.ok ? { credit_limit_minor: cycle.value.creditLimitMinor, statement_day: cycle.value.statementDay, payment_day: cycle.value.paymentDay } : {}),
   }).select('id').single();
   if (error || !card) return { error: errorText(error?.code === '23505' ? 'duplicate_card' : null) };
   // Past unlinked movements with these digits are linked in the database (only when this card is unambiguous; audited).

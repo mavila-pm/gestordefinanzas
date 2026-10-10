@@ -129,8 +129,8 @@ await runSuite('vels', async ({ page, check }) => {
   await act(page, () => stf.locator('button[type=submit]').click());
   const sts = (await sb.from('card_statements').select('billed_minor,minimum_minor,used_minor,source')).data ?? [];
   check('statement saved once: billed S/ 3,000, minimum S/ 150, used unknown (null, not 0), manual', sts.length === 1 && Number(sts[0]!.billed_minor) === 300000 && Number(sts[0]!.minimum_minor) === 15000 && sts[0]!.used_minor === null && sts[0]!.source === 'manual', JSON.stringify(sts));
-  const pos = ((await page.getByTestId('card-position').first().textContent()) ?? '').replace(/\s+/g, ' ');
-  check('Tarjetas shows billed + due, minimum-only carry with interest, and when today\'s purchase is paid', pos.includes('Facturado S/ 3,000.00') && pos.includes('pasan S/ 2,850.00 al próximo ciclo') && pos.includes('Lo que compres hoy se paga el'), pos);
+  const pos = ((await page.getByTestId('card-detail').first().textContent()) ?? '').replace(/\s+/g, ' ');
+  check('Tarjetas shows billed + due, minimum-only carry with interest, and when today\'s purchase is paid', pos.includes('Por pagar este cicloS/ 3,000.00') && pos.includes('pasan S/ 2,850.00 al próximo ciclo') && pos.includes('se paga el'), pos);
   await openVels(page);
   await say(page, '¿Hasta cuánto puedo usar la tarjeta?');
   const cl = await lastVels(page);

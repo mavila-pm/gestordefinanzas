@@ -1,4 +1,6 @@
 import type { Currency } from '../domain/money';
+import type { Transaction } from '../domain/types';
+import { financialEffect } from '../domain/financial-effect';
 
 /**
  * Resumen blocks that summarize what is already registered. Pure. Nothing here estimates, scores or invents: a card
@@ -57,4 +59,28 @@ export function creditSignals(cards: readonly CreditCardFacts[], overdueCount: n
       : { code: 'no_overdue', level: 'good', text: 'Ningún pago vencido sin registrar.' });
   }
   return out;
+}
+
+export interface InstrumentMonth { inMinor: number; outMinor: number; internalCount: number; cashCount: number; pendingCount: number }
+
+/**
+ * One card's or account's month, from its own confirmed movements (one currency): money in (income), money out
+ * (spending net of refunds), and apart — never as income or spending — own transfers and card payments
+ * (internal_movement) and ATM withdrawals (transfer_to_cash). Pending movements are only counted. Movements ≠ balance.
+ */
+export function instrumentMonth(txs: readonly Pick<Transaction, 'type' | 'amountMinor' | 'currency' | 'status' | 'occurredAt'>[], month: string, currency: Currency): InstrumentMonth {
+  const r: InstrumentMonth = { inMinor: 0, outMinor: 0, internalCount: 0, cashCount: 0, pendingCount: 0 };
+  for (const t of txs) {
+    if (t.currency !== currency || t.occurredAt.slice(0, 7) !== month || t.status === 'ignored') continue;
+    if (t.status !== 'confirmed') { r.pendingCount++; continue; }
+    switch (financialEffect(t.type)) {
+      case 'income': r.inMinor += t.amountMinor; break;
+      case 'expense': r.outMinor += t.amountMinor; break;
+      case 'expense_reduction': r.outMinor -= t.amountMinor; break;
+      case 'internal_movement': r.internalCount++; break;
+      case 'transfer_to_cash': r.cashCount++; break;
+      case 'undetermined': break;
+    }
+  }
+  return r;
 }

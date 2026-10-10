@@ -29,7 +29,7 @@ await runSuite('import-learning', async ({ page, check }) => {
   await page.fill(`${acc} input[name=last4]`, '9001');
   await page.selectOption(`${acc} select[name=institution]`, 'BBVA');
   await act(page, () => page.click(`${acc} button[type=submit]`));
-  check('account registered', ((await page.getByTestId('account-list').textContent()) ?? '').includes('E2E BBVA Ahorros ****9001'));
+  check('account registered', ((await page.getByTestId('account-list').textContent()) ?? '').includes('E2E BBVA Ahorros ···· 9001'));
   // The sheet closed on success: open it again and try the same digits.
   await page.getByRole('button', { name: 'Agregar cuenta' }).first().click();
   await page.fill(`${acc} input[name=alias]`, 'E2E BBVA Otra');
@@ -42,9 +42,12 @@ await runSuite('import-learning', async ({ page, check }) => {
   const card = 'form[aria-label="Registrar tarjeta"]';
   await page.fill(`${card} input[name=alias]`, 'E2E Visa');
   await page.fill(`${card} input[name=last4]`, '4821');
-  await page.selectOption(`${card} select[name=kind]`, 'credit');
+  await page.check(`${card} input[name=kind][value=credit]`);
+  check('card preview updates live (alias + last 4 only)', ((await page.locator(`${card} .cv-preview`).textContent()) ?? '').includes('•••• 4821'));
+  await page.click(`${card} button:has-text("Continuar")`);
   await act(page, () => page.click(`${card} button[type=submit]`));
-  check('card registered', ((await page.getByTestId('card-list').textContent()) ?? '').includes('E2E Visa ****4821'));
+  const cardList = (await page.getByTestId('card-list').textContent()) ?? '';
+  check('card registered', cardList.includes('E2E Visa') && cardList.includes('•••• 4821'), cardList);
 
   // ── TASK-006: import pasted notifications ──────────────────────────────────────────────────────────────
   async function importText(channel: 'sms' | 'email', text: string, subject = ''): Promise<{ outcome: string | null; msg: string; href: string | null }> {
@@ -134,7 +137,7 @@ await runSuite('import-learning', async ({ page, check }) => {
 
   // Deactivate card
   await page.goto(`${BASE}/app/tarjetas`);
-  await page.getByRole('button', { name: 'Opciones de E2E Visa' }).click();
+  await page.getByTestId('card-detail').getByRole('button', { name: 'Desactivar', exact: true }).click();
   await act(page, () => page.click('form[aria-label="Desactivar E2E Visa"] button'));
   check('card deactivated', (await page.getByTestId('card-list').count()) === 0);
 

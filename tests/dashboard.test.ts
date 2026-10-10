@@ -80,3 +80,16 @@ describe('Vels: landing questions are answered by the engine (0 AI quota)', () =
     expect(detectIntent('¿qué pasa si pago 1000 a la tarjeta?').k).toBe('what_pay_debt');
   });
 });
+
+import { instrumentMonth } from '../src/engine/dashboard';
+describe('Cuentas y tarjetas: the month of one card or account', () => {
+  const t = (type: Transaction['type'], amountMinor: number, o: Partial<Transaction> = {}) => tx({ type, amountMinor, occurredAt: '2026-10-10T12:00:00-05:00', ...o });
+  it('CARD-03 / ACCOUNT-01: a card payment and an own transfer are neither income nor spending; refunds reduce spending', () => {
+    const r = instrumentMonth([
+      t('credit_card_purchase', 10000), t('credit_card_payment', 10000), t('internal_transfer', 50000), t('income', 550000),
+      t('refund', 2000), t('withdrawal', 20000), t('expense', 999, { status: 'review_required' }), t('expense', 5000, { currency: 'USD' }),
+      t('expense', 7000, { occurredAt: '2026-09-30T12:00:00-05:00' }),
+    ], '2026-10', 'PEN');
+    expect(r).toEqual({ inMinor: 550000, outMinor: 8000, internalCount: 2, cashCount: 1, pendingCount: 1 });
+  });
+});
