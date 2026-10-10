@@ -132,3 +132,17 @@ describe('Vels on subscriptions (engine answers, 0 AI quota)', () => {
     expect(pause.actions?.[0]).toMatchObject({ href: '/app/compromisos/suscripciones?id=p1' });
   });
 });
+
+import { knownSum } from '../src/engine/subscriptions';
+describe('review fixes', () => {
+  it('unknown ≠ 0: a sum of only unknown prices is "por confirmar", a partial sum stays a number', () => {
+    expect(knownSum(0, 2)).toBeNull();
+    expect(knownSum(4490, 1)).toBe(4490);
+    expect(knownSum(0, 0)).toBe(0);
+  });
+  it('everyday words do not trigger subscription answers without "suscripción" or the full name', () => {
+    expect(detectIntent('¿cuánto gasté en amazon?').k).not.toBe('subs_paid');
+    expect(detectIntent('¿cuánto pagué por mi suscripción de amazon?')).toEqual({ k: 'subs_paid', name: 'Prime Video' });
+    expect(detectIntent('¿Cuánto pagué por Disney+?')).toEqual({ k: 'subs_paid', name: 'Disney+' });
+  });
+});

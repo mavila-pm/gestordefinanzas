@@ -14,7 +14,7 @@ import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../..
 import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';
 import { loadBudgets, loadCatalog, loadCommitmentData, loadEntitlements } from '../../../lib/queries';
 import { loadSubscriptions } from '../../../lib/subscriptions';
-import { subscriptionTotals } from '../../../src/engine/subscriptions';
+import { knownSum, subscriptionTotals } from '../../../src/engine/subscriptions';
 import { historyStart, visibleMonth } from '../../../src/domain/entitlements';
 import { limaToday, shortDate } from '../../../src/domain/dates';
 
@@ -179,7 +179,7 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
               <section aria-labelledby={`subs-h-${currency}`} className="card stack-sm" data-testid={`an-subs-${currency}`}>
                 <div className="row"><h2 id={`subs-h-${currency}`}>Suscripciones</h2><Link href="/app/compromisos/suscripciones" className="section-link">Ver<Icon name="chevron" size={16} /></Link></div>
                 <div className="stat-grid">
-                  <div><span className="muted small">Costo mensual (estimado)</span><p className="big">{m(subTotal.monthlyMinor)}</p></div>
+                  <div><span className="muted small">Costo mensual (estimado)</span><p className="big">{knownSum(subTotal.monthlyMinor, subTotal.monthlyUnknown) === null ? 'Por confirmar' : m(subTotal.monthlyMinor)}</p></div>
                   <div><span className="muted small">Pagado este mes</span><p className="big">{m(subTotal.paidMonthMinor)}</p></div>
                 </div>
                 <small className="muted">{plural(subTotal.active, 'suscripción activa', 'suscripciones activas')}{subTotal.monthlyUnknown ? ` · ${subTotal.monthlyUnknown} sin precio` : ''}. Lo pagado son cobros confirmados; el costo mensual es una proyección.</small>

@@ -13,6 +13,7 @@ import { addDays, limaToday } from '../../../src/domain/dates';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSavingsGoalForm, parseSettingsForm } from '../../../src/web/planning-input';
 import { isUuid } from '../../../src/web/transaction-input';
+import { financialEffect } from '../../../src/domain/financial-effect';
 import type { ActionState } from '../actions';
 
 const SAVE_ERROR = 'No se guardó. Intenta de nuevo.';
@@ -155,6 +156,14 @@ export async function markObligationPaidAction(_p: ActionState, form: FormData):
   if (!isUuid(obligationId) || !isUuid(transactionId) || typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
+  // Only a confirmed outgoing movement in the payment's own currency can settle it (PEN ≠ USD; an income never pays a bill).
+  const [{ data: tx }, { data: ob }] = await Promise.all([
+    supabase.from('transactions').select('type,status,currency,direction').eq('id', transactionId).maybeSingle(),
+    supabase.from('fixed_expenses').select('currency').eq('id', obligationId).maybeSingle(),
+  ]);
+  if (!tx || !ob || tx.status !== 'confirmed' || tx.direction !== 'outflow' || tx.currency !== ob.currency || financialEffect(tx.type) === 'income') {
+    return { error: 'Ese movimiento no es un pago confirmado en la misma moneda.' };
+  }
   const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, fixed_expense_id: obligationId, period, transaction_id: transactionId });
   if (error) return { error: error.code === '23505' ? 'Ese pago ya estaba registrado.' : SAVE_ERROR };
   return done('Pago confirmado. El siguiente ya está en tus próximos pagos.');

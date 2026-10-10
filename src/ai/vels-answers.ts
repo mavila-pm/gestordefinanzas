@@ -31,7 +31,9 @@ export function detectIntent(message: string): Intent {
   const amount = findAmounts(t)[0];
   const name = nameIn(t);
   // Mis suscripciones: totals, what was paid for one service, and pausing (only in Velsuno; never cancels the service).
-  const service = matchProvider(t)?.name ?? null;
+  // Some aliases are everyday words ("amazon", "office", "max"): they count only next to "suscripción" or the full name.
+  const known = matchProvider(t);
+  const service = known && (/\bsuscripci/.test(t) || ` ${t.replace(/\+/g, ' plus ')} `.includes(` ${fold(known.name).replace(/\+/g, ' plus')} `)) ? known.name : null;
   if (service && /\b(pausa|pausar|pausala|cancela|cancelar|cancelala|dar de baja|da de baja|quita|quitar|ya no (pago|quiero))\b/.test(t)) return { k: 'subs_pause', name: service };
   if (service && /\b(cuanto|que tanto) (pague|he pagado|gaste|he gastado|me cobraron|me ha cobrado)\b/.test(t)) return { k: 'subs_paid', name: service };
   if (/\bsuscripcion(es)?\b/.test(t) && /\b(cuanto|cuantas|cuales|que|total|gasto|pago|cuestan)\b/.test(t)) return { k: 'subs_total' };

@@ -58,7 +58,7 @@ async function view(supabase: SupabaseClient): Promise<View> {
     timeline: planTimeline(d, 14),
     inputs: Object.fromEntries(currencies.map((c) => [c, planInputFor(d, c)])),
     subscriptions: (subs?.subs ?? []).filter((x) => subscriptionState(x, d.today) !== 'ended').map((x) => {
-      const paid = (subs?.settlements ?? []).filter((p) => p.obligationId === x.id && p.status === 'paid' && p.amountMinor !== null && p.occurredOn?.startsWith(year));
+      const paid = (subs?.settlements ?? []).filter((p) => p.obligationId === x.id && p.status === 'paid' && p.amountMinor !== null && p.currency === x.currency && p.occurredOn?.startsWith(year));
       return { id: x.id, name: x.name, currency: x.currency, amountMinor: x.amountMinor, monthlyMinor: monthlyEquivalentMinor(x),
         nextDate: nextCharge(x, d.today, settledBy.get(x.id) ?? new Set())?.date ?? null, paidYearMinor: paid.reduce((n, p) => n + p.amountMinor!, 0), paidYearCount: paid.length };
     }),

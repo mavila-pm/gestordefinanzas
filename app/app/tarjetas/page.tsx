@@ -23,6 +23,8 @@ import { createAccountAction, createCardAction, deactivateAction, updateCardCycl
 export const metadata = { title: 'Cuentas y tarjetas' };
 const BANKS = <><option value="BCP">BCP</option><option value="BBVA">BBVA</option><option value="INTERBANK">Interbank</option><option value="">Otro</option></>;
 const CUR = <><option value="PEN">Soles (S/)</option><option value="USD">Dólares (US$)</option></>;
+/** Enough for any person's two months; if it is ever reached, the month figures say "parcial" instead of being silently low. */
+const LIMIT = 1500;
 const m = (v: number | null, c: Currency) => (v === null ? null : formatMoney({ amountMinor: v, currency: c }));
 
 function Deactivate({ id, kind, name }: { id: string; kind: 'card' | 'account'; name: string }) {
@@ -60,8 +62,8 @@ export default async function CardsAndAccounts({ searchParams }: { searchParams:
   const month = limaMonth();
   const since = new Date(Date.now() - 62 * 86_400_000).toISOString();
   const [cardTx, accTx] = await Promise.all([
-    card && isUuid(card.id) ? supabase.from('transactions').select(TRANSACTION_SELECT).eq('card_id', card.id).gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(60) : null,
-    account && isUuid(account.id) ? supabase.from('transactions').select(TRANSACTION_SELECT).eq('account_id', account.id).gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(60) : null,
+    card && isUuid(card.id) ? supabase.from('transactions').select(TRANSACTION_SELECT).eq('card_id', card.id).gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(LIMIT) : null,
+    account && isUuid(account.id) ? supabase.from('transactions').select(TRANSACTION_SELECT).eq('account_id', account.id).gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(LIMIT) : null,
   ]);
   const cardMoves = ((cardTx?.data ?? []) as unknown as TransactionRow[]).map(rowToTransaction);
   const accMoves = ((accTx?.data ?? []) as unknown as TransactionRow[]).map(rowToTransaction);
@@ -69,6 +71,8 @@ export default async function CardsAndAccounts({ searchParams }: { searchParams:
   const p = view?.position ?? null;
   const cur = (card?.currency ?? 'PEN') as Currency;
   const cardMonth = card ? instrumentMonth(cardMoves, month, cur) : null;
+  const cardPartial = cardMoves.length >= LIMIT;
+  const accPartial = accMoves.length >= LIMIT;
   const accMonth = account ? instrumentMonth(accMoves, month, account.currency as Currency) : null;
   const usePct = p && p.limitMinor && p.usedMinor !== null ? Math.round((p.usedMinor / p.limitMinor) * 100) : null;
 
@@ -150,7 +154,7 @@ export default async function CardsAndAccounts({ searchParams }: { searchParams:
 
                 <section className="card stack-sm" aria-labelledby="h-card-moves">
                   <div className="row"><h3 id="h-card-moves">Movimientos</h3>
-                    {cardMonth && <small className="muted">{monthLabel(month)}: {m(cardMonth.outMinor, cur)} en compras{cardMonth.internalCount ? ` · ${plural(cardMonth.internalCount, 'pago de tarjeta', 'pagos de tarjeta')} (no es gasto)` : ''}</small>}</div>
+                    {cardMonth && <small className="muted">{monthLabel(month)}{cardPartial ? ' (parcial)' : ''}: {m(cardMonth.outMinor, cur)} en compras{cardMonth.internalCount ? ` · ${plural(cardMonth.internalCount, 'pago de tarjeta', 'pagos de tarjeta')} (no es gasto)` : ''}</small>}</div>
                   {cardMoves.length === 0 ? <p className="muted small">Sin movimientos con esta tarjeta en los últimos dos meses.</p> : (
                     <ul className="tx-list" data-testid="card-moves">{cardMoves.slice(0, 8).map((t) => <li key={t.id}><TxRow t={t} when={limaDayLabel(t.occurredAt)} /></li>)}</ul>
                   )}
@@ -200,7 +204,7 @@ export default async function CardsAndAccounts({ searchParams }: { searchParams:
                   <Fact label="Transferencias propias" value={String(accMonth.internalCount)} note="no son ingreso ni gasto" />
                   {accMonth.cashCount > 0 && <Fact label="Retiros de efectivo" value={String(accMonth.cashCount)} />}
                 </dl>
-                <small className="muted">Son los movimientos de {monthLabel(month).toLowerCase()}, no el saldo de la cuenta.{accMonth.pendingCount ? ` ${plural(accMonth.pendingCount, 'movimiento por revisar aún no cuenta', 'movimientos por revisar aún no cuentan')}.` : ''}</small>
+                <small className="muted">Son los movimientos de {monthLabel(month).toLowerCase()}{accPartial ? ' (parcial)' : ''}, no el saldo de la cuenta.{accMonth.pendingCount ? ` ${plural(accMonth.pendingCount, 'movimiento por revisar aún no cuenta', 'movimientos por revisar aún no cuentan')}.` : ''}</small>
                 {accMoves.length === 0 ? <p className="muted small">Sin movimientos en esta cuenta en los últimos dos meses.</p> : (
                   <ul className="tx-list" data-testid="account-moves">{accMoves.slice(0, 8).map((t) => <li key={t.id}><TxRow t={t} when={limaDayLabel(t.occurredAt)} /></li>)}</ul>
                 )}

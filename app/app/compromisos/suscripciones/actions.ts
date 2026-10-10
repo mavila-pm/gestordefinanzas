@@ -39,8 +39,11 @@ export async function saveSubscriptionAction(_p: ActionState, form: FormData): P
   const nextDate = String(form.get('nextDate'));
   const id = form.get('id');
   if (isUuid(id)) {
-    // Editing a price or date changes the plan from now on; past payments keep their real amounts.
-    const { data, error } = await supabase.from('fixed_expenses').update(row).eq('id', id).eq('kind', 'subscription').select('id');
+    // Editing a price or date changes the plan from now on; past payments keep their real amounts. The next charge the
+    // person confirms here wins: charges before it stay suspended, and a stale suspension ends (the form shows the
+    // current next charge, so an unchanged date keeps an existing pause as it is).
+    const paused = startPause({ frequency: v.frequency, anchorMonth: v.anchorMonth, dueDay: v.dueDay, dueDayMax: null, targetDay: null }, today, nextDate);
+    const { data, error } = await supabase.from('fixed_expenses').update({ ...row, paused_until: paused }).eq('id', id).eq('kind', 'subscription').select('id');
     if (error || !data?.length) return { error: SAVE_ERROR };
     return done('Suscripción actualizada.');
   }
@@ -61,8 +64,9 @@ export async function convertToSubscriptionAction(_p: ActionState, form: FormDat
   if (!isUuid(id)) return { error: SAVE_ERROR };
   const supabase = await createSupabaseServerClient();
   if (!(await authUser(supabase))) return { error: SAVE_ERROR };
-  const { data: r } = await supabase.from('fixed_expenses').select('name').eq('id', id).maybeSingle();
-  if (!r) return { error: SAVE_ERROR };
+  // Only what Mis suscripciones offers: an active payment that names a known service — never a card or loan payment.
+  const { data: r } = await supabase.from('fixed_expenses').select('name,kind,active,ended_on').eq('id', id).maybeSingle();
+  if (!r || !r.active || r.ended_on || r.kind === 'card' || r.kind === 'loan' || !matchProvider(r.name)) return { error: SAVE_ERROR };
   const { data, error } = await supabase.from('fixed_expenses').update({ kind: 'subscription', provider: matchProvider(r.name)?.slug ?? null, updated_at: new Date().toISOString() })
     .eq('id', id).neq('kind', 'subscription').select('id');
   return error || !data?.length ? { error: SAVE_ERROR } : done('Listo: ahora está en tus suscripciones, con su historial.');

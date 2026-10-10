@@ -107,3 +107,6 @@ export function subscriptionTotals(subs: readonly SubscriptionRow[], settlements
   }
   return [...out.values()].sort((a, b) => (a.currency === 'PEN' ? -1 : b.currency === 'PEN' ? 1 : 0));
 }
+
+/** A sum shown to the person: null ("por confirmar") when every item in it has an unknown price — never S/ 0. */
+export const knownSum = (minor: number, unknownCount: number): number | null => (minor === 0 && unknownCount > 0 ? null : minor);

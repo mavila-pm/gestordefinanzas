@@ -29,7 +29,7 @@ import { creditSignals, creditUse, spendSlices, type CreditCardFacts } from '../
 import { loadCardViews } from '../../../lib/cards';
 import { fold } from '../../../src/ai/text';
 import { loadSubscriptions } from '../../../lib/subscriptions';
-import { nextCharge, subscriptionState, subscriptionTotals } from '../../../src/engine/subscriptions';
+import { knownSum, nextCharge, subscriptionState, subscriptionTotals } from '../../../src/engine/subscriptions';
 import { SubLogo } from '../../../components/sub-logo';
 
 /**
@@ -262,7 +262,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           {isCurrent && subsTotals.length > 0 && (
             <section className="card stack-sm o-subs" aria-labelledby="h-subs" data-testid="home-subscriptions">
               <div className="row"><h2 id="h-subs">Suscripciones</h2><Link href="/app/compromisos/suscripciones" className="section-link">Ver<Icon name="chevron" size={16} /></Link></div>
-              <small className="muted">{subsTotals.map((t) => `${money(t.monthlyMinor, t.currency)} al mes (estimado)`).join(' · ')}</small>
+              <small className="muted">{subsTotals.map((t) => { const k = knownSum(t.monthlyMinor, t.monthlyUnknown); return k === null ? 'Costo mensual por confirmar' : `${money(k, t.currency)} al mes (estimado)${t.monthlyUnknown ? ` + ${t.monthlyUnknown} sin precio` : ''}`; }).join(' · ')}</small>
               {subsNext.length > 0 && (
                 <ul className="plain stack-sm">
                   {subsNext.map(({ x, n }) => (

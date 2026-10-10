@@ -12,7 +12,7 @@ import { addDays, limaToday, shortDate } from '../../../../src/domain/dates';
 import { formatMoney, type Currency } from '../../../../src/domain/money';
 import { plural } from '../../../../src/domain/plural';
 import { providerBySlug } from '../../../../src/domain/subscriptions';
-import { monthlyEquivalentMinor, nextCharge, paymentHistory, subscriptionState, subscriptionTotals, type SubscriptionRow } from '../../../../src/engine/subscriptions';
+import { knownSum, monthlyEquivalentMinor, nextCharge, paymentHistory, subscriptionState, subscriptionTotals, type SubscriptionRow } from '../../../../src/engine/subscriptions';
 import { isUuid } from '../../../../src/web/transaction-input';
 import { markObligationPaidAction } from '../../plan/actions';
 import { convertToSubscriptionAction, saveSubscriptionAction } from './actions';
@@ -168,9 +168,9 @@ export default async function Subscriptions({ searchParams }: { searchParams: Pr
       {totals.map((t) => (
         <section key={t.currency} className="kpis sub-kpis" aria-label={`Suscripciones en ${t.currency === 'PEN' ? 'soles' : 'dólares'}`} data-testid={`sub-totals-${t.currency}`}>
           <div className="kpi"><span>Activas{totals.length > 1 ? ` · ${t.currency}` : ''}</span><strong>{t.active}</strong></div>
-          <div className="kpi"><span>Próximos 30 días</span><strong>{money(t.next30Minor, t.currency)}</strong>
+          <div className="kpi"><span>Próximos 30 días</span><strong className={knownSum(t.next30Minor, t.next30Unknown) === null ? 'unknown' : ''}>{knownSum(t.next30Minor, t.next30Unknown) === null ? 'Por confirmar' : money(t.next30Minor, t.currency)}</strong>
             <small className="muted">{plural(t.next30Count, 'cobro', 'cobros')}{t.next30Unknown ? ` · ${t.next30Unknown} por confirmar` : ''}</small></div>
-          <div className="kpi"><span>Costo mensual</span><strong>{money(t.monthlyMinor, t.currency)}</strong>
+          <div className="kpi"><span>Costo mensual</span><strong className={knownSum(t.monthlyMinor, t.monthlyUnknown) === null ? 'unknown' : ''}>{knownSum(t.monthlyMinor, t.monthlyUnknown) === null ? 'Por confirmar' : money(t.monthlyMinor, t.currency)}</strong>
             <small className="muted">Estimado{t.monthlyUnknown ? ` · sin ${plural(t.monthlyUnknown, 'precio', 'precios')}` : ''}</small></div>
           <div className="kpi"><span>Pagado este mes</span><strong>{money(t.paidMonthMinor, t.currency)}</strong>
             <small className="muted">{t.paidMonthCount ? `${plural(t.paidMonthCount, 'pago confirmado', 'pagos confirmados')}` : 'Sin pagos confirmados'}</small></div>
