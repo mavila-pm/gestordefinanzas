@@ -6,7 +6,7 @@ import { shortDate } from '../src/domain/dates';
 
 /**
  * Resumen opens with what the person can use until the next income (ADR-0005), explained by one bar:
- * pagos + reservado + libre = saldo. Estimated stays "Estimado"; a missing datum is one tap away; no balance → no number.
+ * pagos + reservado + disponible = saldo. Estimated stays "Estimado"; a missing datum is one tap away; no balance → no number.
  */
 const money = (v: number, c: Currency) => formatMoney({ amountMinor: Math.abs(v), currency: c });
 /** Short name of the first missing datum ("monto de Internet"), from the engine's own message. */
@@ -24,19 +24,19 @@ export function FreeHero({ p }: { p: Plan }) {
   const fix = p.missing.find((m) => m.code !== 'income_window') ?? null;
   if (!b || !p.base) {
     return (
-      <section className="hero" aria-label="Dinero libre" data-testid="free-summary" data-status="incomplete">
-        <span className="label">Dinero libre</span>
-        <p>Para calcularlo necesito cuánto tienes hoy y cuándo es tu próximo ingreso. No asumo S/ 0.</p>
-        <Link href="/app/plan" className="button" style={{ justifySelf: 'start' }}>Calcular mi dinero libre</Link>
+      <section className="hero" aria-label="Dinero disponible" data-testid="free-summary" data-status="incomplete">
+        <span className="label">Dinero disponible</span>
+        <p>Para calcularlo necesito cuánto tienes hoy y cuándo es tu próximo ingreso.</p>
+        <Link href="/app/plan" className="button" style={{ justifySelf: 'start' }}>Calcular</Link>
       </section>
     );
   }
   const shown = Math.max(0, b.freeMinor);
   const days = p.nextIncome ? daysBetween(p.from, p.nextIncome.date) : null;
   return (
-    <section className="hero" aria-label="Dinero libre" data-testid="free-summary" data-status={p.status}>
+    <section className="hero" aria-label="Dinero disponible" data-testid="free-summary" data-status={p.status}>
       <div className="hero-top">
-        <span className="label">Dinero libre</span>
+        <span className="label">Dinero disponible</span>
         {p.status !== 'confirmed' && <span className="state">Estimado</span>}
       </div>
       <p className="figure" data-testid="free-summary-amount">{b.freeMinor < 0 ? 'Faltan ' : ''}{money(b.freeMinor, c)}</p>
@@ -45,7 +45,7 @@ export function FreeHero({ p }: { p: Plan }) {
           {days !== null && days > 0 ? ` (${days} día${days === 1 ? '' : 's'})` : ''}.</small>
       )}
       <div className="free-bar" role="img" data-testid="free-bar"
-        aria-label={`De tu saldo de ${money(p.base.amountMinor, c)}: ${money(b.committedMinor, c)} en pagos, ${money(b.setAsideMinor, c)} reservado y ${money(shown, c)} libre`}>
+        aria-label={`De tu saldo de ${money(p.base.amountMinor, c)}: ${money(b.committedMinor, c)} en pagos, ${money(b.setAsideMinor, c)} reservado y ${money(shown, c)} disponible`}>
         <span className="seg committed" style={{ flexGrow: b.committedMinor }} />
         <span className="seg set-aside" style={{ flexGrow: b.setAsideMinor }} />
         <span className="seg free" style={{ flexGrow: shown }} />
@@ -53,7 +53,7 @@ export function FreeHero({ p }: { p: Plan }) {
       <dl className="free-legend">
         <div><dt><i className="committed" />Pagos</dt><dd data-testid="free-committed">{money(b.committedMinor, c)}</dd></div>
         <div><dt><i className="set-aside" />Reservado</dt><dd data-testid="free-set-aside">{money(b.setAsideMinor, c)}</dd></div>
-        <div><dt><i className="free" />Libre</dt><dd>{money(shown, c)}</dd></div>
+        <div><dt><i className="free" />Disponible</dt><dd>{money(shown, c)}</dd></div>
       </dl>
       <div className="hero-foot">
         <span>{fix ? (p.missing.length === 1 ? `Falta 1 dato: ${missingLabel(fix).replace(/^(el|la) /, '')}` : `Faltan ${p.missing.length} datos, empieza por ${missingLabel(fix)}`) : `Saldo ${money(p.base.amountMinor, c)}`}</span>
@@ -72,7 +72,7 @@ export function ComingUp({ p }: { p: Plan }) {
   const day = (d: string | null) => d ? <><b>{Number(d.slice(8, 10))}</b>{shortDate(d).split(' ')[1]}</> : <b>?</b>;
   return (
     <section aria-labelledby="h-coming" className="stack-sm">
-      <div className="row"><h2 id="h-coming">Lo que viene</h2><Link href="/app/compromisos" className="section-link">Ver todo</Link></div>
+      <div className="row"><h2 id="h-coming">Próximos pagos</h2><Link href="/app/compromisos" className="section-link">Ver todo</Link></div>
       <ul className="plain coming card" data-testid="coming-up">
         {lines.map((l, i) => (
           <li key={i}>

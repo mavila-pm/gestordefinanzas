@@ -1,29 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Currency } from '../src/domain/money';
-import { linesToApply, sameAsSeen, validAppliedLines, type AppliedPlan } from '../src/engine/applied';
+import { linesToApply, sameAsSeen } from '../src/engine/applied';
 import { planFor, type PlanningData } from './planning';
 
 /** ADR-0013: saved plans (reservations), read and written under the person's session (RLS). */
-const SELECT = 'id,currency,status,base_kind,base_minor,from_date,until_date,reserved_minor,free_minor,plan_status,lines,created_at,closed_at';
-
-function toApplied(r: Record<string, unknown>): AppliedPlan {
-  return {
-    id: r.id as string, currency: r.currency as Currency, status: r.status as AppliedPlan['status'], baseKind: r.base_kind as AppliedPlan['baseKind'],
-    baseMinor: Number(r.base_minor), fromDate: r.from_date as string, untilDate: r.until_date as string, reservedMinor: Number(r.reserved_minor),
-    freeMinor: Number(r.free_minor), planStatus: r.plan_status as AppliedPlan['planStatus'], lines: validAppliedLines(r.lines),
-    createdAt: r.created_at as string, closedAt: (r.closed_at as string | null) ?? null,
-  };
-}
-
-/** Active plan per currency + the latest history (superseded / cancelled), newest first. */
-export async function loadApplied(supabase: SupabaseClient): Promise<{ active: Partial<Record<Currency, AppliedPlan>>; history: AppliedPlan[] }> {
-  const { data } = await supabase.from('plan_applications').select(SELECT).order('created_at', { ascending: false }).limit(12);
-  const all = (data ?? []).map(toApplied);
-  const active: Partial<Record<Currency, AppliedPlan>> = {};
-  for (const p of all) if (p.status === 'active' && !active[p.currency]) active[p.currency] = p;
-  return { active, history: all.filter((p) => p.status !== 'active').slice(0, 6) };
-}
-
 export type ApplyResult = { ok: true; id: string; freeMinor: number; reservedMinor: number; until: string } | { ok: false; error: string };
 
 /**
@@ -46,11 +26,4 @@ export async function applyPlan(
   if (error?.message?.includes('plan_closed')) return { ok: false, error: 'Ese plan ya no está activo. Pídeme uno nuevo si lo quieres.' };
   if (error || typeof data !== 'string') return { ok: false, error: 'No pudimos aplicar el plan. Intenta de nuevo.' };
   return { ok: true, id: data, freeMinor: p.freeMinor, reservedMinor: p.reservedMinor, until: p.until };
-}
-
-/** Quitar plan: closes the active one (kept as history). Nothing else changes. */
-export async function cancelApplied(supabase: SupabaseClient, id: string): Promise<boolean> {
-  const { data, error } = await supabase.from('plan_applications').update({ status: 'cancelled', closed_at: new Date().toISOString() })
-    .eq('id', id).eq('status', 'active').select('id');
-  return !error && (data?.length ?? 0) === 1;
 }

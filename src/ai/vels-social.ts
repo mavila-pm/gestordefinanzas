@@ -63,7 +63,7 @@ export function socialReply(kind: Social, message: string, seed: number, name: s
     case 'thanks': return { text: pick(['De nada.', 'Con gusto.', 'Para eso estoy.'], seed) };
     case 'ack': return { text: pick(['Bien.', 'Listo.', 'Aquí estoy si necesitas algo.'], seed) };
     case 'bye': return { text: pick(['Hasta luego.', 'Nos vemos.'], seed) };
-    case 'capabilities': return { text: 'Puedo ayudarte a ver cuánto tienes libre, qué pagos vienen, si te alcanza para algo o cómo ordenar tus deudas.' };
+    case 'capabilities': return { text: 'Puedo ayudarte a ver cuánto tienes disponible, qué pagos vienen, si te alcanza para algo o cómo ordenar tus deudas.' };
     case 'open_order': return { text: 'Claro. ¿Por dónde quieres empezar? Podemos empezar por lo que tienes disponible ahora.' };
     case 'open_spending': return { text: 'Sí, lo vemos. ¿Quieres revisar en qué se está yendo más?', link: { label: 'Ver en qué gasto', href: '/app/analisis' } };
   }

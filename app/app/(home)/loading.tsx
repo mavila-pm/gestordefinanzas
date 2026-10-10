@@ -1,4 +1,4 @@
-/** Shown while the server prepares Resumen; same shape as the screen (title, Dinero libre, income row, list). */
+/** Shown while the server prepares Resumen; same shape as the screen (title, Dinero disponible, income row, list). */
 export default function Loading() {
   return (
     <div className="stack route-loading" role="status" aria-busy="true" aria-label="Cargando">

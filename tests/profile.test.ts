@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { firstGivenName, parseProfileForm, preferredName, shortFullName } from '../src/domain/profile';
+import { firstGivenName, parseProfileForm, preferredName, presentName, shortFullName } from '../src/domain/profile';
 
 const form = (o: Record<string, string>) => (k: string) => o[k];
 
@@ -28,3 +28,16 @@ describe('profile names (presentation only)', () => {
     expect(parseProfileForm(form({ displayName: 'x'.repeat(41) })).ok).toBe(false);
   });
 });
+
+describe('names are shown well whatever case they were typed in (stored value unchanged)', () => {
+  it('MAURO → Mauro; all-lowercase too; compound names; mixed case kept', () => {
+    expect(preferredName({ displayName: 'MAURO', givenNames: null })).toBe('Mauro');
+    expect(preferredName({ displayName: null, givenNames: 'MARÍA JOSÉ' })).toBe('María');
+    expect(presentName('maría josé')).toBe('María José');
+    expect(presentName("O'NEILL")).toBe("O'Neill");
+    expect(presentName('JEAN-PAUL')).toBe('Jean-Paul');
+    expect(presentName('McKenzie')).toBe('McKenzie');
+    expect(shortFullName({ displayName: 'MAURO', familyNames: 'ÁVILA RÍOS', givenNames: null })).toBe('Mauro Ávila');
+  });
+});
+

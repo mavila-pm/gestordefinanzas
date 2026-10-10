@@ -107,7 +107,7 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(detectIntent('muéstrame por qué tengo solo S/ 850 libres')).toEqual({ k: 'why_free' });
     expect(detectIntent('me quedé misio antes de fin de mes')).toEqual({ k: 'unknown' });
     const free = answer({ k: 'free' }, view)!;
-    expect(free.text).toBe(`Tienes S/ 1,500 libres hasta el 4 de octubre.`);
+    expect(free.text).toBe(`Tienes S/ 1,500 disponibles hasta el 4 de octubre.`);
     expect(answer({ k: 'can_spend', amountMinor: 200000, currency: 'PEN' }, view)!.text).toContain('te faltarían S/ 500');
     expect(answer({ k: 'upcoming', range: 'next' }, view)!.rows).toEqual([{ label: 'Alquiler', value: 'S/ 1,500 · 1 oct' }]);
     expect(answer({ k: 'update_amount', name: 'alquiler', amountMinor: 160000 }, view)!.actions![0]).toMatchObject({ type: 'act', act: 'patch_obligation', fields: { id: 'o1', amount: '1600.00' } });
@@ -136,7 +136,7 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
       settledIncomes: new Map(), essentialsMonthlyMinor: 0, cushionMinor: 0 };
     const v2 = { ...view, inputs: { PEN: input }, debtLinks: [{ id: 'd', name: 'Tarjeta BCP', currency: 'PEN' as const, balanceMinor: 300000, annualRateBp: 6000, obligationId: null }] };
     const a = answer({ k: 'what_pay_debt', amountMinor: 100000, target: 'tarjeta' }, v2)!;
-    expect(a.text).toBe('Si pagas S/ 1,000 a Tarjeta BCP: te quedan S/ 4,000 libres (antes S/ 5,000).');
+    expect(a.text).toBe('Si pagas S/ 1,000 a Tarjeta BCP: te quedan S/ 4,000 disponibles (antes S/ 5,000).');
     expect(a.rows).toEqual([{ label: 'Deuda después', value: 'S/ 2,000' }, { label: 'Interés que evitas', value: '~S/ 50 al mes' }]);
     expect(answer({ k: 'what_delay', days: null }, v2)!.text).toBe('¿Cuántos días se retrasaría?');
     expect(answer({ k: 'what_pay_debt', amountMinor: 100000, target: 'deuda' }, { ...v2, debtLinks: [] })!.text).toBe('No tengo deudas registradas.');
@@ -162,7 +162,7 @@ describe('assistant: deterministic intents first (§54-§55)', () => {
     expect(cyc.rows!.map((r) => r.value)).toEqual(['Lo que podrías pagar completo sin tocar tus pagos', '19 oct (paga el total y no hay interés)', 'se paga el 19 nov']);
     const org = answer({ k: 'organize' }, view)!;
     expect(org.title).toMatch(/^Hasta el /);
-    expect(org.rows!.at(-1)!.label).toBe('Libre');
+    expect(org.rows!.at(-1)!.label).toBe('Disponible');
     const owe = answer({ k: 'owe', amountMinor: 100000, currency: 'PEN', lender: 'tu pareja' }, view)!;
     expect(owe.text).toContain('Queda pendiente, no pagada');
     expect(owe.actions![0]).toMatchObject({ act: 'create_debt', fields: { lender: 'tu pareja', amount: '100000', currency: 'PEN' } });

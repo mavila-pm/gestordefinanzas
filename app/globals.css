@@ -555,3 +555,21 @@ input:hover:not(:focus):not(:disabled), select:hover:not(:focus):not(:disabled),
   .free-bar { animation: none; }
   .bottom-nav a:active svg, .vels-fab:hover { transform: none; }
 }
+
+/* Compact income vs spending columns (Resumen, Análisis). */
+.trend { margin: 0; display: grid; gap: var(--space-8); }
+.trend-cols { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--space-8); height: 120px; align-items: end; }
+.trend-cols li { display: grid; grid-template-rows: 1fr auto; height: 100%; gap: 4px; min-width: 0; }
+.trend-pair { display: flex; align-items: flex-end; justify-content: center; gap: 3px; height: 100%; }
+.trend-pair .col { width: min(14px, 40%); min-height: 2px; border-radius: 4px 4px 0 0; }
+.trend-pair .col.income, .trend-legend i.income { background: var(--semantic-income); }
+.trend-pair .col.expense, .trend-legend i.expense { background: var(--semantic-expense); }
+.trend-label { text-align: center; font-size: 12px; color: var(--text-secondary); }
+.trend-legend { display: flex; gap: var(--space-16); color: var(--text-secondary); }
+.trend-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.home-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-12); flex-wrap: wrap; }
+.home-head h1 { margin: 0; }
+.home-head .slogan { margin: 2px 0 0; color: var(--text-secondary); }
+.review-alert { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); text-decoration: none; color: inherit; }
+.debt-mini li { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--space-12); }
+.link-card { text-decoration: none; color: inherit; align-items: center; }

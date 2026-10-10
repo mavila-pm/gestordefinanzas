@@ -32,7 +32,7 @@ export function testFixture(): AIModel {
         return { text, usage: { input, output: tokens(text), cached: 0, image: 258 * (req.images?.length ?? 0) }, model: req.model, latencyMs: 5 };
       }
       if (req.operation === 'assistant_answer') {
-        const reply = 'Con lo que tengo registrado no puedo responder eso con precisión. Prueba preguntando cuánto tienes libre o qué pagos vienen.';
+        const reply = 'Con lo que tengo registrado no puedo responder eso con precisión. Prueba preguntando cuánto tienes disponible o qué pagos vienen.';
         const text = JSON.stringify(/cuanto me sobra|cuánto me sobra/i.test(last) ? { intent: 'free' } : { intent: 'other', reply });
         return { text, usage: { input, output: tokens(text), cached: 0, image: 0 }, model: req.model, latencyMs: 5 };
       }

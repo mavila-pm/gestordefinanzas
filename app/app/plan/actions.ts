@@ -8,11 +8,10 @@
 import { revalidatePath } from 'next/cache';
 import { decide, logLearning } from '../../../lib/learning';
 import { isReplay, ref } from '../../../lib/idempotency';
-import { applyPlan, cancelApplied } from '../../../lib/plan-applications';
 import { loadPlanningData } from '../../../lib/planning';
 import { addDays, limaToday } from '../../../src/domain/dates';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
-import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSettingsForm } from '../../../src/web/planning-input';
+import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSavingsGoalForm, parseSettingsForm } from '../../../src/web/planning-input';
 import { isUuid } from '../../../src/web/transaction-input';
 import type { ActionState } from '../actions';
 
@@ -120,6 +119,16 @@ export async function removeIncomeAction(_p: ActionState, form: FormData): Promi
   if (!user) return { error: SAVE_ERROR };
   const { error } = await supabase.from('expected_incomes').update({ active: false }).eq('id', id);
   return error ? { error: SAVE_ERROR } : done('Ingreso quitado.');
+}
+
+export async function saveSavingsGoalAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const parsed = parseSavingsGoalForm((k) => form.get(k));
+  if (!parsed.ok) return { error: parsed.error };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const { error } = await supabase.from('planning_settings').upsert({ user_id: user.id, currency: parsed.value.currency,
+    savings_goal_minor: parsed.value.goalMinor, updated_at: new Date().toISOString() });
+  return error ? { error: SAVE_ERROR } : done(parsed.value.goalMinor === null ? 'Meta quitada.' : 'Meta guardada.');
 }
 
 export async function saveSettingsAction(_p: ActionState, form: FormData): Promise<ActionState> {
@@ -268,36 +277,4 @@ export async function skipOccurrenceAction(_p: ActionState, form: FormData): Pro
   if (error) return { error: error.code === '23505' ? 'Ese mes ya estaba resuelto.' : SAVE_ERROR };
   await logLearning(supabase, user.id, 'settlement', 'dismissed', obligationId, { period, status: 'skipped' });
   return done('Listo. Este mes no cuenta.');
-}
-
-/**
- * "Aplicar plan" (ADR-0013): saves the reservations the person just saw. It never pays, transfers, creates
- * movements or marks anything paid. The server recomputes the plan; `seenFree`/`seenReserved` only detect a stale tab.
- */
-export async function applyPlanAction(_p: ActionState, form: FormData): Promise<ActionState> {
-  const currency = form.get('currency');
-  if (currency !== 'PEN' && currency !== 'USD') return { error: SAVE_ERROR };
-  const num = (k: string) => { const v = form.get(k); return typeof v === 'string' && /^-?\d{1,13}$/.test(v) ? Number(v) : null; };
-  const { supabase, user } = await session();
-  if (!user) return { error: SAVE_ERROR };
-  const d = await loadPlanningData(supabase);
-  const income = form.get('income');
-  let base: 'balance' | { transactionId: string } = 'balance';
-  if (isUuid(income)) {
-    if (d.recentIncome?.transactionId !== income || d.recentIncome.currency !== currency) return { error: 'Ese ingreso ya no está disponible para planificar.' };
-    base = { transactionId: income };
-  }
-  const r = await applyPlan(supabase, d, { currency, base, seen: { freeMinor: num('seenFree'), reservedMinor: num('seenReserved') }, ref: ref(form) });
-  return r.ok ? done('Plan aplicado. No se movió dinero.') : { error: r.error };
-}
-
-export async function cancelPlanAction(_p: ActionState, form: FormData): Promise<ActionState> {
-  const id = form.get('id');
-  if (!isUuid(id)) return { error: SAVE_ERROR };
-  const { supabase, user } = await session();
-  if (!user) return { error: SAVE_ERROR };
-  if (await cancelApplied(supabase, id)) return done('Plan quitado. Tus datos siguen igual.');
-  // Double tap / second tab: already closed counts as done.
-  const { data } = await supabase.from('plan_applications').select('status').eq('id', id).maybeSingle();
-  return data && data.status !== 'active' ? done('Plan quitado. Tus datos siguen igual.') : { error: SAVE_ERROR };
 }

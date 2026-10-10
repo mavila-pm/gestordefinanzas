@@ -217,7 +217,7 @@ describe('voice: social turns stay social, money answers stay short', () => {
     known();
     const m = await turn('¿Cuánto tengo libre?');
     expect(m.body).toBe(await engineAnswer({ k: 'free' }));
-    expect(m.body).toMatch(/^Tienes (unos )?S\/ [\d,]+ libres hasta el \d+ de octubre\.$/);
+    expect(m.body).toMatch(/^Tienes (unos )?S\/ [\d,]+ disponibles hasta el \d+ de octubre\.$/);
     expect(questions(m.body)).toBe(0);
   });
 
@@ -250,7 +250,7 @@ describe('voice: social turns stay social, money answers stay short', () => {
     const d = planningData();
     const plan = buildPlan(inputFor(d, 'PEN'));
     const m = await turn('¿Me alcanza para unas zapatillas de 300?');
-    expect(m.body).toBe(`Sí. Te quedarían ${plan.status === 'confirmed' ? '' : 'unos '}S/ ${((plan.freeMinor! - 30000) / 100).toLocaleString('en-US')} libres.`);
+    expect(m.body).toBe(`Sí. Te quedarían ${plan.status === 'confirmed' ? '' : 'unos '}S/ ${((plan.freeMinor! - 30000) / 100).toLocaleString('en-US')} disponibles.`);
   });
 
   it('"Quiero ordenar mis gastos" → open question; "no sé" → starts with what is available now', async () => {

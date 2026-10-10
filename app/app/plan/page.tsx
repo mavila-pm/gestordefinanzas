@@ -1,26 +1,25 @@
 import Link from 'next/link';
 import { ActionForm } from '../../../components/action-form';
-import { PurchaseSimulator } from '../../../components/purchase-simulator';
 import { Icon } from '../../../components/ui/icon';
 import { Sheet } from '../../../components/ui/sheet';
-import { essentialsFor, loadEssentialRows, loadPlanningData, planFor, planInputFor, planTimeline } from '../../../lib/planning';
-import { delayIncome, payDebt, type ScenarioResult } from '../../../src/engine/scenarios';
-import { parseAmountToMinor } from '../../../src/domain/money';
+import { essentialsFor, loadEssentialRows, loadPlanningData, planFor } from '../../../lib/planning';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import type { Plan, PlanLine } from '../../../src/engine/planning';
-import { extraDebtPayment } from '../../../src/engine/scenarios';
 import { addDays } from '../../../src/domain/dates';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
-import { AppliedPlanCard, ApplyPlan } from '../../../components/applied-plan';
-import { loadApplied } from '../../../lib/plan-applications';
+import { SavingsGoal } from '../../../components/savings-goal';
+import { loadCatalog } from '../../../lib/queries';
+import { monthlySummary } from '../../../src/engine/monthly-summary';
+import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../../src/infrastructure/supabase/transaction-row';
+import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';
 import { shortDate } from '../../../src/domain/dates';
 import { isUuid } from '../../../src/web/transaction-input';
 import {
   acceptEssentialsAction, decideSuggestionAction, linkIncomeAction, removeIncomeAction, markObligationPaidAction, patchObligationAction, recordBalanceAction, resolveVariationAction, saveIncomeAction, saveSettingsAction,
 } from './actions';
 
-export const metadata = { title: 'Dinero libre' };
+export const metadata = { title: 'Dinero disponible' };
 const sym = (c: Currency) => (c === 'PEN' ? 'S/' : 'US$');
 
 function Money({ v, c }: { v: number | null; c: Currency }) {
@@ -59,9 +58,8 @@ function Breakdown({ p }: { p: Plan }) {
       <ul className="list" style={{ marginTop: 8 }}>
         <li><span>{p.base?.kind === 'income' ? 'Entró' : 'Saldo que indicaste'}</span><span className="amount"><Money v={p.base?.amountMinor ?? null} c={c} /></span></li>
         {p.lines.map((l, i) => <LineRow key={i} l={l} c={c} />)}
-        <li><strong>{p.status === 'confirmed' ? 'Libre' : 'Libre estimado'}</strong><strong className="amount"><Money v={p.freeMinor} c={c} /></strong></li>
+        <li><strong>{p.status === 'confirmed' ? 'Disponible' : 'Disponible estimado'}</strong><strong className="amount"><Money v={p.freeMinor} c={c} /></strong></li>
       </ul>
-      <small className="muted">Las reservas son un plan: el dinero sigue en tu cuenta hasta que lo pagues.</small>
     </details>
   );
 }
@@ -71,23 +69,26 @@ function Headline({ p, testId }: { p: Plan; testId: string }) {
   if (p.freeMinor === null) return null;
   const negative = p.freeMinor < 0;
   return (
-    <section className="hero" aria-label="Dinero libre" data-testid={testId} data-status={p.status}>
-      <span className="label">{p.base?.kind === 'income' ? 'Libre de este ingreso' : p.status === 'confirmed' ? 'Dinero libre' : 'Dinero libre estimado'}</span>
+    <section className="hero" aria-label="Dinero disponible" data-testid={testId} data-status={p.status}>
+      <span className="label">{p.base?.kind === 'income' ? 'Disponible de este ingreso' : p.status === 'confirmed' ? 'Dinero disponible' : 'Dinero disponible estimado'}</span>
       <p className="figure" data-testid={`${testId}-amount`}>{negative ? 'Faltan ' : ''}<Money v={Math.abs(p.freeMinor)} c={c} /></p>
       <small style={{ opacity: .85 }}>
         {p.nextIncome ? `Hasta tu próximo ingreso, el ${shortDate(p.nextIncome.date)}${p.nextIncome.dateMax ? `–${shortDate(p.nextIncome.dateMax)}` : ''}. ` : ''}
-        Ya descontamos <strong><Money v={p.reservedMinor} c={c} /></strong> en pagos y reservas.
+        Ya separamos <strong><Money v={p.reservedMinor} c={c} /></strong> para tus pagos.
       </small>
       {p.status !== 'confirmed' && p.missing.length > 0 && <small style={{ opacity: .85 }}>{p.missing.length === 1 ? 'Falta 1 dato por confirmar.' : `Faltan ${p.missing.length} datos por confirmar.`}</small>}
     </section>
   );
 }
 
-export default async function PlanPage({ searchParams }: { searchParams: Promise<{ ingreso?: string; si?: string; dias?: string; monto?: string; deuda?: string }> }) {
-  const { ingreso, si, dias, monto, deuda } = await searchParams;
+export default async function PlanPage({ searchParams }: { searchParams: Promise<{ ingreso?: string }> }) {
+  const { ingreso } = await searchParams;
   const supabase = await createSupabaseServerClient();
-  // One parallel round: the observed-essentials read no longer waits for the plan data.
-  const [d, essentialRows, applied] = await Promise.all([loadPlanningData(supabase), loadEssentialRows(supabase), loadApplied(supabase)]);
+  const month = limaMonth();
+  const range = limaMonthRange(month)!;
+  // One parallel round: the plan, the observed essentials, the month's movements (savings) and the accounts.
+  const [d, essentialRows, monthTx, catalog] = await Promise.all([loadPlanningData(supabase), loadEssentialRows(supabase),
+    supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', range.from).lt('occurred_at', range.to).limit(3000), loadCatalog(supabase)]);
   const currencies = (['PEN', 'USD'] as const).filter((c, i) => i === 0 || d.balances[c] || d.incomes.some((x) => x.currency === c) || d.obligations.some((o) => o.currency === c));
   const incomeId = ingreso && isUuid(ingreso) && d.transactionsById.has(ingreso) ? ingreso : null;
   const incomeTx = incomeId ? d.transactionsById.get(incomeId)! : null;
@@ -95,31 +96,22 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const distribution = incomeId ? planFor(d, incomeCurrency, { transactionId: incomeId }) : null;
   const obligationsById = new Map(d.obligationRows.map((o) => [o.id, o]));
   const essentials = essentialsFor(d, essentialRows);
-  const upcoming = planTimeline(d).slice(0, 12);
-  // "¿Y si…?" (PEN): simulated from a copy of the plan inputs; nothing is written (ADR-0008).
-  const penDebts = d.debts.filter((x) => x.currency === 'PEN');
-  let scenario: ScenarioResult | null = null;
-  if (si === 'retraso' && dias && /^\d{1,2}$/.test(dias)) scenario = delayIncome(planInputFor(d, 'PEN'), Number(dias));
-  if (si === 'abono' && monto && deuda) {
-    const debt = penDebts.find((x) => x.id === deuda);
-    const minor = parseAmountToMinor(monto);
-    const link = debt ? d.obligationRows.find((o) => o.active && o.kind === 'card' && o.currency === 'PEN' && o.name.toLowerCase() === debt.name.toLowerCase())?.id ?? null : null;
-    if (debt && minor) scenario = payDebt(planInputFor(d, 'PEN'), { ...debt, obligationId: link }, minor);
-  }
+  const pen = monthlySummary(((monthTx.data ?? []) as unknown as TransactionRow[]).map(rowToTransaction), month, 'PEN');
+  const accounts = catalog.accounts.filter((a) => a.active);
 
   return (
     <main className="stack narrow-md">
       <div className="page-head">
-        <h1>Dinero libre</h1>
-        <p>Lo que puedes usar sin tocar lo que ya tienes que pagar.</p>
+        <h1>Dinero disponible</h1>
+        <p>Lo que tienes disponible para usar o ahorrar después de considerar tus próximos pagos.</p>
       </div>
 
       {distribution && incomeTx && (
-        <section className="stack-sm" aria-label="Distribución del ingreso" data-testid="distribution">
+        <section className="stack-sm" aria-label="Reparto del ingreso" data-testid="distribution">
           <h2>Entraron <Money v={incomeTx.amountMinor} c={distribution.currency} /> el {shortDate(incomeTx.occurredOn)}</h2>
           <div className="figures">
-            <div><span className="muted small">Reservar</span><p className="big" data-testid="dist-reserved"><Money v={distribution.reservedMinor} c={distribution.currency} /></p></div>
-            <div><span className="muted small">{distribution.freeMinor !== null && distribution.freeMinor < 0 ? 'Faltan' : 'Libre'}</span>
+            <div><span className="muted small">Para tus pagos</span><p className="big" data-testid="dist-reserved"><Money v={distribution.reservedMinor} c={distribution.currency} /></p></div>
+            <div><span className="muted small">{distribution.freeMinor !== null && distribution.freeMinor < 0 ? 'Faltan' : 'Disponible'}</span>
               <p className="big" data-testid="dist-free"><Money v={distribution.freeMinor === null ? null : Math.abs(distribution.freeMinor)} c={distribution.currency} /></p></div>
           </div>
           {distribution.lines.length > 0 && (
@@ -127,88 +119,44 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
               <ul className="list">{distribution.lines.map((l, i) => <LineRow key={i} l={l} c={distribution.currency} />)}</ul>
             </details>
           )}
-          <div className="actions">
-            {d.recentIncome?.transactionId === incomeId && <ApplyPlan p={distribution} income={incomeId!} label="Aplicar este reparto" />}
-            <Link href="/app/plan" className="section-link">Cerrar distribución</Link>
-          </div>
+          <Link href="/app/plan" className="section-link">Cerrar</Link>
         </section>
-      )}
-
-      {!distribution && d.recentIncome && (
-        <p className="notice positive" data-testid="income-event">
-          <span>Entraron <strong><Money v={d.recentIncome.amountMinor} c={d.recentIncome.currency} /></strong> el {shortDate(d.recentIncome.date)}.{' '}
-            <Link href={`/app/plan?ingreso=${d.recentIncome.transactionId}`}>Ver distribución</Link></span>
-        </p>
       )}
 
       {currencies.map((c) => {
         const p = planFor(d, c);
         const testId = `free-${c}`;
         const payments = p.lines.filter((l) => l.kind === 'payment' || l.kind === 'overdue' || l.kind === 'debt');
+        const fixes = p.missing.filter((m) => m.code !== 'balance' && m.code !== 'next_income');
         return (
           <div key={c} className="stack">
             {c === 'USD' && <h2>En dólares</h2>}
             <Headline p={p} testId={testId} />
             {p.freeMinor === null && (
               <section className="stack-sm" data-testid={`${testId}-setup`}>
-                <p>Para calcular tu dinero libre necesitamos dos datos:</p>
+                <p>Para calcularlo necesitamos dos datos:</p>
                 <ol className="plain stack-sm">
-                  <li className="source row"><span className="setting-text"><strong>Cuánto tienes hoy</strong><small className="muted">{d.balances[c] ? 'Listo' : 'El saldo de tu cuenta'}</small></span>
+                  <li className="source row"><span className="setting-text"><strong>Cuánto tienes hoy</strong><small className="muted">{d.balances[c] ? 'Listo' : 'El saldo de tus cuentas'}</small></span>
                     <BalanceSheet c={c} current={d.balances[c]?.amountMinor ?? null} /></li>
-                  <li className="source row"><span className="setting-text"><strong>Tu próximo ingreso</strong><small className="muted">{p.nextIncome ? 'Listo' : 'Para saber hasta cuándo alcanzar'}</small></span>
+                  <li className="source row"><span className="setting-text"><strong>Tu próximo ingreso</strong><small className="muted">{p.nextIncome ? 'Listo' : 'Cuándo te pagan'}</small></span>
                     <IncomeSheet c={c} /></li>
                 </ol>
               </section>
             )}
-            {p.freeMinor !== null && <Breakdown p={p} />}
-            <AppliedPlanCard p={p} applied={applied.active[c]} history={applied.history} settled={d.settledObligations} today={d.today} />
-            {c === 'PEN' && (() => {
-              const x = extraDebtPayment(p, d.debts.filter((y) => y.currency === c), d.settings[c]?.allowZeroForDebt ?? false);
-              return x ? (
-                <p className="notice" data-testid="extra-debt">
-                  <span>{x.target ? <>Puedes abonar <strong><Money v={x.amountMinor} c={c} /></strong> a {x.target}.</> : <>Puedes abonar hasta <strong><Money v={x.amountMinor} c={c} /></strong> a una deuda.</>}
-                    {x.usesCushion ? ` Usa tu colchón: quedas en S/ 0 libre${x.until ? ` hasta el ${shortDate(x.until)}` : ''}.` : ''}
-                    {x.interestSavedMinor ? ` Evitas ~${formatMoney({ amountMinor: x.interestSavedMinor, currency: c })} de interés al mes.` : ''}{' '}
-                    <Link href="/app/compromisos">Ver deudas</Link></span>
-                </p>
-              ) : null;
-            })()}
-            {c === 'PEN' && p.freeMinor !== null && (
-              <details className="card" data-testid="what-if" open={!!scenario}>
-                <summary>¿Y si…?</summary>
-                <div className="stack-sm" style={{ marginTop: 8 }}>
-                  <form method="get" className="row" aria-label="Simular retraso del ingreso">
-                    <input type="hidden" name="si" value="retraso" />
-                    <label className="stack-sm" style={{ flex: 1 }}><span>Mi ingreso se retrasa (días)</span><input name="dias" inputMode="numeric" defaultValue={si === 'retraso' ? dias : ''} placeholder="7" /></label>
-                    <button type="submit" className="quiet">Simular</button>
-                  </form>
-                  {penDebts.length > 0 && (
-                    <form method="get" className="row" aria-label="Simular abono a deuda">
-                      <input type="hidden" name="si" value="abono" />
-                      <label className="stack-sm"><span>Abono</span><span className="money-input"><span className="cur" aria-hidden="true">S/</span><input name="monto" inputMode="decimal" defaultValue={si === 'abono' ? monto : ''} placeholder="500" /></span></label>
-                      <label className="stack-sm" style={{ flex: 1 }}><span>A</span><select name="deuda" defaultValue={deuda}>{penDebts.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-                      <button type="submit" className="quiet">Simular</button>
-                    </form>
-                  )}
-                  {scenario && (
-                    <div data-testid="what-if-result" className="stack-sm">
-                      <p><strong>{scenario.freeAfterMinor === null ? 'Faltan datos para calcularlo.' : scenario.freeAfterMinor >= 0 ? <>Te quedarían <Money v={scenario.freeAfterMinor} c="PEN" /> libres</> : <>Te faltarían <Money v={-scenario.freeAfterMinor} c="PEN" /></>}</strong>
-                        {scenario.freeBeforeMinor !== null && <span className="muted"> (hoy <Money v={scenario.freeBeforeMinor} c="PEN" />{scenario.estimated ? ', estimado' : ''})</span>}</p>
-                      {scenario.uncovered.length > 0 && <p className="small error">No alcanzaría para: {scenario.uncovered.join(', ')}.</p>}
-                      {scenario.debt && <p className="small">Deuda después: <Money v={scenario.debt.balanceAfterMinor} c="PEN" />{scenario.debt.monthlyInterestSavedMinor ? ` · evitas ~${formatMoney({ amountMinor: scenario.debt.monthlyInterestSavedMinor, currency: 'PEN' })} de interés al mes` : ''}.</p>}
-                      <small className="muted">Simulación: no cambia nada.</small>
-                    </div>
-                  )}
-                </div>
-              </details>
+            {p.freeMinor !== null && (
+              <section className="figures card" aria-label="Saldo y próximo ingreso">
+                <div><span className="muted small">Saldo actual</span><p className="big" data-testid={`balance-${c}`}><Money v={p.base?.amountMinor ?? null} c={c} /></p></div>
+                <div><span className="muted small">Próximo ingreso</span>
+                  <p className="big">{p.nextIncome ? (p.nextIncome.amountMinor === null ? <span className="muted">por confirmar</span> : <Money v={p.nextIncome.amountMinor} c={c} />) : <span className="muted">sin fecha</span>}</p>
+                  {p.nextIncome && <small className="muted">{shortDate(p.nextIncome.date)}{p.nextIncome.dateMax ? `–${shortDate(p.nextIncome.dateMax)}` : ''}</small>}</div>
+              </section>
             )}
-            {p.freeMinor !== null && <PurchaseSimulator freeMinor={p.freeMinor} currency={c} estimated={p.status !== 'confirmed'} />}
 
-            {p.missing.filter((m) => m.code !== 'balance' && m.code !== 'next_income').length > 0 && (
+            {fixes.length > 0 && (
               <section className="stack-sm" aria-labelledby={`miss-${c}`} data-testid={`missing-${c}`}>
                 <h2 id={`miss-${c}`}>Falta confirmar</h2>
                 <ul className="list card" style={{ paddingTop: 4, paddingBottom: 4 }}>
-                  {p.missing.filter((m) => m.code !== 'balance' && m.code !== 'next_income').map((m, i) => (
+                  {fixes.map((m, i) => (
                     <li key={i}>
                       <span className="small">{m.text}</span>
                       {m.code === 'amount' && m.obligationId && <FixSheet id={m.obligationId} name={obligationsById.get(m.obligationId)?.name ?? ''} field="amount" c={c} />}
@@ -223,13 +171,16 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
 
             {payments.length > 0 && (
               <section className="stack-sm" aria-labelledby={`pay-${c}`}>
-                <div className="row"><h2 id={`pay-${c}`}>Antes de tu próximo ingreso</h2><Link href="/app/compromisos" className="section-link">Todos<Icon name="chevron" size={16} /></Link></div>
+                <div className="row"><h2 id={`pay-${c}`}>Próximos pagos</h2><Link href="/app/compromisos" className="section-link">Todos<Icon name="chevron" size={16} /></Link></div>
                 <ul className="list card" data-testid={`upcoming-${c}`} style={{ paddingTop: 4, paddingBottom: 4 }}>{payments.map((l, i) => <LineRow key={i} l={l} c={c} />)}</ul>
               </section>
             )}
+            {p.freeMinor !== null && <Breakdown p={p} />}
           </div>
         );
       })}
+
+      <SavingsGoal netMinor={pen.netCashFlowMinor} goalMinor={d.settings.PEN?.savingsGoalMinor ?? null} estimated={pen.savingsLabel === 'estimated'} />
 
       {d.suggestions.length > 0 && (
         <section className="stack-sm" aria-label="Pagos detectados" data-testid="match-suggestions">
@@ -281,7 +232,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           {d.observedAmounts.map((v) => (
             <div key={v.obligationId} className="source">
               <strong>{v.name}: pagaste <Money v={v.observedMinor} c={v.currency} /></strong>
-              <small className="muted">¿Lo usamos para planificar?</small>
+              <small className="muted">¿Usamos este monto?</small>
               <div className="actions">
                 <ActionForm action={resolveVariationAction} className="inline" label={`Usar monto observado de ${v.name}`}>
                   <input type="hidden" name="obligationId" value={v.obligationId} /><input type="hidden" name="period" value={v.period} />
@@ -299,7 +250,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       {essentials && (
         <section className="source" aria-label="Básicos observados" data-testid="essentials-suggestion">
           <strong>Tus básicos vienen siendo <Money v={essentials.observedMinor} c="PEN" /> al mes</strong>
-          <small className="muted">Estimaste <Money v={essentials.estimateMinor} c="PEN" />. Es lo que gastaste en comida y transporte ({essentials.months.length} meses).</small>
+          <small className="muted">Estimaste <Money v={essentials.estimateMinor} c="PEN" />.</small>
           <div className="actions">
             <ActionForm action={acceptEssentialsAction} className="inline" label="Usar básicos observados">
               <button type="submit" className="quiet">Usar {formatMoney({ amountMinor: essentials.observedMinor, currency: 'PEN' })}</button>
@@ -307,27 +258,6 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
             <Decide kind="essentials" subject="PEN" value={essentials.observedMinor} decision="later" label="Ahora no" />
             <Decide kind="essentials" subject="PEN" value={essentials.observedMinor} decision="dismissed" label="Descartar" />
           </div>
-        </section>
-      )}
-
-      {upcoming.length > 0 && (
-        <section className="stack-sm" aria-labelledby="timeline" data-testid="timeline">
-          <h2 id="timeline">Lo que viene</h2>
-          <ul className="list card" style={{ paddingTop: 4, paddingBottom: 4 }}>
-            {upcoming.map((t, i) => (
-              <li key={i} data-kind={t.kind}>
-                <span className="setting-text">
-                  <span>{t.label}</span>
-                  <small className={t.overdue && t.kind !== 'income' ? 'error' : 'muted'}>
-                    {[t.date ? `${shortDate(t.date)}${t.dateMax ? `–${shortDate(t.dateMax)} aprox.` : ''}` : 'Fecha por confirmar',
-                      t.kind === 'income' ? (t.overdue ? 'Esperado, aún no registrado' : 'Ingreso esperado') : t.overdue ? 'Venció' : null,
-                      t.amountStatus === 'estimated' ? 'estimado' : null].filter(Boolean).join(' · ')}
-                  </small>
-                </span>
-                <span className="amount">{t.amountMinor === null ? <span className="muted">por confirmar</span> : <>{t.kind === 'income' ? '+' : '−'}<Money v={t.amountMinor} c={t.currency} /></>}</span>
-              </li>
-            ))}
-          </ul>
         </section>
       )}
 
@@ -351,8 +281,21 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         </section>
       )}
 
+      {accounts.length > 0 && (
+        <section className="group" aria-labelledby="g-accounts">
+          <h2 id="g-accounts" className="group-title">Tus cuentas</h2>
+          <div className="rows" data-testid="plan-accounts">
+            {accounts.map((a) => (
+              <div key={a.id} className="setting"><span className="setting-text"><strong>{a.alias}</strong>
+                <small className="muted">{[a.institution, a.currency === 'USD' ? 'Dólares' : 'Soles', a.last4 ? `····${a.last4}` : null].filter(Boolean).join(' · ')}</small></span></div>
+            ))}
+            <Link href="/app/tarjetas" className="setting link-row"><span className="setting-text"><strong>Cuentas y tarjetas</strong></span><Icon name="chevron" size={18} /></Link>
+          </div>
+        </section>
+      )}
+
       <section className="group" aria-labelledby="g-setup">
-        <h2 id="g-setup" className="group-title">Datos del cálculo</h2>
+        <h2 id="g-setup" className="group-title">Tus datos</h2>
         <div className="rows">
           <div className="setting"><span className="setting-text"><strong>Saldo</strong><small className="muted">
             {d.balances.PEN ? <>{formatMoney({ amountMinor: d.balances.PEN.amountMinor, currency: 'PEN' })} al {shortDate(new Date(Date.parse(d.balances.PEN.asOf) - 5 * 3600_000).toISOString().slice(0, 10))}</> : 'Sin indicar'}</small></span>
@@ -364,7 +307,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
             <div key={i.id} className="setting" data-testid="income-row">
               <span className="setting-text"><span>{i.name}</span>
                 <small className="muted">{lifecycleNote(i, d.today) ?? (i.amountMinor === null ? 'Monto por confirmar' : `${i.amountStatus === 'estimated' ? '≈ ' : ''}${formatMoney({ amountMinor: i.amountMinor, currency: i.currency })}`)}</small></span>
-              <Sheet label={<Icon name="more" />} triggerClassName="icon" triggerLabel={`Opciones de ${i.name}`} title={i.name} subtitle="Solo cambia lo que planificamos desde hoy.">
+              <Sheet label={<Icon name="more" />} triggerClassName="icon" triggerLabel={`Opciones de ${i.name}`} title={i.name} subtitle="Cambia lo que planificamos desde hoy.">
                 <div className="sheet-body stack">
                   <Lifecycle kind="income" id={i.id} name={i.name} pausedUntil={i.pausedUntil ?? null} endedOn={i.endedOn ?? null} today={d.today} defaultUntil={addDays(d.today, 30)} />
                   <ActionForm action={removeIncomeAction} className="inline" label={`Quitar ${i.name}`} closeOnSuccess>
@@ -379,7 +322,6 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
             {d.settings.PEN?.essentialsMonthlyMinor != null ? `${formatMoney({ amountMinor: d.settings.PEN.essentialsMonthlyMinor, currency: 'PEN' })} al mes` : 'Sin indicar'}
             {d.settings.PEN?.cushionMinor ? ` · colchón ${formatMoney({ amountMinor: d.settings.PEN.cushionMinor, currency: 'PEN' })}` : ''}</small></span>
             <SettingsSheet c="PEN" s={d.settings.PEN} /></div>
-          <Link href="/app/compromisos" className="setting link-row"><span className="setting-text"><strong>Pagos del mes</strong><small className="muted">{d.obligations.length} registrados</small></span><Icon name="chevron" size={18} /></Link>
         </div>
       </section>
     </main>
@@ -389,7 +331,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
 function BalanceSheet({ c, current }: { c: Currency; current: number | null }) {
   return (
     <Sheet label={current === null ? 'Indicar' : 'Actualizar'} triggerClassName="quiet" triggerLabel={`Indicar saldo en ${c === 'PEN' ? 'soles' : 'dólares'}`} title="¿Cuánto tienes hoy?"
-      subtitle="El total en tus cuentas, hoy. Lo usamos solo para este cálculo.">
+      subtitle="El total en tus cuentas, hoy.">
       <div className="sheet-body">
         <ActionForm action={recordBalanceAction} label={`Saldo ${c}`} closeOnSuccess>
           <input type="hidden" name="currency" value={c} />
@@ -404,7 +346,7 @@ function BalanceSheet({ c, current }: { c: Currency; current: number | null }) {
 
 function IncomeSheet({ c }: { c: Currency }) {
   return (
-    <Sheet label="Agregar" triggerClassName="quiet" triggerLabel="Agregar ingreso" title="Tu próximo ingreso" subtitle="Solo sirve para saber hasta cuándo planificar. No se suma a tu saldo.">
+    <Sheet label="Agregar" triggerClassName="quiet" triggerLabel="Agregar ingreso" title="Tu próximo ingreso" subtitle="Para saber hasta cuándo tiene que alcanzar.">
       <div className="sheet-body">
         <ActionForm action={saveIncomeAction} label="Ingreso esperado" closeOnSuccess>
           <input type="hidden" name="currency" value={c} />

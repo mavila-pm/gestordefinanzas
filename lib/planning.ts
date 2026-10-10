@@ -22,7 +22,7 @@ export interface PlanningData {
   settledObligations: Map<string, Set<string>>;
   settledIncomes: Map<string, Set<string>>;
   balances: Partial<Record<Currency, { amountMinor: number; asOf: string; stale: boolean }>>;
-  settings: Partial<Record<Currency, { essentialsMonthlyMinor: number | null; essentialsEstimated: boolean; cushionMinor: number; allowZeroForDebt: boolean }>>;
+  settings: Partial<Record<Currency, { essentialsMonthlyMinor: number | null; essentialsEstimated: boolean; cushionMinor: number; allowZeroForDebt: boolean; savingsGoalMinor: number | null }>>;
   debts: Array<{ id: string; name: string; currency: Currency; balanceMinor: number; annualRateBp: number | null }>;
   recentIncome: { transactionId: string; amountMinor: number; currency: Currency; date: string; merchant: string | null } | null;
   suggestions: ReturnType<typeof suggestMatches>;
@@ -45,7 +45,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     supabase.from('expected_incomes').select('id,name,currency,amount_minor,amount_status,frequency,day_of_month,day_max,second_day,anchor_date,paused_until,ended_on').eq('active', true),
     supabase.from('plan_settlements').select('fixed_expense_id,expected_income_id,period,transaction_id,variance_ack,tx:transactions(amount_minor)').order('period', { ascending: false }).limit(500),
     supabase.from('balance_snapshots').select('currency,amount_minor,as_of').order('as_of', { ascending: false }).limit(20),
-    supabase.from('planning_settings').select('currency,essentials_monthly_minor,essentials_status,cushion_minor,allow_zero_for_debt'),
+    supabase.from('planning_settings').select('currency,essentials_monthly_minor,essentials_status,cushion_minor,allow_zero_for_debt,savings_goal_minor'),
     supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed').gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(1000),
     loadDecisions(supabase),
   ]);
@@ -94,7 +94,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     balances[cur] = { amountMinor: Number(b.amount_minor), asOf, stale: moved || Date.parse(asOf) < now.getTime() - STALE_DAYS * 86_400_000 };
   }
   const settings: PlanningData['settings'] = {};
-  for (const s of set.data ?? []) settings[s.currency as Currency] = { essentialsMonthlyMinor: s.essentials_monthly_minor === null ? null : Number(s.essentials_monthly_minor), essentialsEstimated: s.essentials_status === 'estimated', cushionMinor: Number(s.cushion_minor), allowZeroForDebt: s.allow_zero_for_debt === true };
+  for (const s of set.data ?? []) settings[s.currency as Currency] = { essentialsMonthlyMinor: s.essentials_monthly_minor === null ? null : Number(s.essentials_monthly_minor), essentialsEstimated: s.essentials_status === 'estimated', cushionMinor: Number(s.cushion_minor), allowZeroForDebt: s.allow_zero_for_debt === true, savingsGoalMinor: s.savings_goal_minor == null ? null : Number(s.savings_goal_minor) };
 
   const incomes: ExpectedIncome[] = (inc.data ?? []).map((i) => ({
     id: i.id, name: i.name, currency: i.currency, amountMinor: i.amount_minor === null ? null : Number(i.amount_minor), amountStatus: i.amount_status,

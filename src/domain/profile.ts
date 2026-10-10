@@ -12,16 +12,27 @@ export function firstGivenName(given: string | null | undefined): string | null 
   return first ? first : null;
 }
 
+/**
+ * How a stored name is shown: "MAURO" or "mauro" → "Mauro", "MARÍA JOSÉ" → "María José". A name typed with its own
+ * mixed case ("McKenzie", "De la Cruz") is kept as is. Presentation only: the stored value never changes.
+ */
+export function presentName(name: string): string {
+  const s = clean(name);
+  if (!/\p{L}/u.test(s) || (s !== s.toLocaleUpperCase('es') && s !== s.toLocaleLowerCase('es'))) return s;
+  return s.toLocaleLowerCase('es').replace(/(^|[\s'-])(\p{L})/gu, (_m, sep: string, ch: string) => sep + ch.toLocaleUpperCase('es'));
+}
+
 /** The name to greet with, or null for a neutral greeting. */
 export function preferredName(p: Partial<ProfileNames> | null | undefined): string | null {
-  return clean(p?.displayName) || firstGivenName(p?.givenNames) || null;
+  const name = clean(p?.displayName) || firstGivenName(p?.givenNames);
+  return name ? presentName(name) : null;
 }
 
 /** "Mauro Ávila": preferred name + first family name, for the profile summary. */
 export function shortFullName(p: Partial<ProfileNames> | null | undefined): string | null {
   const name = preferredName(p);
   const family = clean(p?.familyNames).split(' ')[0];
-  return name ? [name, family].filter(Boolean).join(' ') : null;
+  return name ? [name, family ? presentName(family) : ''].filter(Boolean).join(' ') : null;
 }
 
 export function parseProfileForm(get: (k: string) => unknown):

@@ -133,7 +133,7 @@ export async function velsTurn(supabase: SupabaseClient, userId: string, raw: st
   else if (r.reason === 'ai_quota') await say(supabase, userId, 'velsuno', STOP_TEXT.ai_quota, { stop: true, links: [{ label: 'Ver Plus', href: '/app/cuenta' }] });
   else if (r.reason === 'unavailable' || r.reason === 'failed') {
     // Timeout, provider error, rate limit, empty or invalid output: a friendly way forward, never a broken thread.
-    await say(supabase, userId, 'velsuno', r.reason === 'failed' ? NOT_UNDERSTOOD : 'Eso todavía no sé responderlo. Pregúntame por tu dinero libre o tus pagos y lo vemos.');
+    await say(supabase, userId, 'velsuno', r.reason === 'failed' ? NOT_UNDERSTOOD : 'Eso todavía no sé responderlo. Pregúntame por tu dinero disponible o tus pagos y lo vemos.');
   } else await say(supabase, userId, 'velsuno', STOP_TEXT[r.reason], { stop: true });
   await prune(supabase);
 }
@@ -178,7 +178,7 @@ async function collectTurn(supabase: SupabaseClient, userId: string, text: strin
     // An income that already exists is never replaced from the chat (ask, don't overwrite).
     const plan = v.plans.find((p) => p.currency === i.currency);
     if (plan?.nextIncome) {
-      await say(supabase, userId, 'velsuno', `Ya tengo un ingreso el ${Number(plan.nextIncome.date.slice(8))}. Si cambió, edítalo en Dinero libre para no duplicarlo.`, { links: [{ label: 'Ver Dinero libre', href: '/app/plan' }] });
+      await say(supabase, userId, 'velsuno', `Ya tengo un ingreso el ${Number(plan.nextIncome.date.slice(8))}. Si cambió, edítalo en Dinero disponible para no duplicarlo.`, { links: [{ label: 'Ver Dinero libre', href: '/app/plan' }] });
       return true;
     }
     const { error } = await supabase.from('expected_incomes').insert({
@@ -234,7 +234,7 @@ export async function velsAct(supabase: SupabaseClient, userId: string, act: str
     }
     if (error) return 'No pude guardarla.';
     await logLearning(supabase, userId, 'obligation', 'accepted', data.id, { kind: 'debt', lender, amount, currency });
-    return `Listo. Debes ${money(amount, currency)} a ${lender}. No la cuento en Dinero libre hasta que tenga fecha.`;
+    return `Listo. Debes ${money(amount, currency)} a ${lender}. No la cuento en Dinero disponible hasta que tenga fecha.`;
   }
   if (act === 'apply_plan') {
     // Confirmation required: saves the reservations the person saw (ADR-0013). Never pays, moves money or marks paid.

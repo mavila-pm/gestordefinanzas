@@ -102,3 +102,13 @@ export function parseSettingsForm(get: Get): Result<{ currency: 'PEN' | 'USD'; e
   if (!currency || (e && essentials === null) || cushion === null) return { ok: false, error: 'Revisa los montos.' };
   return { ok: true, value: { currency, essentialsMonthlyMinor: essentials, cushionMinor: cushion, allowZeroForDebt: get('allowZero') === 'on' } };
 }
+
+/** Monthly savings goal: an amount, or empty to remove it. Never inferred. */
+export function parseSavingsGoalForm(get: Get): Result<{ currency: 'PEN' | 'USD'; goalMinor: number | null }> {
+  const currency = cur(get('currency'));
+  const g = str(get('goal'));
+  const goal = g ? parseAmountToMinor(g) : null;
+  if (!currency || (g && (goal === null || goal > 100_000_000_000))) return { ok: false, error: 'Escribe un monto, por ejemplo 500.' };
+  return { ok: true, value: { currency, goalMinor: goal } };
+}
+
