@@ -57,12 +57,13 @@ export default async function ReviewQueue() {
                   <div><dt>Categoría</dt><dd>{t.category ?? <span className="muted">Sin categoría</span>}</dd></div>
                 </dl>
                 {reasons[0] && <small className="muted why" data-reason={reasons[0].code}>{reasons[0].text}</small>}
+                {t.duplicateOfId && <small><Link href={`/app/movimientos/${t.duplicateOfId}`}>Ver el movimiento parecido</Link></small>}
                 <div className="actions">
                   {t.type !== 'unknown' && (
                     <ActionForm action={reviewAction} className="inline" label="Confirmar">
                       <input type="hidden" name="id" value={t.id} />
                       <input type="hidden" name="action" value="confirm" />
-                      <button type="submit">Confirmar</button>
+                      <button type="submit">{dup ? 'No es duplicado' : 'Confirmar'}</button>
                     </ActionForm>
                   )}
                   <Link className="button secondary" href={`/app/movimientos/${t.id}`}>Editar</Link>

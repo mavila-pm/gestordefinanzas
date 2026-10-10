@@ -45,7 +45,7 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
     supabase.from('transactions').select(TRANSACTION_SELECT)
       .gte('occurred_at', limaMonthRange(previousMonth(month, trendMonths - 1))!.from).lt('occurred_at', limaMonthRange(month)!.to)
       .order('occurred_at').limit(6000),
-    supabase.from('plan_settlements').select('transaction_id').not('fixed_expense_id', 'is', null).not('transaction_id', 'is', null).limit(1000),
+    supabase.from('plan_settlements').select('transaction_id').not('fixed_expense_id', 'is', null).not('transaction_id', 'is', null).like('period', `${month}%`).limit(500),
     loadBudgets(supabase),
     loadCommitmentData(supabase),
     supabase.from('planning_settings').select('savings_goal_minor').eq('currency', 'PEN').maybeSingle(),
