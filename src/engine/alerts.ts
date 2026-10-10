@@ -46,10 +46,10 @@ export function buildAlerts(input: {
     const m = (v: number) => formatMoney({ amountMinor: v, currency: b.currency });
     if (b.state === 'exceeded') {
       out.push({ level: 'IMPORTANT', code: `budget_exceeded:${b.category}`, href: '/app/presupuestos',
-        text: `Presupuesto excedido: ${b.category} lleva ${m(b.spentMinor)} de ${m(b.amountMinor)} (${m(-b.remainingMinor)} por encima).` });
+        text: `Te pasaste del límite: ${b.category} lleva ${m(b.spentMinor)} de ${m(b.amountMinor)} (${m(-b.remainingMinor)} por encima).` });
     } else if (b.state === 'warning') {
       out.push({ level: 'INFORMATIONAL', code: `budget_warning:${b.category}`, href: '/app/presupuestos',
-        text: `${b.category}: ya usaste el ${Math.floor(b.ratio * 100)}% de tu presupuesto (${m(b.spentMinor)} de ${m(b.amountMinor)}).` });
+        text: `${b.category}: ya usaste el ${Math.floor(b.ratio * 100)}% de tu límite (${m(b.spentMinor)} de ${m(b.amountMinor)}).` });
     }
   }
   if (input.unresolvedEvents30d > 0) {

@@ -584,3 +584,14 @@ input:hover:not(:focus):not(:disabled), select:hover:not(:focus):not(:disabled),
 .sub-title { font-size: 15px; margin: var(--space-8) 0 0; color: var(--text-secondary); font-weight: 600; }
 .next-list li { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: var(--space-12); }
 .next-day { font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: 14px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--space-12) var(--space-16); }
+.stat-grid .big { margin: 2px 0 0; }
+.table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.data-table th, .data-table td { padding: 10px 8px; text-align: right; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+.data-table th:first-child, .data-table td:first-child, .data-table tbody th { text-align: left; font-weight: 500; white-space: normal; }
+.data-table thead th { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.split-bar { display: flex; height: 12px; border-radius: var(--radius-pill); overflow: hidden; background: var(--bg-secondary); gap: 2px; }
+.split-bar .seg { min-width: 0; } .split-bar .fixed, .legend-row i.fixed { background: var(--text-primary); opacity: .8; } .split-bar .variable, .legend-row i.variable { background: var(--semantic-expense); }
+.legend-row { display: flex; gap: var(--space-24); margin: 0; } .legend-row div { display: grid; gap: 2px; } .legend-row dt { font-size: 12px; color: var(--text-secondary); } .legend-row dd { margin: 0; font-weight: 600; }
+.legend-row i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }

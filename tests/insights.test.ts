@@ -100,7 +100,7 @@ describe('budgets (§42, §46)', () => {
   it('alerts for exceeded (IMPORTANT) and 80% (INFORMATIONAL)', () => {
     const a = buildAlerts({ txs: [], pendingCount: 0, oldestPendingDays: null, unresolvedEvents30d: 0, now: new Date('2026-09-27T12:00:00Z'), currency: 'PEN', budgets: budgetStatus(txs, '2026-09', budgets) });
     expect(a.map((x) => [x.level, x.code])).toEqual([['IMPORTANT', 'budget_exceeded:Alimentación'], ['INFORMATIONAL', 'budget_warning:Transporte']]);
-    expect(a[0]!.text).toBe('Presupuesto excedido: Alimentación lleva S/ 400.00 de S/ 350.00 (S/ 50.00 por encima).');
+    expect(a[0]!.text).toBe('Te pasaste del límite: Alimentación lleva S/ 400.00 de S/ 350.00 (S/ 50.00 por encima).');
   });
   it('category milestone when a budgeted category stayed under its limit (after consistency/improvement)', () => {
     const m = [

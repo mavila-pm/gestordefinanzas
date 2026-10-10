@@ -11,7 +11,7 @@ import { monthLabel } from '../../../src/web/labels';
 import { minorToInput } from '../../../src/web/transaction-input';
 import { deleteBudgetAction, saveBudgetAction } from '../actions';
 
-export const metadata = { title: 'Presupuestos' };
+export const metadata = { title: 'Límites de gasto' };
 const STATE_WORD = { ok: 'Vas bien', warning: 'Cerca del límite', exceeded: 'Te pasaste' } as const;
 
 function BudgetFields({ categories, categoryId, amount, currency }: { categories: Array<{ id: string; name: string }>; categoryId?: string; amount?: string; currency?: string }) {
@@ -46,17 +46,17 @@ export default async function Budgets() {
   const txs = ((txRes.data ?? []) as unknown as TransactionRow[]).map(rowToTransaction);
   const status = budgetStatus(txs, month, budgets);
   const idOf = new Map(budgets.map((b) => [`${b.category}|${b.currency}`, b.id]));
-  const categoryId = new Map(catalog.categories.filter((c) => !c.own).map((c) => [c.name, c.id]));
-  const spendable = catalog.categories.filter((c) => !c.own).map((c) => ({ id: c.id, name: c.name }));
+  const categoryId = new Map(catalog.categories.map((c) => [c.name, c.id]));
+  const spendable = catalog.categories.map((c) => ({ id: c.id, name: c.name }));
   const over = status.filter((b) => b.state === 'exceeded');
   const headline = status.length === 0 ? null
     : over.length ? `Te pasaste en ${over.map((b) => b.category).join(' y ')}.`
-    : status.some((b) => b.state === 'warning') ? 'Vas bien, pero algo está cerca del límite.' : 'Vas bien en todos tus presupuestos.';
+    : status.some((b) => b.state === 'warning') ? 'Vas bien, pero algo está cerca del límite.' : 'Vas bien en todos tus límites.';
 
   const create = (
-    <Sheet label={<><Icon name="add" size={18} />Nuevo presupuesto</>} triggerClassName={status.length ? 'quiet' : ''} title="Nuevo presupuesto" testId="budget-sheet">
+    <Sheet label={<><Icon name="add" size={18} />Nuevo límite</>} triggerClassName={status.length ? 'quiet' : ''} title="Nuevo límite de gasto" testId="budget-sheet">
       <div className="sheet-body">
-        <ActionForm action={saveBudgetAction} label="Guardar presupuesto" closeOnSuccess>
+        <ActionForm action={saveBudgetAction} label="Guardar límite" closeOnSuccess>
           <BudgetFields categories={spendable} />
           <button type="submit" className="wide">Guardar</button>
         </ActionForm>
@@ -67,13 +67,13 @@ export default async function Budgets() {
   return (
     <main className="stack narrow-md">
       <div className="page-head">
-        <h1>Presupuestos</h1>
-        <p>{headline ?? monthLabel(month)}</p>
+        <h1>Límites de gasto</h1>
+        <p>{headline ?? 'Define cuánto quieres gastar como máximo en una categoría cada mes.'}</p>
       </div>
 
       {status.length === 0 ? (
         <section className="stack-sm">
-          <p>Aún no hay presupuestos. Crea uno si quieres seguir un límite mensual en alguna categoría.</p>
+          <p className="muted">Ejemplo: Comida, S/ 600 al mes.</p>
           <div>{create}</div>
         </section>
       ) : (
@@ -89,18 +89,18 @@ export default async function Budgets() {
                   </div>
                   <span className="progress" aria-hidden="true"><span className={`fill ${b.state}`} style={{ width: `${Math.min(100, b.ratio * 100)}%` }} /></span>
                   <div className="row small">
-                    <span className="amount">{m(b.spentMinor)} de {m(b.amountMinor)}</span>
+                    <span className="amount">{m(b.spentMinor)} de {m(b.amountMinor)} · {Math.round(b.ratio * 100)}%</span>
                     <span className={b.state === 'exceeded' ? 'error' : 'muted'}>{b.state === 'exceeded' ? `Te pasaste por ${m(b.remainingMinor)}` : `Te quedan ${m(b.remainingMinor)}`}</span>
                   </div>
-                  <Sheet label="Cambiar" triggerClassName="link small-link" title={`Presupuesto de ${b.category}`} triggerLabel={`Cambiar presupuesto de ${b.category}`}>
+                  <Sheet label="Cambiar" triggerClassName="link small-link" title={`Límite de ${b.category}`} triggerLabel={`Cambiar límite de ${b.category}`}>
                     <div className="sheet-body stack">
-                      <ActionForm action={saveBudgetAction} label={`Cambiar presupuesto ${b.category}`} closeOnSuccess>
+                      <ActionForm action={saveBudgetAction} label={`Cambiar límite ${b.category}`} closeOnSuccess>
                         <BudgetFields categories={spendable} categoryId={categoryId.get(b.category)} amount={minorToInput(b.amountMinor)} currency={b.currency} />
                         <button type="submit" className="wide">Guardar</button>
                       </ActionForm>
-                      <ActionForm action={deleteBudgetAction} className="inline" label={`Eliminar presupuesto ${b.category}`} closeOnSuccess>
+                      <ActionForm action={deleteBudgetAction} className="inline" label={`Eliminar límite ${b.category}`} closeOnSuccess>
                         <input type="hidden" name="id" value={idOf.get(`${b.category}|${b.currency}`) ?? ''} />
-                        <button type="submit" className="link" style={{ color: 'var(--semantic-error)' }}>Quitar este presupuesto</button>
+                        <button type="submit" className="link" style={{ color: 'var(--semantic-error)' }}>Quitar este límite</button>
                       </ActionForm>
                     </div>
                   </Sheet>
@@ -111,7 +111,7 @@ export default async function Budgets() {
           <div>{create}</div>
         </>
       )}
-      <p className="muted small">Cuenta lo confirmado de {monthLabel(month).toLowerCase()}. Las devoluciones lo reducen; los pagos de tarjeta, las transferencias entre tus cuentas y los retiros no son gasto.</p>
+      <p className="muted small">{monthLabel(month)}.</p>
     </main>
   );
 }

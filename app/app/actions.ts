@@ -243,7 +243,7 @@ export async function saveBudgetAction(_prev: ActionState, form: FormData): Prom
   const { error } = await supabase.from('budgets').upsert(
     { user_id: user.id, category_id: categoryId, currency, amount_minor: amount }, { onConflict: 'user_id,category_id,currency' });
   if (error) return { error: errorText(null) };
-  return done('Presupuesto guardado.');
+  return done('Límite guardado.');
 }
 
 export async function deleteBudgetAction(_prev: ActionState, form: FormData): Promise<ActionState> {
@@ -253,7 +253,7 @@ export async function deleteBudgetAction(_prev: ActionState, form: FormData): Pr
   if (!user) return { error: errorText('not_authenticated') };
   const { data, error } = await supabase.from('budgets').delete().eq('id', id).select('id');
   if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
-  return done('Presupuesto eliminado.');
+  return done('Límite quitado.');
 }
 
 export async function saveFixedExpenseAction(_prev: ActionState, form: FormData): Promise<ActionState> {
