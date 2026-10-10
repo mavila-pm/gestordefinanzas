@@ -581,3 +581,6 @@ input:hover:not(:focus):not(:disabled), select:hover:not(:focus):not(:disabled),
 .review-facts { display: flex; flex-wrap: wrap; gap: var(--space-8) var(--space-24); margin: var(--space-8) 0 var(--space-4, 4px); }
 .review-facts div { display: grid; gap: 2px; } .review-facts dt { font-size: 12px; color: var(--text-secondary); } .review-facts dd { margin: 0; font-weight: 500; }
 .review-card .actions { margin-top: var(--space-8); }
+.sub-title { font-size: 15px; margin: var(--space-8) 0 0; color: var(--text-secondary); font-weight: 600; }
+.next-list li { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: var(--space-12); }
+.next-day { font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: 14px; }

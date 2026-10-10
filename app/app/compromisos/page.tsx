@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { ActionForm } from '../../../components/action-form';
 import { plural } from '../../../src/domain/plural';
 import { Icon } from '../../../components/ui/icon';
@@ -17,6 +18,7 @@ import { addDays } from '../../../src/domain/dates';
 import { ObligationFields } from '../../../components/obligation-fields';
 import { loadPlanningData } from '../../../lib/planning';
 import { compareDebtStrategies } from '../../../src/engine/planning';
+import { previousMonth } from '../../../src/engine/analysis';
 import { comparePayoff } from '../../../src/engine/scenarios';
 import { parseAmountToMinor } from '../../../src/domain/money';
 import { shortDate } from '../../../src/domain/dates';
@@ -49,6 +51,12 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
   const today = formatLimaDateTime(new Date().toISOString()).slice(0, 10).split('/').reverse().join('-');
   const items = monthCommitments(month, today, fixed, debts);
   const totals = totalsByCurrency(items);
+  // Próximos: from today, this month and the first days of next month (≈ 5 weeks), in date order.
+  const nextMonth = previousMonth(month, -1);
+  const horizon = addDays(today, 35);
+  const upcoming = [...items.filter((c) => c.daysUntil >= 0 || !paidThisMonth(c.id)), ...monthCommitments(nextMonth, today, fixed, debts)]
+    .filter((c) => c.dueDate <= horizon)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.name.localeCompare(b.name));
   const activeFixed = fixed.filter((f) => f.active);
   const activeDebts = debts.filter((d) => d.active);
   const total = Object.entries(totals).map(([cur, v]) => formatMoney({ amountMinor: v!, currency: cur as 'PEN' | 'USD' })).join(' + ');
@@ -57,139 +65,34 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
     <main className="stack narrow-md">
       <div className="page-head">
         <h1>Próximos pagos</h1>
-        <p>{items.length ? <>{monthLabel(month)} · <span data-testid="commitment-total">Total del mes: {total}</span></> : 'Anota tus pagos fijos y deudas para verlos venir.'}</p>
+        <p>{items.length ? <>Estos son tus próximos pagos. <span data-testid="commitment-total">Total del mes: {total}</span></> : 'Anota tus pagos fijos y deudas para verlos venir.'}</p>
       </div>
 
-      {items.length > 0 && (
-        <ul className="list card" data-testid="commitment-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
-          {items.map((c) => (
-            <li key={`${c.kind}-${c.id}`}>
-              <span className="setting-text">
-                <span>{c.name}</span>
-                <small className={c.daysUntil < 0 ? 'muted' : c.daysUntil <= 3 ? 'warn' : 'muted'}>
-                  {c.daysUntil < 0 ? `Venció el ${shortDate(c.dueDate)}` : c.daysUntil === 0 ? 'Vence hoy' : c.daysUntil <= 3 ? `Vence en ${plural(c.daysUntil, 'día', 'días')}` : `Vence el ${shortDate(c.dueDate)}`}
-                  {' · '}{c.kind === 'debt' ? 'Cuota' : 'Gasto fijo'}
-                </small>
-              </span>
-              <span className="actions" style={{ gap: 8 }}>
-                {paidThisMonth(c.id) && <span className="tag positive-tag">Pagado</span>}
-                <span className="amount">{c.amountMinor === null ? <span className="muted">Por confirmar</span> : formatMoney({ amountMinor: c.amountMinor, currency: c.currency })}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="actions">
-        <Sheet label={<><Icon name="add" size={18} />Agregar pago</>} triggerClassName="quiet" title="Nuevo pago" subtitle="Algo que pagas cada mes: alquiler, carro, internet." testId="fixed-sheet">
-          <div className="sheet-body">
-            <ActionForm action={saveObligationAction} label="Agregar pago" closeOnSuccess>
-              <ObligationFields />
-              <button type="submit" className="wide">Agregar</button>
-            </ActionForm>
-          </div>
-        </Sheet>
-        <Sheet label={<><Icon name="add" size={18} />Agregar deuda</>} triggerClassName="quiet" title="Deuda" subtitle="Un préstamo o compra en cuotas." testId="debt-sheet">
-          <div className="sheet-body">
-            <ActionForm action={saveDebtAction} label="Agregar deuda" closeOnSuccess>
-              <div className="grid">
-                <label className="stack-sm"><span>Nombre</span><input name="name" required maxLength={60} placeholder="Préstamo auto" /></label>
-                <label className="stack-sm"><span>Entidad</span><input name="lender" maxLength={60} placeholder="BCP" /></label>
-              </div>
-              <div className="grid">
-                <label className="stack-sm"><span>Monto original</span><input name="principal" required inputMode="decimal" autoComplete="off" /></label>
-                <label className="stack-sm"><span>Saldo actual</span><input name="balance" inputMode="decimal" placeholder="Igual al original" autoComplete="off" /></label>
-                <label className="stack-sm"><span>Moneda</span><select name="currency" defaultValue="PEN">{CUR}</select></label>
-              </div>
-              <div className="grid">
-                <label className="stack-sm"><span>Cuota</span><input name="installment" inputMode="decimal" autoComplete="off" /></label>
-                <label className="stack-sm"><span>Día de pago</span><input name="dueDay" inputMode="numeric" placeholder="1–31" /></label>
-              </div>
-              <details>
-                <summary>Cuotas y tasa (opcional)</summary>
-                <div className="grid" style={{ paddingTop: 8 }}>
-                  <label className="stack-sm"><span>N.º de cuotas</span><input name="installmentsTotal" inputMode="numeric" /></label>
-                  <label className="stack-sm"><span>Cuotas pagadas</span><input name="installmentsPaid" inputMode="numeric" /></label>
-                  <label className="stack-sm"><span>Tasa anual %</span><input name="rate" inputMode="decimal" /></label>
-                </div>
-              </details>
-              <button type="submit" className="wide">Agregar deuda</button>
-            </ActionForm>
-          </div>
-        </Sheet>
-      </div>
-
-      {activeDebts.length > 0 && (
-        <section aria-labelledby="h-debts" className="stack-sm">
-          <h2 id="h-debts">Deudas</h2>
-          <ul className="plain budget-list">
-            {activeDebts.map((d) => {
-              const p = debtProgress(d);
-              const m = (v: number) => formatMoney({ amountMinor: v, currency: d.currency });
-              return (
-                <li key={d.id} className="budget" data-testid="debt">
-                  <div className="row" style={{ alignItems: 'baseline' }}><strong>{d.name}{d.lender ? ` · ${d.lender}` : ''}</strong><span className="amount">Saldo {m(d.balanceMinor)}</span></div>
-                  <span className="progress" aria-hidden="true"><span className="fill" style={{ width: `${p.ratio * 100}%` }} /></span>
-                  <small className="muted">Pagado {m(p.paidMinor)} de {m(d.principalMinor)}
-                    {d.installmentsTotal ? ` · cuota ${d.installmentsPaid}/${d.installmentsTotal}` : ''}{d.annualRateBp !== null ? ` · tasa ${(d.annualRateBp / 100).toFixed(2)}%` : ''}</small>
-                  <div className="actions">
-                    {d.balanceMinor > 0 && (
-                      <Sheet label="Registrar pago" triggerClassName="link small-link" title={`Pago de ${d.name}`} triggerLabel={`Registrar pago de ${d.name}`}
-                        subtitle={<>Saldo {m(d.balanceMinor)}</>}>
-                        <div className="sheet-body">
-                          <ActionForm action={debtPaymentAction} label={`Pago ${d.name}`} closeOnSuccess>
-                            <input type="hidden" name="id" value={d.id} />
-                            <label className="stack-sm"><span>Monto pagado</span>
-                              <input name="amount" required inputMode="decimal" autoComplete="off" defaultValue={d.installmentMinor ? (d.installmentMinor / 100).toFixed(2) : ''} /></label>
-                            <small className="muted">Solo baja el saldo. No crea otro gasto: el pago real llega como movimiento.</small>
-                            <button type="submit" className="wide">Registrar pago</button>
-                          </ActionForm>
-                        </div>
-                      </Sheet>
-                    )}
-                    <ActionForm action={deactivateCommitmentAction} className="inline" label={`Quitar ${d.name}`}>
-                      <input type="hidden" name="id" value={d.id} /><input type="hidden" name="kind" value="debt" />
-                      <button type="submit" className="link small-link muted-link">Quitar</button>
-                    </ActionForm>
-                  </div>
-                </li>
-              );
-            })}
+      {upcoming.length > 0 && (
+        <section aria-labelledby="h-next" className="stack-sm">
+          <h2 id="h-next">Próximos</h2>
+          <ul className="list card next-list" data-testid="commitment-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
+            {upcoming.map((c) => (
+              <li key={`${c.kind}-${c.id}-${c.dueDate}`}>
+                <span className="next-day">{shortDate(c.dueDate)}</span>
+                <span className="setting-text"><span>{c.name}</span>
+                  {(c.daysUntil < 0 || c.daysUntil <= 3) && <small className={c.daysUntil < 0 ? 'error' : 'warn'}>
+                    {c.daysUntil < 0 ? 'Venció' : c.daysUntil === 0 ? 'Vence hoy' : `Vence en ${plural(c.daysUntil, 'día', 'días')}`}</small>}</span>
+                <span className="actions" style={{ gap: 8 }}>
+                  {c.dueDate.startsWith(month) && paidThisMonth(c.id) && <span className="tag positive-tag">Pagado</span>}
+                  <span className="amount">{c.amountMinor === null ? <span className="muted">Por confirmar</span> : formatMoney({ amountMinor: c.amountMinor, currency: c.currency })}</span>
+                </span>
+              </li>
+            ))}
           </ul>
-          {plan.debts.filter((x) => x.currency === 'PEN' && x.balanceMinor > 0).length > 1 && (
-            <details className="card" data-testid="debt-strategies" open={!!payoff}>
-              <summary>¿Qué deuda pagar primero?</summary>
-              <div className="stack-sm" style={{ marginTop: 8 }}>
-                <p className="small"><strong>Avalancha</strong> · primero la de mayor tasa: pagas menos intereses.{' '}
-                  {strategies.avalanche.available ? <>Orden: {strategies.avalanche.order.join(' → ')}.</> : <span className="muted">Falta la tasa de {strategies.avalanche.missingRate.join(', ')}.</span>}</p>
-                <p className="small"><strong>Bola de nieve</strong> · primero el saldo más pequeño: cierras deudas antes. Orden: {strategies.snowball.order.join(' → ')}.</p>
-                <p className="muted small">Ninguna es mejor para todos. Primero paga los mínimos y tus próximos pagos; después adelanta.</p>
-                <form method="get" className="row" aria-label="Simular pago de deudas">
-                  <label className="stack-sm" style={{ flex: 1 }}><span>¿Cuánto puedes pagar al mes?</span>
-                    <span className="money-input"><span className="cur" aria-hidden="true">S/</span><input name="cuota" inputMode="decimal" defaultValue={cuota ?? ''} placeholder="600" /></span></label>
-                  <button type="submit" className="quiet">Simular</button>
-                </form>
-                {payoff && (
-                  <div data-testid="payoff">
-                    {payoff.note && <p className="small muted">{payoff.note}</p>}
-                    {payoff.available && (
-                      <ul className="list">{payoff.plans.map((p) => (
-                        <li key={p.strategy}><span className="setting-text"><span>{p.strategy === 'avalanche' ? 'Avalancha' : p.strategy === 'snowball' ? 'Bola de nieve' : 'Mixta'}</span><small className="muted">{p.why}</small></span>
-                          <span className="amount">{p.months === null ? 'No baja' : `${p.months} meses · ${formatMoney({ amountMinor: p.interestMinor!, currency: 'PEN' })} interés`}</span></li>
-                      ))}</ul>
-                    )}
-                    <small className="muted">Simulación: no cambia nada.</small>
-                  </div>
-                )}
-              </div>
-            </details>
-          )}
         </section>
       )}
 
+      <section aria-labelledby="h-recurring" className="stack-sm">
+        <div className="row"><h2 id="h-recurring">Recurrentes</h2></div>
       {activeFixed.length > 0 && (
         <section aria-labelledby="h-fixed" className="stack-sm">
-          <h2 id="h-fixed">Tus pagos</h2>
+          <h3 id="h-fixed" className="sub-title">Tus pagos fijos</h3>
           <ul className="list card" data-testid="obligation-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
             {activeFixed.map((f) => {
               const r = rows.get(f.id);
@@ -242,11 +145,11 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
       )}
 
       <section className="stack-sm" data-testid="recurring" aria-labelledby="h-rec">
-        <h2 id="h-rec">Cobros que se repiten</h2>
+        <h3 id="h-rec" className="sub-title">Detectados en tus movimientos</h3>
         {!entitlements.features.recurringDetection ? (
-          <p className="muted">En Plus: detectamos los cobros que se repiten cada mes.</p>
+          <p className="muted small">En Plus detectamos los cobros que se repiten.</p>
         ) : recurring === null ? <p role="alert" className="error">No pudimos revisar tus movimientos. Intenta de nuevo.</p>
-          : recurring.length === 0 ? <p className="muted">Aún no vemos cobros que se repitan (3 meses con monto y fecha parecidos).</p> : (
+          : recurring.length === 0 ? <p className="muted small">Aún no vemos cobros que se repitan.</p> : (
           <ul className="list card" data-testid="recurring-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
             {recurring.map((r) => (
               <li key={`${r.currency}-${r.merchant}`}>
@@ -265,7 +168,119 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
           </ul>
         )}
       </section>
-      <p className="muted small">Son recordatorios, no gastos. El gasto es el pago real.</p>
+      <div className="actions">
+        <Sheet label={<><Icon name="add" size={18} />Agregar pago</>} triggerClassName="quiet" title="Nuevo pago" subtitle="Algo que pagas cada mes: alquiler, carro, internet." testId="fixed-sheet">
+          <div className="sheet-body">
+            <ActionForm action={saveObligationAction} label="Agregar pago" closeOnSuccess>
+              <ObligationFields />
+              <button type="submit" className="wide">Agregar</button>
+            </ActionForm>
+          </div>
+        </Sheet>
+      </div>
+      </section>
+
+      <section aria-labelledby="deudas-h" className="stack-sm" id="deudas">
+        <h2 id="deudas-h">Tarjetas y préstamos</h2>
+      {activeDebts.length > 0 && (
+        <section aria-labelledby="h-debts" className="stack-sm">
+          <h3 id="h-debts" className="sub-title">Deudas</h3>
+          <ul className="plain budget-list">
+            {activeDebts.map((d) => {
+              const p = debtProgress(d);
+              const m = (v: number) => formatMoney({ amountMinor: v, currency: d.currency });
+              return (
+                <li key={d.id} className="budget" data-testid="debt">
+                  <div className="row" style={{ alignItems: 'baseline' }}><strong>{d.name}{d.lender ? ` · ${d.lender}` : ''}</strong><span className="amount">Saldo {m(d.balanceMinor)}</span></div>
+                  <span className="progress" aria-hidden="true"><span className="fill" style={{ width: `${p.ratio * 100}%` }} /></span>
+                  <small className="muted">Pagado {m(p.paidMinor)} de {m(d.principalMinor)}
+                    {d.installmentsTotal ? ` · cuota ${d.installmentsPaid}/${d.installmentsTotal}` : ''}{d.annualRateBp !== null ? ` · tasa ${(d.annualRateBp / 100).toFixed(2)}%` : ''}</small>
+                  <div className="actions">
+                    {d.balanceMinor > 0 && (
+                      <Sheet label="Registrar pago" triggerClassName="link small-link" title={`Pago de ${d.name}`} triggerLabel={`Registrar pago de ${d.name}`}
+                        subtitle={<>Saldo {m(d.balanceMinor)}</>}>
+                        <div className="sheet-body">
+                          <ActionForm action={debtPaymentAction} label={`Pago ${d.name}`} closeOnSuccess>
+                            <input type="hidden" name="id" value={d.id} />
+                            <label className="stack-sm"><span>Monto pagado</span>
+                              <input name="amount" required inputMode="decimal" autoComplete="off" defaultValue={d.installmentMinor ? (d.installmentMinor / 100).toFixed(2) : ''} /></label>
+                            <button type="submit" className="wide">Registrar pago</button>
+                          </ActionForm>
+                        </div>
+                      </Sheet>
+                    )}
+                    <ActionForm action={deactivateCommitmentAction} className="inline" label={`Quitar ${d.name}`}>
+                      <input type="hidden" name="id" value={d.id} /><input type="hidden" name="kind" value="debt" />
+                      <button type="submit" className="link small-link muted-link">Quitar</button>
+                    </ActionForm>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {plan.debts.filter((x) => x.currency === 'PEN' && x.balanceMinor > 0).length > 1 && (
+            <details className="card" data-testid="debt-strategies" open={!!payoff}>
+              <summary>¿Qué deuda pagar primero?</summary>
+              <div className="stack-sm" style={{ marginTop: 8 }}>
+                <p className="small"><strong>Avalancha</strong> · primero la de mayor tasa: pagas menos intereses.{' '}
+                  {strategies.avalanche.available ? <>Orden: {strategies.avalanche.order.join(' → ')}.</> : <span className="muted">Falta la tasa de {strategies.avalanche.missingRate.join(', ')}.</span>}</p>
+                <p className="small"><strong>Bola de nieve</strong> · primero el saldo más pequeño: cierras deudas antes. Orden: {strategies.snowball.order.join(' → ')}.</p>
+                <form method="get" className="row" aria-label="Simular pago de deudas">
+                  <label className="stack-sm" style={{ flex: 1 }}><span>¿Cuánto puedes pagar al mes?</span>
+                    <span className="money-input"><span className="cur" aria-hidden="true">S/</span><input name="cuota" inputMode="decimal" defaultValue={cuota ?? ''} placeholder="600" /></span></label>
+                  <button type="submit" className="quiet">Simular</button>
+                </form>
+                {payoff && (
+                  <div data-testid="payoff">
+                    {payoff.note && <p className="small muted">{payoff.note}</p>}
+                    {payoff.available && (
+                      <ul className="list">{payoff.plans.map((p) => (
+                        <li key={p.strategy}><span className="setting-text"><span>{p.strategy === 'avalanche' ? 'Avalancha' : p.strategy === 'snowball' ? 'Bola de nieve' : 'Mixta'}</span><small className="muted">{p.why}</small></span>
+                          <span className="amount">{p.months === null ? 'No baja' : `${p.months} meses · ${formatMoney({ amountMinor: p.interestMinor!, currency: 'PEN' })} interés`}</span></li>
+                      ))}</ul>
+                    )}
+                    <small className="muted">Simulación: no cambia nada.</small>
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
+        </section>
+      )}
+
+      <div className="actions">
+        <Sheet label={<><Icon name="add" size={18} />Agregar deuda</>} triggerClassName="quiet" title="Deuda" subtitle="Un préstamo o compra en cuotas." testId="debt-sheet">
+          <div className="sheet-body">
+            <ActionForm action={saveDebtAction} label="Agregar deuda" closeOnSuccess>
+              <div className="grid">
+                <label className="stack-sm"><span>Nombre</span><input name="name" required maxLength={60} placeholder="Préstamo auto" /></label>
+                <label className="stack-sm"><span>Entidad</span><input name="lender" maxLength={60} placeholder="BCP" /></label>
+              </div>
+              <div className="grid">
+                <label className="stack-sm"><span>Monto original</span><input name="principal" required inputMode="decimal" autoComplete="off" /></label>
+                <label className="stack-sm"><span>Saldo actual</span><input name="balance" inputMode="decimal" placeholder="Igual al original" autoComplete="off" /></label>
+                <label className="stack-sm"><span>Moneda</span><select name="currency" defaultValue="PEN">{CUR}</select></label>
+              </div>
+              <div className="grid">
+                <label className="stack-sm"><span>Cuota</span><input name="installment" inputMode="decimal" autoComplete="off" /></label>
+                <label className="stack-sm"><span>Día de pago</span><input name="dueDay" inputMode="numeric" placeholder="1–31" /></label>
+              </div>
+              <details>
+                <summary>Cuotas y tasa (opcional)</summary>
+                <div className="grid" style={{ paddingTop: 8 }}>
+                  <label className="stack-sm"><span>N.º de cuotas</span><input name="installmentsTotal" inputMode="numeric" /></label>
+                  <label className="stack-sm"><span>Cuotas pagadas</span><input name="installmentsPaid" inputMode="numeric" /></label>
+                  <label className="stack-sm"><span>Tasa anual %</span><input name="rate" inputMode="decimal" /></label>
+                </div>
+              </details>
+              <button type="submit" className="wide">Agregar deuda</button>
+            </ActionForm>
+          </div>
+        </Sheet>
+      </div>
+
+        <Link href="/app/tarjetas" className="section-link">Ver tus tarjetas<Icon name="chevron" size={16} /></Link>
+      </section>
     </main>
   );
 }
