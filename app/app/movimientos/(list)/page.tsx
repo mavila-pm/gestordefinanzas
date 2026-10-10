@@ -95,7 +95,7 @@ export default async function Movements({ searchParams }: { searchParams: Promis
 
       {firstMonth && entitlements.limits.historyMonths !== null && (
         <p className="muted small" data-testid="history-window">
-          Tu plan actual (Free) muestra los movimientos {entitlements.limits.historyMonths === 1 ? 'de este mes' : `de los últimos ${entitlements.limits.historyMonths} meses`}. Para consultar otros meses, <Link href="/app/cuenta">cambia a Plus</Link>.
+          Tu plan actual (Free) muestra los movimientos {entitlements.limits.historyMonths === 1 ? 'de este mes' : `de los últimos ${entitlements.limits.historyMonths} meses`}. Para consultar otros meses, <Link href="/app/ajustes/plan">cambia a Plus</Link>.
         </p>
       )}
       <section aria-label="Lista de movimientos">

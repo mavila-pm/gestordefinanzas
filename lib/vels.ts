@@ -1,6 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { answer, compactView, detectIntent, velsSuggestions, type Answer, type View } from '../src/ai/vels-answers';
+import { answer, compactView, detectIntent, proactiveNote, STYLE_INSTRUCTION, styleAnswer, velsSuggestions, type Answer, type View } from '../src/ai/vels-answers';
 import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
 import { fold } from '../src/ai/text';
@@ -12,6 +12,7 @@ import { sanitizeUserText } from '../src/ai/sanitize';
 import { greeting, socialKind, socialReply, type Social } from '../src/ai/vels-social';
 import { preferredName } from '../src/domain/profile';
 import { loadProfile } from './queries';
+import { loadPreferences } from './preferences';
 import { infer, STOP_TEXT } from './ai';
 import { logLearning } from './learning';
 import { isReplay } from './idempotency';
@@ -84,7 +85,9 @@ export async function velsTurn(supabase: SupabaseClient, userId: string, raw: st
   const { text } = sanitizeUserText(raw);
   if (!text) return;
   // One parallel step instead of three sequential round trips: the engine view doesn't depend on the thread.
-  const [loaded, v] = await Promise.all([loadMessages(supabase, 'assistant', 8), view(supabase), say(supabase, userId, 'user', text)]);
+  const [loaded, v, prefs] = await Promise.all([loadMessages(supabase, 'assistant', 8), view(supabase), loadPreferences(supabase), say(supabase, userId, 'user', text)]);
+  // Ajustes → Vels: the style only changes presentation (rows, Gemini's length); the engine's numbers are the same.
+  const styled = (a: Answer) => toCard(styleAnswer(a, prefs.velsStyle));
   const history = loaded.at(-1)?.role === 'user' && loaded.at(-1)?.body === text ? loaded.slice(0, -1) : loaded;
   const last = [...history].reverse().find((m) => m.role === 'velsuno');
 
@@ -117,20 +120,20 @@ export async function velsTurn(supabase: SupabaseClient, userId: string, raw: st
   const intent = detectIntent(text);
   if (await askIfMissing(supabase, userId, intent, v)) { await prune(supabase); return; }
   const a = answer(intent, v);
-  if (a) { await say(supabase, userId, 'velsuno', a.text, toCard(a)); await prune(supabase); return; }
+  if (a) { await say(supabase, userId, 'velsuno', a.text, styled(a)); await prune(supabase); return; }
 
   // Not recognised locally → Gemini interprets (structured, validated) → the engine answers. The model never computes money.
   const recent = history.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.body }));
   const ctx = { state: compactView(v), question: text };
-  const r = await infer(supabase, { operation: 'assistant_answer', system: VELS_ROUTE_SYSTEM, schema: VELS_ROUTE_SCHEMA,
+  const r = await infer(supabase, { operation: 'assistant_answer', system: `${VELS_ROUTE_SYSTEM}\n${STYLE_INSTRUCTION[prefs.velsStyle]}`, schema: VELS_ROUTE_SCHEMA,
     messages: [...recent, { role: 'user', content: `ESTADO:\n${ctx.state}\n\nPREGUNTA:\n${text}` }] }, (t) => validateVelsRoute(t, ctx) !== null);
   const route = r.ok ? validateVelsRoute(r.text, ctx) : null;
   if (route?.kind === 'intent' && await askIfMissing(supabase, userId, route.intent, v)) { await prune(supabase); return; }
   const routed = route?.kind === 'intent' ? answer(route.intent, v) : null;
-  if (routed) await say(supabase, userId, 'velsuno', routed.text, toCard(routed));
+  if (routed) await say(supabase, userId, 'velsuno', routed.text, styled(routed));
   else if (route?.kind === 'reply') await say(supabase, userId, 'velsuno', route.text.slice(0, 600));
   else if (r.ok) await say(supabase, userId, 'velsuno', NOT_UNDERSTOOD);
-  else if (r.reason === 'ai_quota') await say(supabase, userId, 'velsuno', STOP_TEXT.ai_quota, { stop: true, links: [{ label: 'Ver Plus', href: '/app/cuenta' }] });
+  else if (r.reason === 'ai_quota') await say(supabase, userId, 'velsuno', STOP_TEXT.ai_quota, { stop: true, links: [{ label: 'Ver Plus', href: '/app/ajustes/plan' }] });
   else if (r.reason === 'unavailable' || r.reason === 'failed') {
     // Timeout, provider error, rate limit, empty or invalid output: a friendly way forward, never a broken thread.
     await say(supabase, userId, 'velsuno', r.reason === 'failed' ? NOT_UNDERSTOOD : 'Eso todavía no sé responderlo. Pregúntame por tu dinero disponible o tus pagos y lo vemos.');
@@ -330,7 +333,10 @@ export async function clearVels(supabase: SupabaseClient) {
 
 /** Opening Vels (bubble or page): recent conversation + up to 3 openers from the real state and the current screen. */
 export async function velsOpen(supabase: SupabaseClient, path: string): Promise<{ messages: Awaited<ReturnType<typeof loadMessages>>; suggestions: string[]; greeting: string }> {
-  const [messages, v, profile] = await Promise.all([loadMessages(supabase, 'assistant', KEEP), view(supabase), loadProfile(supabase)]);
+  const [messages, v, profile, prefs] = await Promise.all([loadMessages(supabase, 'assistant', KEEP), view(supabase), loadProfile(supabase), loadPreferences(supabase)]);
   // Shown only when the thread is empty (start of a conversation); the opener varies by day, not by reload.
-  return { messages, suggestions: velsSuggestions(v, path), greeting: greeting(preferredName(profile), Number(v.today.slice(8, 10))) };
+  // Proactive suggestions (Ajustes → Vels): at most one useful line before the question, never a list.
+  const hello = greeting(preferredName(profile), Number(v.today.slice(8, 10)));
+  const note = prefs.velsProactive ? proactiveNote(v) : null;
+  return { messages, suggestions: velsSuggestions(v, path), greeting: note ? hello.replace(/ (¿[^?]*\?)$/, (_, q: string) => ` ${note} ${q}`) : hello };
 }

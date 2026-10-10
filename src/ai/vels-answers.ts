@@ -16,7 +16,7 @@ export type Intent =
   | { k: 'free' } | { k: 'can_spend'; amountMinor: number; currency: Currency } | { k: 'upcoming'; range: 'week' | 'next' }
   | { k: 'pay_first' } | { k: 'how' } | { k: 'why_free' } | { k: 'paid'; name: string } | { k: 'got_paid' }
   | { k: 'update_amount'; name: string; amountMinor: number } | { k: 'income_changed'; amountMinor: number | null } | { k: 'debt_paid'; name: string }
-  | { k: 'changed' } | { k: 'help' } | { k: 'unknown' } | { k: 'balance' } | { k: 'next_income' }
+  | { k: 'changed' } | { k: 'help' } | { k: 'connect_email' } | { k: 'unknown' } | { k: 'balance' } | { k: 'next_income' }
   | { k: 'card_limit' } | { k: 'organize' } | { k: 'pay_min' } | { k: 'owe'; amountMinor: number; currency: Currency; lender: string }
   | { k: 'estimate_basics'; amountMinor: number } | { k: 'apply_plan' }
   | { k: 'pref_zero_debt'; on: boolean } | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number };
@@ -64,6 +64,8 @@ export function detectIntent(message: string): Intent {
   if (/\b(pague|ya pague|pagado)\b/.test(t) && name) return { k: 'paid', name };
   if (name && amount && /\b(ahora|cuesta|sube|subio|es|son|paga)\b/.test(t)) return { k: 'update_amount', name, amountMinor: amount.minor };
   if (/^(ayuda|help|que puedes hacer)\b/.test(t)) return { k: 'help' };
+  // Connecting a source starts here, guided by Vels (no technical settings screen).
+  if (/\b(conectar|vincular|enlazar|reenviar|automatizar)\b.*\b(correo|email|mail|gmail|outlook|banco|bcp|avisos)\b/.test(t)) return { k: 'connect_email' };
   // Direct facts: "¿cuándo me pagan?", "¿cuándo es mi próximo sueldo?", "¿cuánto tengo?".
   if (/\bcuando (me pagan|cobro|me depositan|me cae|recibo (mi )?(sueldo|pago|ingreso)|(es|llega|viene) (mi )?(proximo|siguiente)? ?(sueldo|ingreso|pago|quincena))\b/.test(t)) return { k: 'next_income' };
   if (/^(y )?cuanto (tengo|dinero tengo|plata tengo|hay en mi cuenta)( (ahora|hoy|en (la|mi) cuenta))?$/.test(t.replace(/[^a-z0-9 ]/g, '').trim())) return { k: 'balance' };
@@ -317,6 +319,9 @@ export function answer(intent: Intent, v: View): Answer | null {
     case 'estimate_basics':
       return { text: `¿Uso ${money(intent.amountMinor, 'PEN')} al mes para lo básico? Queda como estimado.`,
         actions: [{ type: 'act', label: 'Usar', act: 'set_essentials', fields: { amount: String(intent.amountMinor) } }] };
+    case 'connect_email':
+      return { text: 'Claro. Te ayudo a hacerlo: tienes una dirección privada a la que puedes reenviar los avisos de tu banco, y yo los ordeno. Nunca te pediré la clave de tu banco.',
+        actions: [{ type: 'link', label: 'Conectar mi correo', href: '/app/conexiones' }] };
     case 'help':
       return { text: 'Puedo ayudarte a ver cuánto tienes disponible, qué pagos vienen, si te alcanza para algo o cómo ordenar tus deudas.' };
     default:
@@ -367,3 +372,36 @@ export function velsSuggestions(v: View, path: string): string[] {
   add('¿Puedo gastar S/ 300?');
   return out;
 }
+
+/**
+ * Ajustes → Vels → Estilo de respuestas. Only the presentation changes: "Breves" keeps the sentence (with its
+ * numbers) and drops the detail rows; "Equilibradas" and "Detalladas" keep them. Amounts are the engine's in all three.
+ */
+export function styleAnswer(a: Answer, style: 'brief' | 'balanced' | 'detailed'): Answer {
+  return style === 'brief' && a.rows?.length ? { ...a, rows: undefined } : a;
+}
+
+/** Gemini's own reply length for each style (its free replies only; routed answers come from the engine). */
+export const STYLE_INSTRUCTION: Record<'brief' | 'balanced' | 'detailed', string> = {
+  brief: 'Estilo pedido por la persona: breve. Responde en una frase.',
+  balanced: 'Estilo pedido por la persona: equilibrado. Una o dos frases con el contexto necesario.',
+  detailed: 'Estilo pedido por la persona: detallado. Hasta cuatro frases, explicando el porqué.',
+};
+
+/**
+ * Ajustes → Vels → Sugerencias proactivas: at most ONE useful line when Vels opens — something waiting for review,
+ * a payment due within 2 days, or upcoming payments above what is available. Nothing else; never a list of alerts.
+ */
+export function proactiveNote(v: View): string | null {
+  if (v.reviewCount > 0) return v.reviewCount === 1 ? 'Tienes 1 movimiento por revisar.' : `Tienes ${v.reviewCount} movimientos por revisar.`;
+  const due = (v.timeline ?? []).filter((t) => t.kind !== 'income' && t.date !== null && !t.overdue && daysBetween(v.today, t.date!) >= 0 && daysBetween(v.today, t.date!) <= 2)
+    .sort((a, b) => a.date!.localeCompare(b.date!))[0];
+  if (due) {
+    const d = daysBetween(v.today, due.date!);
+    return `${d === 0 ? 'Hoy' : d === 1 ? 'Mañana' : `El ${Number(due.date!.slice(8, 10))}`} vence ${due.label}${due.amountMinor !== null ? ` (${money(due.amountMinor, due.currency)})` : ''}.`;
+  }
+  const p = v.plans.find((x) => x.currency === 'PEN');
+  if (p && p.freeMinor !== null && p.freeMinor < 0) return 'Tus próximos pagos superan lo que tienes hoy.';
+  return null;
+}
+

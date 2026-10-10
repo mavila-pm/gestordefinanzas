@@ -10,6 +10,7 @@ import { addDays } from '../../../src/domain/dates';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
 import { SavingsGoal } from '../../../components/savings-goal';
 import { loadCatalog } from '../../../lib/queries';
+import { loadPreferences } from '../../../lib/preferences';
 import { monthlySummary } from '../../../src/engine/monthly-summary';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';
@@ -87,9 +88,11 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const month = limaMonth();
   const range = limaMonthRange(month)!;
   // One parallel round: the plan, the observed essentials, the month's movements (savings) and the accounts.
-  const [d, essentialRows, monthTx, catalog] = await Promise.all([loadPlanningData(supabase), loadEssentialRows(supabase),
-    supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', range.from).lt('occurred_at', range.to).limit(3000), loadCatalog(supabase)]);
-  const currencies = (['PEN', 'USD'] as const).filter((c, i) => i === 0 || d.balances[c] || d.incomes.some((x) => x.currency === c) || d.obligations.some((o) => o.currency === c));
+  const [d, essentialRows, monthTx, catalog, prefs] = await Promise.all([loadPlanningData(supabase), loadEssentialRows(supabase),
+    supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', range.from).lt('occurred_at', range.to).limit(3000), loadCatalog(supabase), loadPreferences(supabase)]);
+  const shown = (['PEN', 'USD'] as const).filter((c, i) => i === 0 || d.balances[c] || d.incomes.some((x) => x.currency === c) || d.obligations.some((o) => o.currency === c));
+  // Ajustes → Finanzas: the main currency goes first (order only; never converted or added together).
+  const currencies = prefs.primaryCurrency === 'USD' && shown.includes('USD') ? (['USD', 'PEN'] as const).filter((c) => shown.includes(c)) : shown;
   const incomeId = ingreso && isUuid(ingreso) && d.transactionsById.has(ingreso) ? ingreso : null;
   const incomeTx = incomeId ? d.transactionsById.get(incomeId)! : null;
   const incomeCurrency = d.recentIncome?.transactionId === incomeId ? d.recentIncome!.currency : 'PEN';

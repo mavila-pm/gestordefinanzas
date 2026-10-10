@@ -39,6 +39,8 @@ vi.mock('../lib/planning', () => ({
 vi.mock('../lib/cards', () => ({ loadCardViews: async () => [] }));
 vi.mock('../lib/queries', () => ({ loadProfile: async () => ({ displayName: profile.name, givenNames: profile.name, familyNames: 'Ávila' }) }));
 vi.mock('../lib/learning', () => ({ logLearning: async () => undefined }));
+const prefs = { velsStyle: 'balanced' as 'brief' | 'balanced' | 'detailed', velsProactive: true };
+vi.mock('../lib/preferences', () => ({ loadPreferences: async () => ({ ...prefs, primaryCurrency: 'PEN', primaryAccountId: null, notifyUpcoming: true, notifyReview: true, notifyMonthly: true, notifyLimits: true }) }));
 vi.mock('../lib/plan-applications', () => ({ applyPlan: async () => ({ ok: false, error: 'x' }) }));
 vi.mock('../lib/onboarding', () => ({ loadMessages: async () => store.messages.slice(-8), readImages: async () => [] }));
 vi.mock('../lib/ai', () => ({

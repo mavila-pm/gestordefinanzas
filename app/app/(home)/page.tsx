@@ -12,6 +12,8 @@ import { loadBudgets, loadCommitmentData, loadEntitlements, loadProfile } from '
 import { historyStart, visibleMonth } from '../../../src/domain/entitlements';
 import { preferredName } from '../../../src/domain/profile';
 import { loadPlanningData, planFor } from '../../../lib/planning';
+import { loadPreferences } from '../../../lib/preferences';
+import { alertAllowed } from '../../../src/web/preferences';
 import { limaToday, shortDate } from '../../../src/domain/dates';
 import { monthCommitments, totalsByCurrency } from '../../../src/engine/commitments';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../../src/infrastructure/supabase/transaction-row';
@@ -40,7 +42,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   // Six months for the trend (milestones compare with 2 previous months; alerts look back 90 days).
   const windowFrom = limaMonthRange(previousMonth(month, 5))!.from;
   // RLS scopes every query to the signed-in user; no user_id filter can widen it.
-  const [txRes, pendingRes, oldestRes, profileRes, budgets, commitmentData, everRes, planning] = await Promise.all([
+  const [txRes, pendingRes, oldestRes, profileRes, budgets, commitmentData, everRes, planning, prefs] = await Promise.all([
     supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', windowFrom).lt('occurred_at', range.to)
       .order('occurred_at', { ascending: false }).limit(4000),
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
@@ -50,6 +52,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     loadCommitmentData(supabase),
     supabase.from('transactions').select('id', { count: 'exact', head: true }),
     loadPlanningData(supabase, now),
+    loadPreferences(supabase),
   ]);
 
   if (txRes.error) {
@@ -73,9 +76,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   // "Due soon" looks 3 days ahead, so at month end it must also see the first days of next month.
   const soon = isCurrent ? [...commitments, ...monthCommitments(previousMonth(currentMonth, -1), today, commitmentData.fixed, commitmentData.debts).filter((c) => c.daysUntil <= 3)] : [];
   // The review count has its own line below: the alert list keeps the other signals (due soon, limits, unusual).
-  const alerts = buildAlerts({ txs: all, pendingCount: 0, oldestPendingDays: null, unresolvedEvents30d: 0, now, currency: 'PEN', budgets: isCurrent ? budgetStatus(all, month, budgets) : [], commitments: soon });
+  // Ajustes → Notificaciones: each notice the person turned off is not shown (unusual spending always is).
+  const alerts = buildAlerts({ txs: all, pendingCount: 0, oldestPendingDays: null, unresolvedEvents30d: 0, now, currency: 'PEN', budgets: isCurrent ? budgetStatus(all, month, budgets) : [], commitments: soon }).filter((a) => alertAllowed(a.code, prefs));
   const insight = mainInsight(all, month, 'PEN');
-  const milestone = isCurrent
+  const milestone = isCurrent && prefs.notifyMonthly
     ? closedMonthMilestone(all, previousMonth(currentMonth), 'PEN', { firstName, dataHealthOk: health.level !== 'ACTION_REQUIRED', budgets })
     : null;
   const money = (v: number, currency: Currency) => formatMoney({ amountMinor: Math.abs(v), currency });
@@ -124,7 +128,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
       )}
 
-      {pendingCount > 0 && (
+      {pendingCount > 0 && prefs.notifyReview && (
         <Link href="/app/revisar" className="notice warning review-alert" data-testid="review-alert">
           <span><strong>{plural(pendingCount, 'movimiento por revisar', 'movimientos por revisar')}</strong></span>
           <Icon name="chevron" size={18} />
