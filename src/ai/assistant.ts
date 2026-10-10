@@ -1,3 +1,4 @@
+import { addDays, daysBetween, longDate, shortDate } from '../domain/dates';
 import type { Currency } from '../domain/money';
 import type { IncomeMatch, TimelineItem } from '../engine/observed';
 import { compareDebtStrategies, simulatePurchase, type MatchSuggestion, type Plan, type PlanInput } from '../engine/planning';
@@ -90,10 +91,6 @@ export type Action =
   | { type: 'reply'; label: string };
 export interface Answer { title?: string; text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' }
 
-const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'setiembre', 'octubre', 'noviembre', 'diciembre'];
-/** Dates inside Vels's sentences, said like a person: "29 de octubre" (rows keep the compact "29 oct"). */
-const dl = (d: string) => `${Number(d.slice(8, 10))} de ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
-const dm = (d: string) => `${Number(d.slice(8, 10))} ${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'][Number(d.slice(5, 7)) - 1]}`;
 const primary = (v: View) => v.plans.find((p) => p.base) ?? v.plans[0] ?? null;
 const PLAN_LINK: Action = { type: 'link', label: 'Ver Dinero libre', href: '/app/plan' };
 /** Confirmation button for "Aplicar plan": carries what the person saw so a changed plan is not saved blindly. */
@@ -110,7 +107,7 @@ export function answer(intent: Intent, v: View): Answer | null {
   switch (intent.k) {
     case 'free': {
       if (!p || p.freeMinor === null) return { text: `Para calcular cuánto tienes libre necesito ${p?.missing[0]?.text.replace(/\.$/, '').toLowerCase() ?? 'tu saldo de hoy y tu próximo ingreso'}.`, actions: [PLAN_LINK], pending: !p?.base ? 'balance' : undefined };
-      const until = p.until ? ` hasta el ${dl(p.until)}` : '';
+      const until = p.until ? ` hasta el ${longDate(p.until)}` : '';
       // An estimate is said like a person says it ("unos S/ 5,090"); the status itself is unchanged.
       const about = p.status !== 'confirmed' ? 'unos ' : '';
       return {
@@ -132,22 +129,22 @@ export function answer(intent: Intent, v: View): Answer | null {
       const b = v.plans.find((x) => x.base?.kind === 'balance')?.base;
       if (!b || b.kind !== 'balance' || !p) return null;
       const c = v.plans.find((x) => x.base === b)!.currency;
-      return { text: b.stale ? `Tenías ${money(b.amountMinor, c)} el ${dl(b.asOf.slice(0, 10))}. ¿Cuánto tienes hoy?` : `Tienes ${money(b.amountMinor, c)} disponibles.`, ...(b.stale ? { pending: 'balance' as const } : {}) };
+      return { text: b.stale ? `Tenías ${money(b.amountMinor, c)} el ${longDate(b.asOf.slice(0, 10))}. ¿Cuánto tienes hoy?` : `Tienes ${money(b.amountMinor, c)} disponibles.`, ...(b.stale ? { pending: 'balance' as const } : {}) };
     }
     case 'next_income': {
       const n = v.plans.map((x) => x.nextIncome).filter((x) => x !== null).sort((a, b) => a!.date.localeCompare(b!.date))[0];
       if (!n) return null;
-      const when = n.dateMax ? `Entre el ${dl(n.date)} y el ${dl(n.dateMax)}` : `El ${dl(n.date)}`;
+      const when = n.dateMax ? `Entre el ${longDate(n.date)} y el ${longDate(n.dateMax)}` : `El ${longDate(n.date)}`;
       return { text: n.amountStatus === 'confirmed' ? `${when}.` : `${when}, según lo que tienes registrado.` };
     }
     case 'upcoming': {
       if (!p) return { text: 'Aún no tienes pagos registrados.', actions: [{ type: 'link', label: 'Agregar pagos', href: '/app/compromisos' }] };
-      const horizon = intent.range === 'week' ? dateAdd(v.today, 7) : '9999-12-31';
+      const horizon = intent.range === 'week' ? addDays(v.today, 7) : '9999-12-31';
       const lines = v.plans.flatMap((x) => x.lines.filter((l) => (l.kind === 'payment' || l.kind === 'overdue' || l.kind === 'debt') && (l.date === null || l.date <= horizon)).map((l) => ({ l, cur: x.currency })));
       if (!lines.length) return { text: intent.range === 'week' ? 'Esta semana no tienes pagos pendientes.' : 'No tienes pagos pendientes antes de tu próximo ingreso.' };
       return {
         text: intent.range === 'week' ? 'Esto viene esta semana:' : 'Esto tienes que pagar antes de tu próximo ingreso:',
-        rows: lines.slice(0, 6).map(({ l, cur }) => ({ label: `${l.label}${l.kind === 'overdue' ? ' (vencido)' : ''}`, value: `${l.amountMinor === null ? 'monto por confirmar' : money(l.amountMinor, cur)}${l.date ? ` · ${dm(l.date)}` : ''}` })),
+        rows: lines.slice(0, 6).map(({ l, cur }) => ({ label: `${l.label}${l.kind === 'overdue' ? ' (vencido)' : ''}`, value: `${l.amountMinor === null ? 'monto por confirmar' : money(l.amountMinor, cur)}${l.date ? ` · ${shortDate(l.date)}` : ''}` })),
         actions: [{ type: 'link', label: 'Ver próximos pagos', href: '/app/compromisos' }],
       };
     }
@@ -157,7 +154,7 @@ export function answer(intent: Intent, v: View): Answer | null {
       const strategy = v.debts.length > 1 ? compareDebtStrategies(v.debts) : null;
       const parts: string[] = [];
       if (overdue.length) parts.push(`Primero lo vencido: ${overdue.map((l) => l.label).join(', ')}.`);
-      else if (next) parts.push(`Lo siguiente es ${next.label}${next.date ? ` (${dm(next.date)})` : ''}.`);
+      else if (next) parts.push(`Lo siguiente es ${next.label}${next.date ? ` (${shortDate(next.date)})` : ''}.`);
       if (strategy?.avalanche.available && strategy.avalanche.order[0]) parts.push(`Con tus deudas, abona extra a ${strategy.avalanche.order[0]}: es la de mayor interés.`);
       else if (strategy?.snowball.order[0]) parts.push(`Si quieres ver avance rápido, termina primero ${strategy.snowball.order[0]}: es la más pequeña.`);
       return parts.length ? { text: parts.join(' '), actions: [{ type: 'link', label: 'Ver próximos pagos', href: '/app/compromisos' }] } : { text: 'No tienes pagos pendientes ahora.' };
@@ -171,7 +168,7 @@ export function answer(intent: Intent, v: View): Answer | null {
     case 'why_free': {
       if (!p || p.freeMinor === null || !p.base) return answer({ k: 'free' }, v);
       return {
-        text: `Tienes ${money(p.base.amountMinor, p.currency)} y separé ${money(p.reservedMinor, p.currency)} para lo que viene${p.until ? ` hasta el ${dl(p.until)}` : ''}. Por eso quedan ${money(p.freeMinor, p.currency)}.`,
+        text: `Tienes ${money(p.base.amountMinor, p.currency)} y separé ${money(p.reservedMinor, p.currency)} para lo que viene${p.until ? ` hasta el ${longDate(p.until)}` : ''}. Por eso quedan ${money(p.freeMinor, p.currency)}.`,
         rows: p.lines.slice(0, 6).map((l) => ({ label: l.label, value: l.amountMinor === null ? 'monto por confirmar' : money(l.amountMinor, p.currency) })),
         actions: [PLAN_LINK],
       };
@@ -199,7 +196,7 @@ export function answer(intent: Intent, v: View): Answer | null {
       }
       if (m) {
         return {
-          text: `Vi un ingreso de ${money(m.receivedMinor, m.currency)}. ¿Es tu ${m.name.toLowerCase()} del ${dm(m.expectedDate)}?`,
+          text: `Vi un ingreso de ${money(m.receivedMinor, m.currency)}. ¿Es tu ${m.name.toLowerCase()} del ${shortDate(m.expectedDate)}?`,
           actions: [{ type: 'act', label: 'Sí, es ese', act: 'link_income', fields: { incomeId: m.incomeId, transactionId: m.transactionId, period: m.period } }, PLAN_LINK],
         };
       }
@@ -216,7 +213,7 @@ export function answer(intent: Intent, v: View): Answer | null {
       if (!intent.on) return { text: 'Entendido: mantengo tu colchón aunque pagues deuda. ¿Lo cambio?', actions: [act] };
       const plan = v.plans.find((x) => x.currency === 'PEN');
       const x = plan ? extraDebtPayment(plan, v.debts.filter((d) => d.currency === 'PEN'), true) : null;
-      const trade = x ? ` Hoy podrías abonar ${money(x.amountMinor, 'PEN')}${x.target ? ` a ${x.target}` : ''}${x.usesCushion ? `, quedando en S/ 0${x.until ? ` hasta el ${dm(x.until)}` : ''}` : ''}.` : '';
+      const trade = x ? ` Hoy podrías abonar ${money(x.amountMinor, 'PEN')}${x.target ? ` a ${x.target}` : ''}${x.usesCushion ? `, quedando en S/ 0${x.until ? ` hasta el ${shortDate(x.until)}` : ''}` : ''}.` : '';
       return { text: `Entendido: si pagas deuda, puedes quedarte en cero.${trade} ¿Lo guardo?`, actions: [act] };
     }
     case 'what_pay_debt': {
@@ -258,11 +255,11 @@ export function answer(intent: Intent, v: View): Answer | null {
       const real = pos?.usableMinor ?? Math.max(0, p.freeMinor);
       const rows: Array<{ label: string; value: string }> = [{ label: 'Por qué', value: 'Lo que podrías pagar completo sin tocar tus pagos' }];
       if (pos?.billed) {
-        rows.push({ label: 'Facturado', value: `${pos.billed.amountMinor === null ? 'por confirmar' : money(pos.billed.amountMinor, p.currency)} · vence ${dm(pos.billed.dueDate)}` });
+        rows.push({ label: 'Facturado', value: `${pos.billed.amountMinor === null ? 'por confirmar' : money(pos.billed.amountMinor, p.currency)} · vence ${shortDate(pos.billed.dueDate)}` });
         if (pos.postCutMinor) rows.push({ label: 'Después del corte', value: `${money(pos.postCutMinor, p.currency)} (va al próximo estado)` });
         if (pos.bankAvailableMinor !== null) rows.push({ label: 'Disponible del banco', value: money(pos.bankAvailableMinor, p.currency) });
-      } else if (cycle) rows.push({ label: 'Lo facturado vence', value: `${dm(cycle.dueOfBilled)} (paga el total y no hay interés)` });
-      if (cycle) rows.push({ label: 'Lo que compres hoy', value: `se paga el ${dm(cycle.dueOfToday)}` });
+      } else if (cycle) rows.push({ label: 'Lo facturado vence', value: `${shortDate(cycle.dueOfBilled)} (paga el total y no hay interés)` });
+      if (cycle) rows.push({ label: 'Lo que compres hoy', value: `se paga el ${shortDate(cycle.dueOfToday)}` });
       return {
         text: `${bank ? `El banco te permite ${money(bank.creditLimitMinor!, p.currency)}. ` : ''}Para este ciclo, tu límite real es ${money(real, p.currency)}${p.status !== 'confirmed' ? ' (estimado)' : ''}.`,
         rows, actions: [PLAN_LINK],
@@ -270,11 +267,11 @@ export function answer(intent: Intent, v: View): Answer | null {
     }
     case 'organize': {
       if (!p || p.freeMinor === null) return answer({ k: 'free' }, v);
-      const rows = p.lines.filter((l) => l.amountMinor !== null).slice(0, 7).map((l) => ({ label: `${l.label}${l.kind === 'overdue' ? ' (vencido)' : ''}`, value: `${money(l.amountMinor!, p.currency)}${l.date ? ` · ${dm(l.date)}` : ''}` }));
+      const rows = p.lines.filter((l) => l.amountMinor !== null).slice(0, 7).map((l) => ({ label: `${l.label}${l.kind === 'overdue' ? ' (vencido)' : ''}`, value: `${money(l.amountMinor!, p.currency)}${l.date ? ` · ${shortDate(l.date)}` : ''}` }));
       rows.push({ label: p.freeMinor >= 0 ? 'Libre' : 'Faltan', value: money(Math.abs(p.freeMinor), p.currency) });
       const pending = p.lines.filter((l) => l.amountMinor === null).length;
       return {
-        title: p.until ? `Hasta el ${dm(p.until)}` : 'Tu plan', text: `Así va tu dinero hasta tu próximo ingreso${p.status !== 'confirmed' ? ' (estimado)' : ''}:`,
+        title: p.until ? `Hasta el ${shortDate(p.until)}` : 'Tu plan', text: `Así va tu dinero hasta tu próximo ingreso${p.status !== 'confirmed' ? ' (estimado)' : ''}:`,
         rows: pending ? [...rows, { label: 'Por confirmar', value: `${pending} monto${pending > 1 ? 's' : ''}` }] : rows,
         actions: [...(p.status !== 'incomplete' ? [applyAct(p)] : []), { type: 'reply', label: '¿Qué pago primero?' }, PLAN_LINK],
       };
@@ -292,7 +289,7 @@ export function answer(intent: Intent, v: View): Answer | null {
         const pen = v.plans.find((x) => x.currency === 'PEN');
         const reservedForCard = pen?.lines.filter((l) => card.obligationId && l.obligationId === card.obligationId).reduce((s2, l) => s2 + (l.amountMinor ?? 0), 0) ?? 0;
         const after = pen?.freeMinor == null ? null : pen.freeMinor + reservedForCard - billed;
-        const due = dm(st.billed.dueDate);
+        const due = shortDate(st.billed.dueDate);
         if (after !== null && after >= 0) return { text: `Paga el total facturado (${money(billed, 'PEN')}) hasta el ${due}: te quedan ${money(after, 'PEN')} libres y no pagas intereses.`, actions: [PLAN_LINK] };
         const carried = st.minimumOnly ? ` Pasan ${money(st.minimumOnly.carriedMinor, 'PEN')} al próximo ciclo${st.minimumOnly.interestMinor ? `, ~${money(st.minimumOnly.interestMinor, 'PEN')} de interés` : ' con interés'}.` : '';
         return { text: `No te alcanza para el total (${money(billed, 'PEN')}). Paga al menos el mínimo${st.billed.minimumMinor !== null ? ` (${money(st.billed.minimumMinor, 'PEN')})` : ''} hasta el ${due} y abona lo que puedas.${carried}`, actions: [PLAN_LINK] };
@@ -311,7 +308,7 @@ export function answer(intent: Intent, v: View): Answer | null {
     case 'apply_plan': {
       if (!p || p.freeMinor === null || p.status === 'incomplete' || !p.until) return { text: (p && missingText(p)) ?? 'Para aplicar un plan necesito tu saldo y tu próximo ingreso.', actions: [PLAN_LINK] };
       return {
-        title: `Plan hasta el ${dm(p.until)}`,
+        title: `Plan hasta el ${shortDate(p.until)}`,
         text: `¿Lo aplico? Aparta ${money(p.reservedMinor, p.currency)} en pagos y reservas${p.status !== 'confirmed' ? ' (estimado)' : ''}. No paga ni mueve dinero.`,
         rows: [{ label: p.freeMinor >= 0 ? 'Te queda libre' : 'Faltan', value: money(Math.abs(p.freeMinor), p.currency) }],
         actions: [applyAct(p), PLAN_LINK],
@@ -335,8 +332,6 @@ function freeText(r: ScenarioResult): string {
   return r.freeAfterMinor >= 0 ? `te quedan ${money(r.freeAfterMinor, r.currency)} libres${est}${before}.` : `te faltarían ${money(-r.freeAfterMinor, r.currency)}${est}${before}.`;
 }
 
-function dateAdd(d: string, n: number) { return new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10); }
-
 /** Compact, number-complete state for a provider (§23): facts computed by the engine, not the transcript. */
 export function compactView(v: View): string {
   const lines: string[] = [`Hoy: ${v.today}`];
@@ -359,8 +354,8 @@ export function velsSuggestions(v: View, path: string): string[] {
   const add = (q: string | null) => { if (q && !out.includes(q) && out.length < 3) out.push(q); };
   const p = primary(v);
   if (v.incomeMatches?.length) add('Ya me pagaron');
-  else if (v.recentIncome && daysFrom(v.today, v.recentIncome.date) <= 3) add('Organiza mi dinero');
-  const soon = (v.timeline ?? []).find((t) => t.kind !== 'income' && t.date !== null && !t.overdue && daysFrom(t.date, v.today) <= 7 && /tarjeta|visa|amex|mastercard/i.test(t.label));
+  else if (v.recentIncome && daysBetween(v.recentIncome.date, v.today) <= 3) add('Organiza mi dinero');
+  const soon = (v.timeline ?? []).find((t) => t.kind !== 'income' && t.date !== null && !t.overdue && daysBetween(v.today, t.date!) <= 7 && /tarjeta|visa|amex|mastercard/i.test(t.label));
   if (soon) add('¿Pago el mínimo?');
   if (path.startsWith('/app/plan') && p?.freeMinor != null) add(`¿Por qué tengo ${money(Math.max(0, p.freeMinor), p.currency)} libres?`);
   if (path.startsWith('/app/compromisos')) add('¿Qué pago primero?');
@@ -372,4 +367,3 @@ export function velsSuggestions(v: View, path: string): string[] {
   add('¿Puedo gastar S/ 300?');
   return out;
 }
-const daysFrom = (later: string, earlier: string) => Math.round((Date.parse(`${later}T00:00:00Z`) - Date.parse(`${earlier}T00:00:00Z`)) / 86_400_000);

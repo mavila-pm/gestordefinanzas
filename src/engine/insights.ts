@@ -1,4 +1,5 @@
 import { formatMoney, type Currency } from '../domain/money';
+import { MONTHS } from '../domain/dates';
 import type { Transaction } from '../domain/types';
 import { compareMonths, previousMonth } from './analysis';
 import { monthlySummary } from './monthly-summary';
@@ -30,8 +31,7 @@ export function mainInsight(txs: readonly Transaction[], month: string, currency
 export type MilestoneKind = 'consistency' | 'improvement' | 'category_budget' | 'monthly_saving';
 export interface Milestone { kind: MilestoneKind; month: string; text: string }
 
-const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-const monthName = (month: string) => MONTH_NAMES[Number(month.slice(5, 7)) - 1]!;
+const monthName = (month: string) => MONTHS[Number(month.slice(5, 7)) - 1]!;
 
 /**
  * FinancialMilestoneEngine (spec §41-45). Event-driven: evaluated only for a CLOSED month. Confidence gate (§44):

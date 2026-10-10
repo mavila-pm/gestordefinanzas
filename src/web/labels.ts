@@ -1,7 +1,7 @@
+import { MONTHS } from '../domain/dates';
 /** Human labels shared by every screen (never internal codes). */
 export const SOURCE_LABEL: Record<string, string> = { email: 'Correo del banco', sms: 'SMS', import: 'Mensaje pegado', manual: 'Manual' };
 export const STATUS_LABEL: Record<string, string> = { review_required: 'Por revisar', possible_duplicate: 'Posible duplicado', ignored: 'Ignorado' };
-const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 /** "2026-09" -> "Septiembre 2026". */
 export function monthLabel(month: string): string {

@@ -1,4 +1,5 @@
 import { BANK_LABEL } from './interpreter';
+import { shortDate } from '../domain/dates';
 import { money } from './draft';
 import type { VisionFacts } from './schema';
 import type { Patch } from './types';
@@ -11,7 +12,6 @@ import type { Patch } from './types';
 export interface VisionProposal { title: string; rows: Array<{ label: string; value: string; doubtful: boolean }>; patches: Patch[] }
 
 const dayOf = (iso: string | null) => (iso ? Number(iso.slice(8, 10)) : undefined);
-const shortDate = (iso: string) => `${Number(iso.slice(8, 10))} ${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'][Number(iso.slice(5, 7)) - 1]}`;
 
 export function proposalFrom(f: VisionFacts): VisionProposal | null {
   const cur = f.currency ?? 'PEN';

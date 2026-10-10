@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { formatMoney, type Currency } from '../src/domain/money';
-import { daysBetween, planBreakdown, type Plan } from '../src/engine/planning';
-import { shortDate } from '../src/web/dates';
+import { planBreakdown, type Plan } from '../src/engine/planning';
+import { daysBetween } from '../src/domain/dates';
+import { shortDate } from '../src/domain/dates';
 
 /**
  * Resumen opens with what the person can use until the next income (ADR-0005), explained by one bar:

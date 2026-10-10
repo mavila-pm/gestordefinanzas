@@ -10,7 +10,7 @@ import { decide, logLearning } from '../../../lib/learning';
 import { isReplay, ref } from '../../../lib/idempotency';
 import { applyPlan, cancelApplied } from '../../../lib/plan-applications';
 import { loadPlanningData } from '../../../lib/planning';
-import { addDays, limaToday } from '../../../src/engine/planning';
+import { addDays, limaToday } from '../../../src/domain/dates';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSettingsForm } from '../../../src/web/planning-input';
 import { isUuid } from '../../../src/web/transaction-input';

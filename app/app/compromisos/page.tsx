@@ -12,13 +12,14 @@ import { formatLimaDateTime } from '../../../src/web/transaction-input';
 import { deactivateCommitmentAction, debtPaymentAction, saveDebtAction, saveFixedExpenseAction } from '../actions';
 import { removeObligationAction, saveObligationAction, skipOccurrenceAction } from '../plan/actions';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
-import { addDays, openOccurrence } from '../../../src/engine/planning';
+import { openOccurrence } from '../../../src/engine/planning';
+import { addDays } from '../../../src/domain/dates';
 import { ObligationFields } from '../../../components/obligation-fields';
 import { loadPlanningData } from '../../../lib/planning';
 import { compareDebtStrategies } from '../../../src/engine/planning';
 import { comparePayoff } from '../../../src/engine/scenarios';
 import { parseAmountToMinor } from '../../../src/domain/money';
-import { shortDate } from '../../../src/web/dates';
+import { shortDate } from '../../../src/domain/dates';
 
 export const metadata = { title: 'Próximos pagos' };
 const CUR = <><option value="PEN">Soles (S/)</option><option value="USD">Dólares (US$)</option></>;

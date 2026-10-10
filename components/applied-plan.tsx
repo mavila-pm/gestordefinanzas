@@ -3,7 +3,7 @@ import { applyPlanAction, cancelPlanAction } from '../app/app/plan/actions';
 import { reconcile, type AppliedPlan, type LineState } from '../src/engine/applied';
 import type { Plan } from '../src/engine/planning';
 import { formatMoney, type Currency } from '../src/domain/money';
-import { shortDate } from '../src/web/dates';
+import { shortDate } from '../src/domain/dates';
 
 const m = (v: number, c: Currency) => formatMoney({ amountMinor: Math.abs(v), currency: c });
 const STATE: Record<LineState, string> = { realized: 'Pagado', pending: 'Pendiente', late: 'Atrasado', reserved: 'Reservado' };

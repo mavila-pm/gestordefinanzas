@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useActionState, useEffect, useId, useState } from 'react';
 import { completeProfile, type FormState } from '../app/auth/actions';
-import { birthProblem, limaToday, normalizePhone, PHONE_ERROR } from '../src/web/auth-input';
+import { limaToday } from '../src/domain/dates';
+import { birthProblem, normalizePhone, PHONE_ERROR } from '../src/web/auth-input';
 
 /**
  * Registration step 3: only what Velsuno needs. The verified email is shown, not asked again. Age 18+ is decided

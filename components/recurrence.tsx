@@ -1,6 +1,6 @@
 import { ActionForm } from './action-form';
 import { recurrenceAction } from '../app/app/plan/actions';
-import { shortDate } from '../src/web/dates';
+import { shortDate } from '../src/domain/dates';
 
 /** State line for a recurring item: "Pausado hasta 12 nov" / "Terminó el 28 sep" (null when running). */
 export function lifecycleNote(r: { pausedUntil?: string | null; endedOn?: string | null }, today: string): string | null {

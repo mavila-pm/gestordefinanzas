@@ -3,14 +3,14 @@ import { Sheet } from '../../../components/ui/sheet';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { loadCatalog, loadRules } from '../../../lib/queries';
 import { formatMoney, type Currency } from '../../../src/domain/money';
+import { MONTHS_SHORT } from '../../../src/domain/dates';
 import { changeRuleAction, deleteRuleAction } from '../actions';
 import { forgetOnboardingAction } from '../../bienvenida/actions';
 import { unlinkSettlementAction } from '../plan/actions';
 
-const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
 /** Period keys: 'YYYY-MM' (monthly), 'YYYY-MM-01|02' (1st/2nd half of a semimonthly income), 'YYYY-MM-DD' (weekly/biweekly). */
 function periodLabel(p: string, frequency?: string) {
-  const month = `${MONTHS[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
+  const month = `${MONTHS_SHORT[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
   if (p.length === 7) return month;
   const day = Number(p.slice(8));
   return frequency === 'semimonthly' ? `${month} · ${day === 1 ? '1.ª' : '2.ª'} quincena` : `${day} ${month}`;

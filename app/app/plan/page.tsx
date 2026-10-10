@@ -10,11 +10,11 @@ import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
 import type { Plan, PlanLine } from '../../../src/engine/planning';
 import { extraDebtPayment } from '../../../src/engine/scenarios';
-import { addDays } from '../../../src/engine/planning';
+import { addDays } from '../../../src/domain/dates';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
 import { AppliedPlanCard, ApplyPlan } from '../../../components/applied-plan';
 import { loadApplied } from '../../../lib/plan-applications';
-import { shortDate } from '../../../src/web/dates';
+import { shortDate } from '../../../src/domain/dates';
 import { isUuid } from '../../../src/web/transaction-input';
 import {
   acceptEssentialsAction, decideSuggestionAction, linkIncomeAction, removeIncomeAction, markObligationPaidAction, patchObligationAction, recordBalanceAction, resolveVariationAction, saveIncomeAction, saveSettingsAction,

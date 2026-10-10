@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ageOn, birthProblem, limaMonth, limaMonthRange, limaToday, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../src/web/auth-input';
+import { limaToday } from '../src/domain/dates';
+import { ageOn, birthProblem, limaMonth, limaMonthRange, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../src/web/auth-input';
 
 describe('auth input validation', () => {
   it('emails', () => {

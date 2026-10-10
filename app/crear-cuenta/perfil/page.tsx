@@ -3,7 +3,7 @@ import { AuthScreen } from '../../../components/auth-screen';
 import { ProfileForm } from '../../../components/profile-form';
 import { registrationStep } from '../../../lib/registration';
 import { authUser, createSupabaseServerClient } from '../../../lib/supabase/server';
-import { limaToday } from '../../../src/web/auth-input';
+import { limaToday } from '../../../src/domain/dates';
 
 export const metadata = { title: 'Cuéntanos sobre ti · Velsuno' };
 

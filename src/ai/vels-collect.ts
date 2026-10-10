@@ -1,5 +1,5 @@
 import type { Currency } from '../domain/money';
-import { addDays } from '../engine/planning';
+import { addDays } from '../domain/dates';
 import type { Intent, View } from './assistant';
 import { money } from './draft';
 import { interpret } from './interpreter';

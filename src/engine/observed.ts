@@ -1,7 +1,6 @@
 import type { Currency } from '../domain/money';
-import {
-  addDays, daysBetween, incomeOccurrencesBetween, occurrencesBetween, type ExpectedIncome, type Obligation,
-} from './planning';
+import { addDays, daysBetween } from '../domain/dates';
+import { incomeOccurrencesBetween, occurrencesBetween, type ExpectedIncome, type Obligation } from './planning';
 
 /**
  * Observed facts vs declared plans (ADR-0007). Everything here is a SUGGESTION the person confirms; nothing is

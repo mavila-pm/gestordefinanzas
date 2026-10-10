@@ -1,6 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { addDays } from '../src/engine/planning';
+import { addDays } from '../src/domain/dates';
 import { SNOOZE_DAYS, type Decision, type SuggestionKind } from '../src/engine/observed';
 
 /**

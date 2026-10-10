@@ -58,9 +58,6 @@ export function ageOn(birth: string, today: string): number {
   return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
 }
 
-/** Today in America/Lima (UTC-5, no DST) as YYYY-MM-DD. */
-export const limaToday = (now: Date = new Date()) => new Date(now.getTime() - 5 * 3600_000).toISOString().slice(0, 10);
-
 /** Only same-origin relative paths; blocks open redirects ("//evil.com", "https://…", "/\\evil"). */
 export function safeNextPath(v: unknown, fallback = '/app'): string {
   if (typeof v !== 'string' || !v.startsWith('/') || v.startsWith('//') || v.startsWith('/\\')) return fallback;

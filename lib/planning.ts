@@ -1,9 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Currency } from '../src/domain/money';
 import { financialEffect } from '../src/domain/financial-effect';
-import {
-  buildPlan, detectVariations, limaToday, suggestMatches, type ExpectedIncome, type Obligation, type Plan, type PlanInput,
-} from '../src/engine/planning';
+import { buildPlan, detectVariations, suggestMatches, type ExpectedIncome, type Obligation, type Plan, type PlanInput } from '../src/engine/planning';
+import { limaToday } from '../src/domain/dates';
 import {
   essentialSpendByMonth, essentialsSuggestion, isSuppressed, observedAmountsForUnknown, suggestIncomeMatches, timeline,
   type Decision,

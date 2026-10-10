@@ -3,7 +3,7 @@ import { Sheet } from './ui/sheet';
 import { saveCardStatementAction } from '../app/app/actions';
 import type { CardView } from '../lib/cards';
 import { formatMoney } from '../src/domain/money';
-import { shortDate } from '../src/web/dates';
+import { shortDate } from '../src/domain/dates';
 
 /** ADR-0014: facturado ≠ post-corte ≠ línea ≠ usable; unknown shown as "por confirmar", never 0. */
 export function CardPositionSummary({ v }: { v: CardView }) {

@@ -1,3 +1,4 @@
+import { daysBetween } from '../domain/dates';
 import type { Currency } from '../domain/money';
 import { cardCycle } from './scenarios';
 
@@ -29,11 +30,10 @@ export interface CardPosition {
   minimumOnly: { carriedMinor: number; interestMinor: number | null } | null;
 }
 
-const days = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
 export function cardPosition(today: string, card: CardInput, st: Statement | null, postCutMinor: number | null, planFreeMinor: number | null): CardPosition {
   const cycle = card.statementDay && card.paymentDay ? cardCycle(today, card.statementDay, card.paymentDay) : null;
-  const statementOutdated = !!st && (cycle ? st.cutDate < cycle.lastCut : days(st.cutDate, today) > 35);
+  const statementOutdated = !!st && (cycle ? st.cutDate < cycle.lastCut : daysBetween(st.cutDate, today) > 35);
   const current = st && !statementOutdated ? st : null;
   const usedMinor = current?.usedMinor ?? null;
   const bankAvailableMinor = card.creditLimitMinor !== null && usedMinor !== null ? Math.max(0, card.creditLimitMinor - usedMinor) : null;
@@ -41,7 +41,7 @@ export function cardPosition(today: string, card: CardInput, st: Statement | nul
   const usableMinor = free === null ? null : bankAvailableMinor === null ? free : Math.min(free, bankAvailableMinor);
   const billed = current ? {
     amountMinor: current.billedMinor, minimumMinor: current.minimumMinor, cutDate: current.cutDate, dueDate: current.dueDate,
-    status: current.status, daysLeft: days(today, current.dueDate),
+    status: current.status, daysLeft: daysBetween(today, current.dueDate),
   } : null;
   const carried = billed?.amountMinor != null && billed.minimumMinor != null ? billed.amountMinor - billed.minimumMinor : null;
   const rate = card.annualRateBp ?? null;
@@ -57,7 +57,7 @@ export function cardPosition(today: string, card: CardInput, st: Statement | nul
 export function validStatement(v: { cutDate: string; dueDate: string; billedMinor: number | null; minimumMinor: number | null; usedMinor: number | null }): string | null {
   const DATE = /^\d{4}-\d{2}-\d{2}$/;
   if (!DATE.test(v.cutDate) || !DATE.test(v.dueDate) || Number.isNaN(Date.parse(v.cutDate)) || Number.isNaN(Date.parse(v.dueDate))) return 'Revisa las fechas.';
-  const gap = days(v.cutDate, v.dueDate);
+  const gap = daysBetween(v.cutDate, v.dueDate);
   if (gap <= 0 || gap > 62) return 'El pago vence después del corte (hasta 2 meses).';
   if (v.minimumMinor !== null && v.billedMinor !== null && v.minimumMinor > v.billedMinor) return 'El mínimo no puede ser mayor que el total.';
   return null;

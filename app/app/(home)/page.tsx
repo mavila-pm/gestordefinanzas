@@ -12,7 +12,7 @@ import { loadBudgets, loadCommitmentData, loadEntitlements, loadProfile } from '
 import { historyStart, visibleMonth } from '../../../src/domain/entitlements';
 import { preferredName } from '../../../src/domain/profile';
 import { loadPlanningData, planFor } from '../../../lib/planning';
-import { shortDate } from '../../../src/web/dates';
+import { shortDate } from '../../../src/domain/dates';
 import { monthCommitments, totalsByCurrency } from '../../../src/engine/commitments';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';

@@ -6,6 +6,7 @@
  * Currencies are never mixed: one plan per currency.
  */
 import type { Currency } from '../domain/money';
+import { addDays, daysBetween } from '../domain/dates';
 
 export type AmountStatus = 'confirmed' | 'estimated' | 'unknown';
 export type ObligationKind = 'rent' | 'car' | 'loan' | 'card' | 'internet' | 'phone' | 'insurance' | 'education' | 'services' | 'taxes' | 'subscription' | 'other';
@@ -69,10 +70,6 @@ export interface Occurrence {
 export interface IncomeOccurrence { incomeId: string; name: string; currency: Currency; period: string; date: string; dateMax: string | null; amountMinor: number | null; amountStatus: AmountStatus }
 
 // ── Dates (Lima calendar days as YYYY-MM-DD strings; pure arithmetic in UTC) ──────────────────────────────
-const toDate = (d: string) => new Date(`${d}T00:00:00Z`);
-const iso = (d: Date) => d.toISOString().slice(0, 10);
-export const addDays = (d: string, n: number) => iso(new Date(toDate(d).getTime() + n * 86_400_000));
-export const daysBetween = (a: string, b: string) => Math.round((toDate(b).getTime() - toDate(a).getTime()) / 86_400_000);
 const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 const monthKey = (d: string) => d.slice(0, 7);
 function addMonths(month: string, n: number): string {
@@ -84,7 +81,6 @@ function dayIn(month: string, day: number): string {
   const [y, m] = month.split('-').map(Number) as [number, number];
   return `${month}-${String(Math.min(day, daysInMonth(y, m))).padStart(2, '0')}`;
 }
-export const limaToday = (now = new Date()) => iso(new Date(now.getTime() - 5 * 3600_000));
 
 /** Occurrences of an obligation for the months touching [from, to]. Future occurrences are computed, never stored. */
 export function occurrencesBetween(o: Obligation, from: string, to: string): Occurrence[] {

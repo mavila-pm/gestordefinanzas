@@ -1,6 +1,7 @@
 import type { Currency } from '../domain/money';
 import { formatMoney } from '../domain/money';
-import { addDays, incomeOccurrencesBetween, occurrencesBetween, type ExpectedIncome, type Obligation } from '../engine/planning';
+import { incomeOccurrencesBetween, occurrencesBetween, type ExpectedIncome, type Obligation } from '../engine/planning';
+import { addDays, shortDate } from '../domain/dates';
 import { BANK_LABEL, bankIn, loanName, readLoan } from './interpreter';
 import { fold, UNKNOWN } from './text';
 import type { Bare, DebtFact, Draft, FactStatus, Patch } from './types';
@@ -538,8 +539,6 @@ export function upcomingFromDraft(d: Draft, today: string): { until: string | nu
   return { until, items };
 }
 
-const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
-export const shortDate = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
 
 /** "agua el 15, internet el 20 y luz el 25" (chronological, from the engine). */
 export function agendaLine(items: readonly UpcomingItem[]): string {

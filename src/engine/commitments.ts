@@ -1,3 +1,4 @@
+import { daysBetween } from '../domain/dates';
 import type { Currency } from '../domain/money';
 
 /** Recurring obligation template (fixed_expenses). Unknown amount/day stay null — never 0 (ADR-0005). */
@@ -25,7 +26,7 @@ export function dueDateIn(month: string, day: number): string {
  * a movement.
  */
 export function monthCommitments(month: string, today: string, fixed: readonly FixedExpense[], debts: readonly Debt[]): Commitment[] {
-  const days = (date: string) => Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+  const days = (date: string) => daysBetween(today, date);
   const items: Omit<Commitment, 'daysUntil'>[] = [
     ...fixed.filter((f) => f.active && f.dueDay !== null && occursIn(f, month)
       && !(f.pausedUntil && dueDateIn(month, f.dueDay) < f.pausedUntil) && !(f.endedOn && dueDateIn(month, f.dueDay) > f.endedOn))
