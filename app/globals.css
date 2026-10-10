@@ -503,7 +503,8 @@ form[aria-busy=true] button.link[type=submit]:disabled { background: none; color
 /* ── Motion system: fast, discreet, purposeful (transform + opacity only) ───────────────────────────
    Motion explains something: a new screen arrived, a panel opened/closed, an action answered, a section expanded.
    Entrances ease out (decelerate), exits ease in; nothing loops except "working" indicators. */
-:root { --ease-out: cubic-bezier(.16, 1, .3, 1); --ease-in: cubic-bezier(.4, 0, 1, 1); --dur-1: 120ms; --dur-2: 180ms; --dur-3: 240ms; }
+:root { --ease-out: cubic-bezier(.16, 1, .3, 1); --ease-in: cubic-bezier(.4, 0, 1, 1); --dur-1: 140ms; --dur-2: 180ms; --dur-3: 220ms;
+  --lift: translateY(-1px); --lift-shadow: 0 6px 18px color-mix(in srgb, var(--brand-primary) 9%, transparent); }
 @keyframes rise-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 /* Navigation + loading → content: each screen's content enters once (never on re-render after an action). */
@@ -786,3 +787,59 @@ html[data-theme="dark"] .sub-logo[data-provider="apple-tv"] { box-shadow: inset 
 .o-subs { order: 3; }
 .sub-mini { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-12); }
 .sub-mini .setting-text { display: grid; min-width: 0; }
+
+/* ── Motion system v2: one vocabulary for every screen ──────────────────────────────────────────────────────────────
+   Rules: motion answers the person (hover, press, open, save) and never runs on its own; 140–220 ms; transform,
+   opacity, background and shadow only (no layout properties); hover effects only on devices that really hover
+   (touch gets :active instead); prefers-reduced-motion keeps colour/fade feedback and drops movement.
+   Reusable hooks: .lift (pressable surface), .data-table (row hover), .sk (skeleton), .appear (one-time entrance). */
+
+/* Pressable surfaces: links that are whole cards or rows. */
+a.link-card, a.sub-row, a.kpi.link-kpi, .sub-option, .lift, a.item, .coming li, .list > li > a {
+  transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out), background-color var(--dur-1) var(--ease-out);
+}
+@media (hover: hover) {
+  a.link-card:hover, a.sub-row:hover, a.kpi.link-kpi:hover, .lift:hover { transform: var(--lift); box-shadow: var(--lift-shadow); }
+  a.sub-row.selected:hover { box-shadow: inset 0 0 0 2px var(--text-primary), var(--lift-shadow); }
+  .sub-option:hover { background: var(--bg-secondary); }
+}
+a.link-card:active, a.sub-row:active, a.kpi.link-kpi:active, .lift:active, .sub-option:active { transform: scale(.99); box-shadow: none; }
+
+/* Tables and lists: the row under the pointer is easy to follow; the first cell keeps alignment (background only). */
+.data-table tbody tr { transition: background-color var(--dur-1) var(--ease-out); }
+@media (hover: hover) {
+  .data-table tbody tr:hover { background: color-mix(in srgb, var(--bg-secondary) 70%, transparent); }
+  .list > li:has(> a):hover, .coming li:hover { background: color-mix(in srgb, var(--bg-secondary) 55%, transparent); }
+}
+
+/* Buttons: hover, press, disabled and focus share one timing; colour changes never jump. */
+button, a.button, .segment span, .chip { transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out),
+  box-shadow var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out), opacity var(--dur-1) var(--ease-out); }
+button:disabled { transition-duration: 0ms; }
+.segment input:active + span { transform: scale(.97); }
+:focus-visible { transition: outline-offset var(--dur-1) var(--ease-out); }
+
+/* Confirmation of an action: the saved state settles in place (the role=status line already rises in). */
+.ok, .notice.positive { animation: rise-in var(--dur-2) var(--ease-out) both; }
+.state-chip { transition: background-color var(--dur-2) var(--ease-out), color var(--dur-2) var(--ease-out); }
+
+/* Selected item in a master-detail list moves the detail, not the page: the detail fades in on change. */
+.sub-detail:not(.sub-placeholder) { animation: rise-in var(--dur-2) var(--ease-out) both; }
+
+/* Skeletons: same shape as the screen they announce, so nothing jumps when content arrives. */
+.sk { border-radius: var(--radius-control); background: var(--bg-secondary); animation: busy 1200ms var(--ease-standard) infinite; }
+.route-loading.wide { max-width: 1360px; }
+.sk-row { display: grid; gap: var(--space-16); }
+@media (min-width: 768px) { .sk-row.two { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sk-row.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .route-loading.wide { padding-left: var(--space-32); padding-right: var(--space-32); } .sk-row.top { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); } .sk-row.main { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); } }
+
+/* Progress bars fill once when they appear (scale, not width), then stay still. */
+.progress .fill { transform-origin: left center; animation: bar-in var(--dur-3) var(--ease-out) 60ms both; }
+
+@media (prefers-reduced-motion: reduce) {
+  a.link-card, a.sub-row, a.kpi.link-kpi, .sub-option, .lift, .data-table tbody tr, button, a.button, .segment span, .chip { transition-property: background-color, color, box-shadow, opacity; }
+  a.link-card:hover, a.sub-row:hover, a.kpi.link-kpi:hover, .lift:hover, a.link-card:active, a.sub-row:active, a.kpi.link-kpi:active, .lift:active,
+  .sub-option:active, .segment input:active + span { transform: none; }
+  .ok, .notice.positive, .sub-detail:not(.sub-placeholder) { animation-name: fade-in; }
+  .sk, .progress .fill { animation: none; }
+}

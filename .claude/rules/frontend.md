@@ -15,3 +15,7 @@ paths:
   words only). Never optimistic for payments, incomes or other financial confirmations.
 - A route with `notFound()` must not get a `loading.tsx` above it (streaming would return 200, not 404).
 - Measure before optimizing: `scripts/e2e.sh perf`; visual QA: `scripts/e2e.sh visual`.
+- Motion: reuse the system in `app/globals.css` ("Motion system" + "v2"): tokens `--dur-1/2/3` (140/180/220 ms),
+  `--ease-out/in`, `--lift`; hooks `.lift`, `a.link-card`, `.data-table` rows, `.sk` skeletons shaped like the screen.
+  Only on interaction, transform/opacity/background/shadow only, hover inside `@media (hover: hover)`, reduced motion
+  keeps fades only. Check with `node scripts/qa/motion.mjs` after `npm run build`.
