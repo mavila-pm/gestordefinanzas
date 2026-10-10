@@ -5,7 +5,7 @@ Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel
 migrations applied through `20261010000038` (`…035` login_throttle_purge PENDING: contains DELETE, PO applies it in SQL Editor).
 
 ## Checkpoint (2026-10-10)
-Unit 422 · DB 128 · build OK · CI green. Last full E2E: 2026-09-29 (289/289, visual 162 shots, perf 8/8); later blocks
+Unit 422 · DB 127 · build OK · CI green. Last full E2E: 2026-09-29 (289/289, visual 162 shots, perf 8/8); later blocks
 updated E2E copy without a full run (no E2E credentials in the agent environment).
 
 ## Product areas (all VERIFIED unless noted; detail in the ADRs and `docs/architecture/structure.md`)
