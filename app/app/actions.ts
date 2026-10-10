@@ -3,7 +3,6 @@
 import { validStatement } from '../../src/engine/cards';
 import { plural } from '../../src/domain/plural';
 import { revalidatePath } from 'next/cache';
-import { logLearning } from '../../lib/learning';
 import { isReplay, ref } from '../../lib/idempotency';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
@@ -143,30 +142,6 @@ export async function deactivateAction(_prev: ActionState, form: FormData): Prom
   const { data, error } = await supabase.from(kind === 'card' ? 'cards' : 'accounts').update({ active: false }).eq('id', id).select('id');
   if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
   return done(kind === 'card' ? 'Tarjeta desactivada.' : 'Cuenta desactivada.');
-}
-
-export async function deleteRuleAction(_prev: ActionState, form: FormData): Promise<ActionState> {
-  const id = form.get('id');
-  if (!isUuid(id)) return { error: errorText('invalid_request') };
-  const { supabase, user } = await session();
-  if (!user) return { error: errorText('not_authenticated') };
-  const { data, error } = await supabase.from('merchant_rules').delete().eq('id', id).select('id,contains');
-  if (error || !data?.length) return { error: errorText(error ? null : 'not_found') };
-  await logLearning(supabase, user.id, 'rule', 'deleted', id, { contains: data[0]!.contains });
-  return done('Olvidado. Tus movimientos no cambian.');
-}
-
-/** Change the category Velsuno remembers for a merchant (RLS + policy check: own rule, global or own category). */
-export async function changeRuleAction(_prev: ActionState, form: FormData): Promise<ActionState> {
-  const id = form.get('id');
-  const categoryId = form.get('categoryId');
-  if (!isUuid(id) || !isUuid(categoryId)) return { error: errorText('invalid_request') };
-  const { supabase, user } = await session();
-  if (!user) return { error: errorText('not_authenticated') };
-  const { data, error } = await supabase.from('merchant_rules').update({ category_id: categoryId }).eq('id', id).select('id');
-  if (error || !data?.length) return { error: 'No se guardó. Intenta de nuevo.' };
-  await logLearning(supabase, user.id, 'rule', 'corrected', id, { categoryId });
-  return done('Listo. Se aplica a los próximos movimientos.');
 }
 
 export async function deleteTransactionAction(_prev: ActionState, form: FormData): Promise<ActionState> {

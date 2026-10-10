@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { startTransition, useCallback, useRef, useState } from 'react';
-import { assistantAction, velsOpenAction } from '../app/app/preguntar/actions';
+import { assistantAction, clearAssistantAction, velsOpenAction } from '../app/app/preguntar/actions';
 import type { ChatMessage } from '../src/ai/conversation';
 import dynamic from 'next/dynamic';
 import { Icon } from './ui/icon';
@@ -28,6 +28,7 @@ export function VelsBubble() {
   }), []);
   if (path.startsWith('/app/preguntar')) return null; // the full Vels page is already open
   const open = () => { dialog.current?.showModal(); void loadChat(); load(path); };
+  const clear = () => startTransition(async () => { await clearAssistantAction(); load(path); });
   return (
     <>
       <button type="button" className="vels-fab" aria-label="Hablar con Vels" aria-haspopup="dialog" onClick={open} onPointerEnter={() => void loadChat()} data-testid="vels-fab">
@@ -37,7 +38,10 @@ export function VelsBubble() {
         onClick={(e) => { if (e.target === dialog.current) dialog.current?.close(); }}>
         <div className="vels-head">
           <VelsHeader titleId="vels-title" />
-          <button type="button" className="icon" aria-label="Cerrar" onClick={() => dialog.current?.close()}><Icon name="close" /></button>
+          <span className="actions" style={{ gap: 4 }}>
+            {state && state.messages.some((m) => m.role === 'user') && <button type="button" className="link small-link" onClick={clear} data-testid="vels-clear">Limpiar</button>}
+            <button type="button" className="icon" aria-label="Cerrar" onClick={() => dialog.current?.close()}><Icon name="close" /></button>
+          </span>
         </div>
         {state
           ? <Chat key={state.n} initial={state.messages} suggestions={state.suggestions} send={assistantAction} camera label="Conversación con Vels" placeholder="Escríbele a Vels" />

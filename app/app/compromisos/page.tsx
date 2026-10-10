@@ -11,7 +11,7 @@ import { limaMonth } from '../../../src/web/auth-input';
 import { monthLabel } from '../../../src/web/labels';
 import { formatLimaDateTime } from '../../../src/web/transaction-input';
 import { deactivateCommitmentAction, debtPaymentAction, saveDebtAction, saveFixedExpenseAction } from '../actions';
-import { removeObligationAction, saveObligationAction, skipOccurrenceAction } from '../plan/actions';
+import { removeObligationAction, saveObligationAction, skipOccurrenceAction, unlinkSettlementAction } from '../plan/actions';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
 import { openOccurrence } from '../../../src/engine/planning';
 import { addDays } from '../../../src/domain/dates';
@@ -30,10 +30,12 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
   const { cuota } = await searchParams;
   const supabase = await createSupabaseServerClient();
   const [{ fixed, debts }, , { entitlements }, plan, hist] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase), loadEntitlements(supabase), loadPlanningData(supabase),
-    supabase.from('plan_settlements').select('fixed_expense_id,period,tx:transactions(amount_minor)').not('fixed_expense_id', 'is', null).order('period', { ascending: false }).limit(300)]);
+    supabase.from('plan_settlements').select('id,fixed_expense_id,period,tx:transactions(amount_minor)').not('fixed_expense_id', 'is', null).order('period', { ascending: false }).limit(300)]);
   // Real history per payment (what was actually paid, by month): editing the plan never rewrites it.
   const history = new Map<string, Array<{ period: string; amountMinor: number | null }>>();
-  for (const h of (hist.data ?? []) as unknown as Array<{ fixed_expense_id: string; period: string; tx: { amount_minor: number } | null }>) {
+  const settlementId = new Map<string, string>();
+  for (const h of (hist.data ?? []) as unknown as Array<{ id: string; fixed_expense_id: string; period: string; tx: { amount_minor: number } | null }>) {
+    settlementId.set(`${h.fixed_expense_id}:${h.period}`, h.id);
     const list = history.get(h.fixed_expense_id) ?? [];
     if (list.length < 6) list.push({ period: h.period, amountMinor: h.tx ? Number(h.tx.amount_minor) : null });
     history.set(h.fixed_expense_id, list);
@@ -80,6 +82,12 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                     {c.daysUntil < 0 ? 'Venció' : c.daysUntil === 0 ? 'Vence hoy' : `Vence en ${plural(c.daysUntil, 'día', 'días')}`}</small>}</span>
                 <span className="actions" style={{ gap: 8 }}>
                   {c.dueDate.startsWith(month) && paidThisMonth(c.id) && <span className="tag positive-tag">Pagado</span>}
+                  {c.dueDate.startsWith(month) && settlementId.has(`${c.id}:${month}`) && (
+                    <ActionForm action={unlinkSettlementAction} className="inline" label={`Deshacer ${c.name}`}>
+                      <input type="hidden" name="id" value={settlementId.get(`${c.id}:${month}`)} />
+                      <button type="submit" className="link small-link">Deshacer</button>
+                    </ActionForm>
+                  )}
                   <span className="amount">{c.amountMinor === null ? <span className="muted">Por confirmar</span> : formatMoney({ amountMinor: c.amountMinor, currency: c.currency })}</span>
                 </span>
               </li>

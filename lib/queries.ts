@@ -72,14 +72,6 @@ export function activeOnly<T extends { active: boolean }>(items: T[]): T[] {
   return items.filter((i) => i.active);
 }
 
-export interface RuleRow { id: string; contains: string; category: string | null; createdAt: string }
-
-export async function loadRules(supabase: SupabaseClient): Promise<RuleRow[]> {
-  const { data } = await supabase.from('merchant_rules').select('id,contains,created_at,category:categories(name)').order('contains');
-  return (data ?? []).map((r) => ({ id: r.id, contains: r.contains, createdAt: r.created_at,
-    category: (r.category as unknown as { name: string } | null)?.name ?? null }));
-}
-
 /** Ingestion context (cards, own accounts, learned rules) read under the user's session. */
 export async function loadUserContext(supabase: SupabaseClient, userId: string): Promise<UserContext> {
   const [cards, accounts, rules] = await Promise.all([

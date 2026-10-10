@@ -265,7 +265,7 @@ export async function recurrenceAction(_p: ActionState, form: FormData): Promise
 
 /**
  * "Este mes no lo pago": the occurrence is skipped (status 'skipped', no movement). Skipped ≠ paid: nothing is
- * counted as spent, the plan stops reserving it, and "Deshacer" in Lo que recuerda reopens it.
+ * counted as spent, the plan stops reserving it, and "Deshacer" in Próximos pagos reopens it.
  */
 export async function skipOccurrenceAction(_p: ActionState, form: FormData): Promise<ActionState> {
   const obligationId = form.get('obligationId');
