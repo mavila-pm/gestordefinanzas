@@ -13,17 +13,15 @@ export const PRIMARY: Item[] = [
 ];
 /** Shown in the navigation only while something waits for review (with its count). */
 export const REVIEW: Item = { href: '/app/revisar', match: '/app/revisar', label: 'Por revisar', icon: 'review' };
-export const SETUP: Item[] = [
+/** Reached from Más (mobile) and from Ajustes → Finanzas; not in the main navigation. */
+export const MONEY_SETUP: Item[] = [
   { href: '/app/tarjetas', match: '/app/tarjetas', label: 'Cuentas y tarjetas', icon: 'cards' },
   { href: '/app/presupuestos', match: '/app/presupuestos', label: 'Límites de gasto', icon: 'categories' },
-  { href: '/app/conexiones', match: '/app/conexiones', label: 'Conexiones', icon: 'connections' },
-  { href: '/app/cuenta', match: '/app/cuenta', label: 'Tu plan', icon: 'lock' },
-  { href: '/app/ajustes', match: '/app/ajustes', label: 'Ajustes', icon: 'settings' },
 ];
 export const MOBILE: Item[] = [
   PRIMARY[0]!, PRIMARY[1]!, { ...PRIMARY[2]!, label: 'Disponible' }, PRIMARY[5]!,
   { href: '/app/mas', match: '/app/mas', label: 'Más', icon: 'more' },
 ];
 /** Destinations reached through "Más" on mobile, so that tab stays active on them. */
-export const MORE_ITEMS = [PRIMARY[3]!, PRIMARY[4]!, REVIEW, ...SETUP];
+export const MORE_ITEMS = [PRIMARY[3]!, PRIMARY[4]!, REVIEW, ...MONEY_SETUP, { href: '/app/ajustes', match: '/app/ajustes', label: 'Ajustes', icon: 'settings' } as Item];
 export const UNDER_MORE = MORE_ITEMS.map((i) => i.match).concat('/app/importar');

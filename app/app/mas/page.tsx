@@ -1,8 +1,8 @@
 import Link from 'next/link';
-import { PRIMARY, REVIEW, SETUP } from '../../../components/ui/nav-items';
+import { MONEY_SETUP, PRIMARY, REVIEW } from '../../../components/ui/nav-items';
 import { Icon } from '../../../components/ui/icon';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
-import { resumeOnboardingAction } from '../cuenta/demo-actions';
+import { resumeOnboardingAction } from '../ajustes/demo-actions';
 
 export const metadata = { title: 'Más' };
 
@@ -39,7 +39,8 @@ export default async function More() {
       <Link href="/app/importar" className="button quiet wide"><Icon name="mail" size={18} />Pegar un mensaje del banco</Link>
       {pending > 0 && <Link href="/app/revisar" className="notice warning review-alert"><strong>{pending} por revisar</strong><Icon name="chevron" size={18} /></Link>}
       <Group title="Tu dinero" items={[PRIMARY[3]!, PRIMARY[4]!, ...(pending > 0 ? [REVIEW] : [])]} />
-      <Group title="Configuración" items={SETUP} />
+      <Group title="Configura tu dinero" items={MONEY_SETUP} />
+      <Group title="Cuenta" items={[{ href: '/app/ajustes', match: '/app/ajustes', label: 'Ajustes', icon: 'settings' }]} />
     </main>
   );
 }
