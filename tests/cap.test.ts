@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOGIN_INVALID } from '../src/web/login';
-import { capSecret, newChallenge, redeem, signRedeemToken, verifyCapToken, type Spend } from '../lib/cap-core';
+import { capSecret, capSecretInfo, newChallenge, redeem, signRedeemToken, verifyCapToken, type Spend } from '../lib/cap-core';
 
 /**
  * Cap anti-bot (lib/cap-core.ts): the real capjs-core with small proof-of-work parameters, solved here like the
@@ -96,11 +96,27 @@ describe('Cap: the token checked inside the protected action', () => {
     expect(await verifyCapToken(null, 'signup', token, spend)).toEqual({ ok: false, reason: 'unconfigured' });
     expect(await verifyCapToken(SECRET, 'signup', token, async () => { throw new Error('db down'); })).toEqual({ ok: false, reason: 'store_error' });
   });
-  it('the secret comes only from CAP_SECRET (server env) and must be long', () => {
+  it('the secret comes only from server env: CAP_SECRET (trimmed, >= 16), else derived from another server secret, else none', () => {
     expect(capSecret({})).toBeNull();
     expect(capSecret({ CAP_SECRET: 'short' })).toBeNull();
-    expect(capSecret({ NEXT_PUBLIC_CAP_SECRET: SECRET })).toBeNull();
+    expect(capSecret({ NEXT_PUBLIC_CAP_SECRET: SECRET, NEXT_PUBLIC_GEMINI_API_KEY: SECRET })).toBeNull();
     expect(capSecret({ CAP_SECRET: SECRET })).toBe(SECRET);
+    expect(capSecret({ CAP_SECRET: `  ${SECRET}\n` })).toBe(SECRET);
+    expect(capSecret({ CAP_SECRET: '0123456789abcdef' })).toBe('0123456789abcdef');
+    const derived = capSecretInfo({ GEMINI_API_KEY: 'AIza-test-key-0123456789' });
+    expect(derived.source).toBe('derived');
+    expect(derived.secret).toMatch(/^[0-9a-f]{64}$/);
+    expect(derived.secret).not.toContain('AIza');
+    expect(capSecretInfo({ CAP_SECRET: SECRET, GEMINI_API_KEY: 'AIza-test-key-0123456789' }).source).toBe('cap_secret');
+  });
+  it('a derived secret signs and verifies exactly like CAP_SECRET (Cap still on)', async () => {
+    const secret = capSecret({ GEMINI_API_KEY: 'AIza-test-key-0123456789' })!;
+    const spend = memoryStore();
+    const ch = await newChallenge(secret, 'login', SMALL);
+    const r = await redeem(secret, 'login', { token: ch.token, solutions: solve(ch.token, ch.challenge) }, spend);
+    expect(r.success).toBe(true);
+    expect(await verifyCapToken(secret, 'login', (r as { token: string }).token, spend)).toEqual({ ok: true });
+    expect(await verifyCapToken(SECRET, 'login', (r as { token: string }).token, memoryStore())).toEqual({ ok: false, reason: 'bad_signature' });
   });
 });
 

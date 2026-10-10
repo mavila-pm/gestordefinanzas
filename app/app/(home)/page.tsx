@@ -174,7 +174,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         {available && <FreeHero p={available} />}
         <section className="kpis" aria-label={`${monthLabel(month)} en soles`}>
           <div className="kpi"><span>Ingresos</span><strong data-testid="income-PEN">{money(pen.incomeMinor, 'PEN')}</strong><small className="muted">Registrados</small></div>
-          <div className="kpi"><span>Gastos</span><strong data-testid="expenses-PEN">{money(pen.expensesMinor, 'PEN')}</strong><small className="muted">Registrados</small></div>
+          <div className="kpi"><span>Gastos</span><strong data-testid="expenses-PEN">{money(pen.expensesMinor, 'PEN')}</strong>
+            {/* ATM withdrawals move money to cash (ADR-0002): shown apart, never as spending. */}
+            <small className="muted">{pen.cashWithdrawalsMinor > 0 ? `Retiros de efectivo aparte: ${money(pen.cashWithdrawalsMinor, 'PEN')}` : 'Registrados'}</small></div>
           <div className="kpi"><span>Ahorro</span><strong data-testid="net-PEN">{signed(pen.netCashFlowMinor, 'PEN')}</strong>
             <small className="muted" data-testid={pen.savingsLabel === 'estimated' ? 'data-health' : undefined}>{pen.savingsLabel === 'estimated' ? 'Estimado: hay movimientos por revisar' : 'Ingresos menos gastos'}</small></div>
           {isCurrent && (nextPay ? (

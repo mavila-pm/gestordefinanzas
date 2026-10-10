@@ -11,13 +11,14 @@ export const CAP_LABELS = {
   'initial-state': 'Confirma que eres una persona',
   'verifying-label': 'Verificando…',
   'solved-label': 'Verificado',
-  'error-label': CAP_ERROR,
+  // Short inside the widget (fixed height); the full message and the retry button sit below it (CapField).
+  'error-label': 'No se pudo verificar',
   'required-label': 'Primero confirma que eres una persona.',
   'troubleshooting-label': 'Ayuda',
   'group-aria-label': 'Verificación de seguridad',
   'verify-aria-label': 'Confirmar que eres una persona',
   'verifying-aria-label': 'Verificando…',
   'verified-aria-label': 'Verificado',
-  'error-aria-label': CAP_ERROR,
+  'error-aria-label': 'No se pudo verificar. Intenta otra vez.',
   'wasm-disabled': 'Activa JavaScript completo en tu navegador para continuar.',
 } as const;

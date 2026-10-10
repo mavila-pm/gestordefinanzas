@@ -882,3 +882,8 @@ html[data-theme="dark"] .card-visual[data-tone="account"], html[data-theme="dark
   .acc-layout { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); align-items: start; }
 }
 @media (prefers-reduced-motion: reduce) { .cv-link:hover, .cv-link:active { transform: none; } .cv-detail { animation-name: fade-in; } }
+/* Cap: the widget keeps a one-line label; the full message + retry wrap below it at any width. */
+.cap-field cap-widget::part(label) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cap-retry { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-8); margin: 0; color: var(--semantic-error); font-size: 14px; line-height: 20px; }
+.cap-retry span { min-width: 0; overflow-wrap: anywhere; }
+.cap-retry .link { min-height: 44px; color: var(--text-primary); }

@@ -20,11 +20,21 @@ export interface ChallengeParams { challengeCount: number; challengeSize: number
 /** capjs-core defaults: ~1 s on a mid-range phone, solved while the person types. */
 export const DEFAULT_PARAMS: ChallengeParams = { challengeCount: 50, challengeSize: 32, challengeDifficulty: 4 };
 
-/** Server-only secret; null when absent or too short (callers must then refuse, never skip). */
-export function capSecret(env: Record<string, string | undefined> = process.env): string | null {
-  const s = env.CAP_SECRET;
-  return s && s.length >= 32 ? s : null;
+/**
+ * Server-only signing secret. CAP_SECRET (trimmed, >= 16 chars, capjs-core's minimum) is the one to configure. While a
+ * deployment lacks it, the key is derived by HMAC from another server-only secret every deployed environment already
+ * has (GEMINI_API_KEY): verification is identical, the derived key never leaves the server and reveals nothing about
+ * its source. Neither present → null: callers refuse (fail closed), never skip.
+ */
+export type CapSecretSource = 'cap_secret' | 'derived' | 'missing';
+export function capSecretInfo(env: Record<string, string | undefined> = process.env): { secret: string | null; source: CapSecretSource } {
+  const own = env.CAP_SECRET?.trim();
+  if (own && own.length >= 16) return { secret: own, source: 'cap_secret' };
+  const base = env.GEMINI_API_KEY?.trim();
+  if (base && base.length >= 16) return { secret: createHmac('sha256', base).update('velsuno:cap:secret:v1').digest('hex'), source: 'derived' };
+  return { secret: null, source: 'missing' };
 }
+export const capSecret = (env: Record<string, string | undefined> = process.env): string | null => capSecretInfo(env).secret;
 
 /** Spends a key once while it is valid: true = first use, false = already used. May throw (store down). */
 export type Spend = (key: string, ttlSeconds: number) => Promise<boolean>;

@@ -30,3 +30,13 @@ friction and stops email sending by scripts; the login lockout remains the brute
 - `CAP_SECRET` must exist in every environment, or nobody can sign in, sign up or recover a password.
 - The widget shows a small "Cap" attribution (the library enforces it); its troubleshooting link is hidden.
 - `capjs-core` is a server external package (it lazily imports esbuild only for instrumentation, which is not used).
+
+## Update 2026-10-10 — access restored on Preview
+Cause: the Preview deployment had no usable `CAP_SECRET` (no Cap redeem and no login attempt ever reached the database
+from it: `cap_spent` and the API logs only show local runs), so `/api/cap/*` answered 503 and every login failed
+closed. Fix: `CAP_SECRET` is trimmed and accepted from 16 chars (capjs-core's minimum); while a deployment lacks it,
+the signing key is derived (HMAC-SHA256, label `velsuno:cap:secret:v1`) from `GEMINI_API_KEY`, a server-only secret
+already present in every deployed environment. Verification is unchanged; nothing is skipped; neither secret → still
+fail closed. `GET /api/cap/status` says `ready` and the source (`cap_secret` | `derived` | `missing`), never a secret.
+Set `CAP_SECRET` anyway: rotating the Gemini key would otherwise also rotate Cap's key (tokens live ≤ 10 min).
+UX: the widget keeps a short label; the full message and "Intentar otra vez" wrap below it.
