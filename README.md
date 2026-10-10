@@ -14,7 +14,7 @@ S/ 0 y pregunta solo lo dudoso (cola "Por revisar").
 
 ## Estado actual
 - **Beta en Vercel Preview** (rama `claude/beautiful-keller-ikxlrj`). **No hay producción** ni dominio todavía.
-- Núcleo financiero, planificación (Dinero libre), revisión, importación de mensajes BCP pegados, splits, presupuestos,
+- Núcleo financiero, planificación (Dinero disponible), revisión, importación de mensajes BCP pegados, splits, límites de gasto, meta de ahorro,
   deudas, tarjetas, Vels y onboarding conversacional: implementados y verificados con tests (ver `docs/status.md`).
 - Bloqueado por decisiones/credenciales externas: proveedor de email entrante (Email Bridge real), proveedor de IA en
   producción, proveedor de pagos, SMTP propio, dominio. Detalle y prioridades en [`docs/MVP.md`](docs/MVP.md).
@@ -128,7 +128,7 @@ CI (GitHub Actions, `.github/workflows/ci.yml`): `check` + `test:db` + `build` e
 | `GET /auth/confirm` | route | confirma email / recuperación de contraseña (token_hash) |
 | `POST /api/inbound/email` | route | webhook Email Bridge (HMAC + anti-replay; 503 sin configurar) |
 | `GET /app/exportar` | route | exporta movimientos a CSV (protegido contra inyección de fórmulas) |
-| `app/app/actions.ts` | server actions | movimientos, revisión, tarjetas, cuentas, presupuestos, deudas, reglas, splits |
+| `app/app/actions.ts` | server actions | movimientos, revisión, categorías propias, tarjetas, cuentas, límites de gasto, deudas, splits |
 | `app/app/plan/actions.ts` | server actions | Dinero libre: saldo, ingresos, pagos, aplicar plan, escenarios |
 | `app/app/preguntar/actions.ts` · `app/bienvenida/actions.ts` | server actions | Vels y onboarding |
 | `app/auth/actions.ts` | server actions | signup, login, logout, recuperación de contraseña |

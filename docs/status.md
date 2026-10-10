@@ -2,10 +2,10 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20261008000037` (`…035` login_throttle_purge PENDING: contains DELETE, PO applies it in SQL Editor).
+migrations applied through `20261010000038` (`…035` login_throttle_purge PENDING: contains DELETE, PO applies it in SQL Editor).
 
 ## Checkpoint (2026-10-10)
-Unit 417 · DB 124 · build OK · CI green. Last full E2E: 2026-09-29 (289/289, visual 162 shots, perf 8/8); later blocks
+Unit 422 · DB 128 · build OK · CI green. Last full E2E: 2026-09-29 (289/289, visual 162 shots, perf 8/8); later blocks
 updated E2E copy without a full run (no E2E credentials in the agent environment).
 
 ## Product areas (all VERIFIED unless noted; detail in the ADRs and `docs/architecture/structure.md`)
@@ -20,6 +20,7 @@ updated E2E copy without a full run (no E2E credentials in the agent environment
 | Vels: local intents + engine answers, social turns, progressive collect (balance → income), Gemini route for the rest, chat that scrolls like a messaging app, avatar + "Vels ✓ · Conectada" | 0011, 0015 | Real Gemini call NOT VERIFIED from this environment (key only in Vercel); PO reads 20 turns in Preview |
 | AI: Gemini only (`aiModel()`), one door `lib/ai.ts` (quota → call → record, ≤ 1 retry), validated output, cost ceiling until `AI_PRICES` | 0006, 0015 | `AI_PRICES` with Gemini's published rate; privacy text still names old providers (needs a new legal version) |
 | Design system, motion, Manrope subset, UX writing pass, Resumen redesign | — | PO feel check on a phone |
+| Product UX pass (2026-10-10): Resumen at a glance ('Hola, Mauro.' · 'Tu dinero, más claro.', + Registrar movimiento → Vels or manual, Dinero disponible, fixed payments, próximos pagos, savings goal, 6-month chart, cards and loans, recent movements; no tutorials); Dinero libre → Dinero disponible (simulators, '¿Y si…?', 'Aplicar plan' UI removed: Vels asks/simulates/applies with the same engines); own categories (labels only); simple Por revisar; Próximos pagos in Próximos / Recurrentes / Tarjetas y préstamos; Análisis as a deep dashboard; Presupuestos → Límites de gasto; savings goal (migration 038); nav by product hierarchy, Por revisar only with a count; 'Lo que Velsuno recuerda' removed (rules keep working; 'Deshacer' moved to Próximos pagos) | — | PO walkthrough; E2E specs updated to the new UI, not run here (no E2E credentials) |
 
 ## Blockers / decisions (external)
 - Gemini: open Vels on the Preview and ask something outside the local rules ("¿me da para unas zapatillas de 300?");

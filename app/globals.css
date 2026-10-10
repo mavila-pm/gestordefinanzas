@@ -587,8 +587,10 @@ input:hover:not(:focus):not(:disabled), select:hover:not(:focus):not(:disabled),
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--space-12) var(--space-16); }
 .stat-grid .big { margin: 2px 0 0; }
 .table-wrap { overflow-x: auto; }
-.data-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.data-table th, .data-table td { padding: 10px 8px; text-align: right; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+.data-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+.data-table th, .data-table td { padding: 10px 4px; text-align: right; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+.data-table th:last-child, .data-table td:last-child { padding-right: 0; }
+@media (max-width: 420px) { .data-table { font-size: 13px; } .data-table th, .data-table td { padding: 9px 3px; } }
 .data-table th:first-child, .data-table td:first-child, .data-table tbody th { text-align: left; font-weight: 500; white-space: normal; }
 .data-table thead th { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .split-bar { display: flex; height: 12px; border-radius: var(--radius-pill); overflow: hidden; background: var(--bg-secondary); gap: 2px; }

@@ -5,11 +5,12 @@ import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { ingestionCodesFor, LINKED_SELECT, loadCatalog, REVIEW_STATUSES, toLinked } from '../../../lib/queries';
 import { formatMoney } from '../../../src/domain/money';
 import { reviewReasons } from '../../../src/engine/review-reasons';
-import { formatLimaDateTime, TYPE_LABEL } from '../../../src/web/transaction-input';
+import { TYPE_LABEL } from '../../../src/web/transaction-input';
 import { reviewAction } from '../actions';
 import { Icon } from '../../../components/ui/icon';
 
-import { SOURCE_LABEL } from '../../../src/web/labels';
+import { limaDateKey, SOURCE_LABEL } from '../../../src/web/labels';
+import { shortDate } from '../../../src/domain/dates';
 
 export const metadata = { title: 'Por revisar' };
 
@@ -50,7 +51,7 @@ export default async function ReviewQueue() {
                   {dup && <span className="tag review">Posible duplicado</span>}
                 </div>
                 <strong className="review-name">{t.merchantRaw ?? 'Sin comercio'}</strong>
-                <small className="muted">{formatLimaDateTime(t.occurredAt).slice(0, 10)} · {origin}</small>
+                <small className="muted">{shortDate(limaDateKey(t.occurredAt))} · {origin}</small>
                 <dl className="review-facts">
                   <div><dt>Tipo</dt><dd>{t.type === 'unknown' ? <span className="warn">Por definir</span> : TYPE_LABEL[t.type]}</dd></div>
                   <div><dt>Categoría</dt><dd>{t.category ?? <span className="muted">Sin categoría</span>}</dd></div>

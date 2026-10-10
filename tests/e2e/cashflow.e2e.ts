@@ -13,7 +13,7 @@ await runSuite('cashflow', async ({ browser, page, check }) => {
   await login(page, A);
   await page.goto(`${BASE}/app`);
   const row = ((await page.getByTestId('free-summary').textContent()) ?? '').replace(/\s+/g, ' ');
-  check('Resumen opens with free money marked "Estimado", the next income and what is missing', row.includes('Dinero libre') && row.includes('Estimado') && row.includes('Hasta tu próximo ingreso') && /Falta(n)? \d* ?dato/.test(row), row);
+  check('Resumen opens with free money marked "Estimado", the next income and what is missing', row.includes('Dinero disponible') && row.includes('Estimado') && row.includes('Hasta tu próximo ingreso') && /Falta(n)? \d* ?dato/.test(row), row);
   const part = async (id: string) => minor((await page.getByTestId(id).textContent()) ?? '');
   const freeShown = await part('free-summary-amount');
   check('the bar adds up: pagos + reservado + libre = the declared balance (S/ 5,000)', (await part('free-committed')) + (await part('free-set-aside')) + freeShown === 500000,
@@ -22,13 +22,15 @@ await runSuite('cashflow', async ({ browser, page, check }) => {
   check('"Lo que viene" ends with the expected income, after the horizon line', coming.some((t) => t.includes('Tu próximo ingreso')) && (coming.at(-1) ?? '').includes('Esperado'), JSON.stringify(coming));
   check('the month stays as context (income, expenses, flow)', (await page.getByTestId('net-PEN').count()) === 1 && (await page.getByTestId('income-PEN').count()) === 1);
   const event = (await page.getByTestId('income-event').textContent()) ?? '';
-  check('income event: "Entraron S/ 4,000.00" with a Repartir action (no modal)', event.includes('Entraron S/ 4,000.00') && event.includes('Repartir'), event);
+  check('income event: "Entraron S/ 4,000.00" with a Ver reparto action (no modal)', event.includes('Entraron S/ 4,000.00') && event.includes('Ver reparto'), event);
 
   await page.goto(`${BASE}/app/plan`);
   const hero = (await page.getByTestId('free-PEN').textContent()) ?? '';
-  check('plan is labelled estimated and says what is missing', hero.includes('Dinero libre estimado') && /(Falta 1 dato|Faltan \d+ datos) por confirmar/.test(hero), hero);
-  const tl = await page.getByTestId('timeline').locator('li').allTextContents();
-  check('timeline lists what comes in date order, incomes marked as expected (not received)', tl.length > 0 && tl.some((t) => t.includes('Ingreso esperado') || t.includes('aún no registrado')), JSON.stringify(tl));
+  check('plan is labelled estimated and says what is missing', hero.includes('Dinero disponible estimado') && /(Falta 1 dato|Faltan \d+ datos) por confirmar/.test(hero), hero);
+  check('the page has no simulators or saved-plan controls (questions and what-ifs live in Vels)',
+    (await page.getByTestId('what-if').count()) === 0 && (await page.getByTestId('simulator').count()) === 0 && (await page.getByTestId('apply-PEN').count()) === 0);
+  const up = await page.getByTestId('upcoming-PEN').locator('li').allTextContents();
+  check('próximos pagos before the next income are listed', up.length > 0, JSON.stringify(up));
   const bd = page.getByTestId('breakdown');
   await bd.locator('summary').click();
   const lines = await bd.locator('li').allTextContents();
@@ -43,27 +45,15 @@ await runSuite('cashflow', async ({ browser, page, check }) => {
   const missing = (await page.getByTestId('missing-PEN').textContent()) ?? '';
   check('falta confirmar lists concrete, fixable items', missing.length > 0 && missing.includes('Completar') === (missing.includes('Falta el monto') || missing.includes('Falta la fecha') || missing.includes('Confirma si')), missing);
 
-  // What-if never writes: free figure identical before and after.
-  const freeText = (await page.getByTestId('free-PEN-amount').textContent()) ?? '';
-  const free = minor(freeText) * (freeText.includes('Faltan') ? -1 : 1);
-  await page.fill('[data-testid=simulator] input', ((free + 10000) / 100).toFixed(2));
-  check('simulator: a purchase above free money shows the uncovered amount', ((await page.getByTestId('simulation').textContent()) ?? '').includes('S/ 100.00 de tus próximos pagos sin cubrir'));
-  if (free > 100) {
-    await page.fill('[data-testid=simulator] input', '1');
-    check('simulator: a small purchase keeps next payments covered', ((await page.getByTestId('simulation').textContent()) ?? '').includes('siguen cubiertos'));
-  } else check('simulator: a small purchase keeps next payments covered', true);
-  await page.reload();
-  check('simulator saved nothing', ((await page.getByTestId('free-PEN-amount').textContent()) ?? '') === freeText);
-
   // Distribution of the income that just arrived: reserve + free = entered.
-  await page.goto(`${BASE}/app/plan`);
-  await page.getByTestId('income-event').getByRole('link', { name: 'Ver distribución' }).click();
+  await page.goto(`${BASE}/app`);
+  await page.getByTestId('income-event').getByRole('link', { name: 'Ver reparto' }).click();
   await page.getByTestId('distribution').waitFor();
   const reserved = minor((await page.getByTestId('dist-reserved').textContent()) ?? '');
   const distFreeText = (await page.getByTestId('dist-free').textContent()) ?? '';
   const distFree = minor(distFreeText);
   const faltan = ((await page.getByTestId('distribution').textContent()) ?? '').includes('Faltan');
-  check('distribution: reservar + libre = S/ 4,000.00 entered', faltan ? reserved - distFree === 400000 : reserved + distFree === 400000, `${reserved} ${distFree}`);
+  check('distribution: para tus pagos + disponible = S/ 4,000.00 entered', faltan ? reserved - distFree === 400000 : reserved + distFree === 400000, `${reserved} ${distFree}`);
 
   // Variation: Luz expected 129.00, last paid 160.00 -> +31.00; "Mantener" keeps the reference and silences it.
   await page.goto(`${BASE}/app/plan`);
@@ -92,13 +82,13 @@ await runSuite('cashflow', async ({ browser, page, check }) => {
   // Próximos pagos: debts compared, never "the best"; missing rate stated.
   await page.goto(`${BASE}/app/compromisos`);
   const strat = (await page.getByTestId('debt-strategies').textContent()) ?? '';
-  check('debt strategies: avalanche needs every rate, snowball orders by balance', strat.includes('Falta la tasa de Préstamo familiar') && strat.includes('Préstamo familiar → Visa') && strat.includes('Ninguna es mejor para todos'), strat);
+  check('debt strategies: avalanche needs every rate, snowball orders by balance', strat.includes('Falta la tasa de Préstamo familiar') && strat.includes('Préstamo familiar → Visa'), strat);
   const obls = (await page.getByTestId('obligation-list').textContent()) ?? '';
   check('obligations read naturally: window, preferred day, unknown amount', obls.includes('vence el 9–10 aprox.') && obls.includes('pagas el 7') && obls.includes('Por confirmar'), obls);
 
   // A/B through the API with A's session.
   const sb = await apiAs(A);
-  // Recurrence lifecycle (ADR-0010): pause → the row says so and Dinero libre stops reserving it; resume restores it.
+  // Recurrence lifecycle (ADR-0010): pause → the row says so and Dinero disponible stops reserving it; resume restores it.
   await page.goto(`${BASE}/app/compromisos`);
   await page.getByRole('button', { name: 'Editar Celular' }).click();
   await act(page, () => page.locator('dialog[open] form[aria-label="Pausar Celular"] button[type=submit]').click());
@@ -120,60 +110,12 @@ await runSuite('cashflow', async ({ browser, page, check }) => {
   check('skip: one "skipped" settlement without a movement; no transaction created', skipped.some((x) => x.status === 'skipped' && x.transaction_id === null)
     && (await sb.from('transactions').select('id', { count: 'exact', head: true })).count === tx0, JSON.stringify(skipped));
 
-  // What-if (never writes): income delayed 7 days; S/ 1,000 to Visa.
-  await page.goto(`${BASE}/app/plan?si=retraso&dias=7`);
-  const w1 = (await page.getByTestId('what-if-result').textContent()) ?? '';
-  check('what-if delay: shows the new free money vs today, labelled as a simulation', /Te (quedarían|faltarían) S\/ [\d,.]+/.test(w1) && w1.includes('hoy S/') && w1.includes('no cambia nada'), w1);
-  const visa = (await sb.from('debts').select('id,balance_minor').eq('name', 'Visa').single()).data!;
-  await page.goto(`${BASE}/app/plan?si=abono&monto=1000&deuda=${visa.id}`);
-  const w2 = (await page.getByTestId('what-if-result').textContent()) ?? '';
-  check('what-if debt payment: debt after S/ 2,000 and interest avoided (rate known)', w2.includes('Deuda después: S/ 2,000.00') && w2.includes('de interés al mes'), w2);
-  const visaAfter = (await sb.from('debts').select('balance_minor').eq('id', visa.id).single()).data!;
-  check('what-if wrote nothing (debt balance unchanged)', Number(visaAfter.balance_minor) === Number(visa.balance_minor));
-
   // Payoff comparison: one debt has no rate → no ranking, names the missing rate.
   await page.goto(`${BASE}/app/compromisos?cuota=800`);
   const po = (await page.getByTestId('payoff').textContent()) ?? '';
   check('payoff with a missing rate: no ranking invented', po.includes('Falta la tasa de Préstamo familiar') && !po.includes('meses'), po);
 
-  // "Aplicar plan" (ADR-0013): saves reservations; never pays, moves money or marks paid. Two tabs → one active plan.
-  const snapshot = async () => JSON.stringify([
-    (await sb.from('transactions').select('id', { count: 'exact', head: true })).count,
-    (await sb.from('plan_settlements').select('id', { count: 'exact', head: true })).count,
-    (await sb.from('fixed_expenses').select('id,amount_minor,active').order('id')).data,
-    (await sb.from('debts').select('id,balance_minor').order('id')).data]);
-  const plans = async () => (await sb.from('plan_applications').select('id,status,free_minor,reserved_minor,supersedes_id,lines').order('created_at')).data ?? [];
-  const money0 = await snapshot();
-  await page.goto(`${BASE}/app/plan`);
-  const tab2 = await (await browser.newContext()).newPage();
-  await login(tab2, A);
-  await tab2.goto(`${BASE}/app/plan`);
-  const heroFree = minor((await page.getByTestId('free-PEN-amount').textContent()) ?? '');
-  await act(page, () => page.getByTestId('apply-PEN').click());
-  const card = (await page.getByTestId('applied-PEN').textContent()) ?? '';
-  const p1 = await plans();
-  check('apply: one active plan with the free money shown and its lines', p1.length === 1 && p1[0]!.status === 'active' && Math.abs(Number(p1[0]!.free_minor)) === heroFree && Array.isArray(p1[0]!.lines) && p1[0]!.lines.length > 0, JSON.stringify(p1.map((x) => [x.status, x.free_minor])));
-  check('applied card separates Comprometido / Reservado / Pagado / Libre and says no money moved', ['Plan aplicado', 'Comprometido', 'Reservado', 'Pagado', 'el dinero sigue en tu cuenta'].every((w) => card.includes(w)), card);
-  await act(tab2, () => tab2.getByTestId('apply-PEN').click());
-  const p2 = await plans();
-  check('second tab applies the same plan → still exactly one active (the first is kept as history)', p2.filter((x) => x.status === 'active').length === 1 && p2.length === 2 && p2[1]!.supersedes_id === p2[0]!.id, JSON.stringify(p2.map((x) => x.status)));
-  await tab2.context().close();
-  check('applying wrote no movement, payment, settlement or debt change', (await snapshot()) === money0);
-  // Data changed after applying → the card says so; "Actualizar plan" saves the new one.
-  const lastBal = (await sb.from('balance_snapshots').select('amount_minor').order('as_of', { ascending: false }).limit(1).single()).data!;
-  await sb.from('balance_snapshots').insert({ user_id: (await sb.auth.getUser()).data.user!.id, currency: 'PEN', amount_minor: Number(lastBal.amount_minor) + 10000 });
-  await page.reload();
-  const changedNote = (await page.getByTestId('applied-PEN').textContent()) ?? '';
-  check('after a balance change the applied plan says it changed', changedNote.includes('Tus datos cambiaron'), changedNote);
-  await act(page, () => page.getByRole('button', { name: 'Actualizar plan' }).click());
-  const p3 = await plans();
-  check('update supersedes: one active, with S/ 100 more free', p3.filter((x) => x.status === 'active').length === 1 && Number(p3.at(-1)!.free_minor) === Number(p2[1]!.free_minor) + 10000, JSON.stringify(p3.map((x) => [x.status, x.free_minor])));
-  const blocked = await sb.from('plan_applications').update({ free_minor: 1 }).eq('id', p3.at(-1)!.id).select('id');
-  check('API: an applied plan\'s amounts cannot be edited', !!blocked.error, JSON.stringify(blocked.error));
-  await act(page, () => page.getByRole('button', { name: 'Quitar plan' }).click());
-  const p4 = await plans();
-  check('Quitar plan: no active plan; history kept (nothing deleted)', p4.length === 3 && p4.every((x) => x.status !== 'active') && p4.at(-1)!.status === 'cancelled', JSON.stringify(p4.map((x) => x.status)));
-  check('history lists previous plans', ((await page.getByTestId('applied-history-PEN').textContent()) ?? '').includes('Quitado'));
+  // "Aplicar plan" (ADR-0013) is done from Vels now (suite vels); the engine and SQL rules are unchanged (tests/db).
 
   const bRead = await sb.from('fixed_expenses').select('id').eq('id', B_TX.obligation);
   check('API: A cannot read B\'s obligations', !bRead.error && (bRead.data ?? []).length === 0, JSON.stringify(bRead));

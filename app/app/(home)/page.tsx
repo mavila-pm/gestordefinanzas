@@ -187,7 +187,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <section className="card stack-sm" aria-labelledby="h-trend">
           <div className="row"><h2 id="h-trend">Ingresos y gastos</h2><Link href={`/app/analisis?month=${month}`} className="section-link">Análisis<Icon name="chevron" size={16} /></Link></div>
           <TrendBars months={trend} currency="PEN" testId="home-trend" />
-          {insight && <p className="small muted" data-testid="insight">{insight.estimated ? 'Estimado: ' : ''}{insight.text}</p>}
+          {insight && !isCurrent && <p className="small muted" data-testid="insight">{insight.estimated ? 'Estimado: ' : ''}{insight.text}</p>}
         </section>
       )}
 

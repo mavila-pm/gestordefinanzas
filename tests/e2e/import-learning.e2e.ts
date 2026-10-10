@@ -104,8 +104,8 @@ await runSuite('import-learning', async ({ page, check }) => {
   await page.check(`${corr} input[name=rememberRule]`);
   await act(page, () => page.click(`${corr} button[value="1"]`));
   check('correction saved with rule', ((await page.locator(`[data-testid=saved-notice], ${corr} [role=status]`).first().textContent()) ?? '').includes('usarán esta categoría'));
-  await page.goto(`${BASE}/app/reglas`);
-  check('rule listed', ((await page.getByTestId('rule-list').textContent()) ?? '').includes('BODEGA DON PEPE → Alimentación'));
+  const rules = (await (await apiAs(A)).from('merchant_rules').select('contains,category:categories(name)')).data ?? [];
+  check('rule remembered', rules.some((x) => x.contains === 'BODEGA DON PEPE' && (x.category as unknown as { name: string } | null)?.name === 'Alimentación'), JSON.stringify(rules));
   const s2 = await importText('sms', SMS_SHOP_2);
   await page.goto(`${BASE}${s2.href}`);
   check('next import of that merchant auto-categorized by the learned rule', ((await page.getByTestId('detail-meta').textContent()) ?? '').includes('Alimentación'),

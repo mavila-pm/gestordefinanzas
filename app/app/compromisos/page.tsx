@@ -152,30 +152,26 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
         </section>
       )}
 
-      <section className="stack-sm" data-testid="recurring" aria-labelledby="h-rec">
-        <h3 id="h-rec" className="sub-title">Detectados en tus movimientos</h3>
-        {!entitlements.features.recurringDetection ? (
-          <p className="muted small">En Plus detectamos los cobros que se repiten.</p>
-        ) : recurring === null ? <p role="alert" className="error">No pudimos revisar tus movimientos. Intenta de nuevo.</p>
-          : recurring.length === 0 ? <p className="muted small">Aún no vemos cobros que se repitan.</p> : (
-          <ul className="list card" data-testid="recurring-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
-            {recurring.map((r) => (
+      {entitlements.features.recurringDetection && recurring && recurring.some((r) => !r.tracked) && (
+        <details className="card" data-testid="recurring">
+          <summary id="h-rec">Detectados en tus movimientos ({recurring.filter((r) => !r.tracked).length})</summary>
+          <ul className="list" data-testid="recurring-list" style={{ marginTop: 8 }}>
+            {recurring.filter((r) => !r.tracked).map((r) => (
               <li key={`${r.currency}-${r.merchant}`}>
-                <span className="setting-text"><span>{r.merchant}</span><small className="muted">alrededor del día {r.dayOfMonth} · {r.months.length} meses</small></span>
-                <span className="actions"><span className="amount">{formatMoney({ amountMinor: r.typicalAmountMinor, currency: r.currency })}</span>
-                  {r.tracked ? <small className="muted">Ya es gasto fijo</small> : (
-                    <ActionForm action={saveFixedExpenseAction} className="inline" label={`Agregar ${r.merchant} como gasto fijo`}>
-                      <input type="hidden" name="name" value={r.merchant.slice(0, 60)} />
-                      <input type="hidden" name="amount" value={(r.typicalAmountMinor / 100).toFixed(2)} />
-                      <input type="hidden" name="currency" value={r.currency} />
-                      <input type="hidden" name="dueDay" value={String(Math.min(r.dayOfMonth, 28))} />
-                      <button type="submit" className="link small-link">Agregar como gasto fijo</button>
-                    </ActionForm>)}</span>
+                <span className="setting-text"><span>{r.merchant}</span><small className="muted">cerca del día {r.dayOfMonth} · {formatMoney({ amountMinor: r.typicalAmountMinor, currency: r.currency })}</small></span>
+                <ActionForm action={saveFixedExpenseAction} className="inline" label={`Agregar ${r.merchant} como gasto fijo`}>
+                  <input type="hidden" name="name" value={r.merchant.slice(0, 60)} />
+                  <input type="hidden" name="amount" value={(r.typicalAmountMinor / 100).toFixed(2)} />
+                  <input type="hidden" name="currency" value={r.currency} />
+                  <input type="hidden" name="dueDay" value={String(Math.min(r.dayOfMonth, 28))} />
+                  <button type="submit" className="link small-link">Agregar</button>
+                </ActionForm>
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </details>
+      )}
+      {recurring === null && entitlements.features.recurringDetection && <p role="alert" className="error">No pudimos revisar tus movimientos. Intenta de nuevo.</p>}
       <div className="actions">
         <Sheet label={<><Icon name="add" size={18} />Agregar pago</>} triggerClassName="quiet" title="Nuevo pago" subtitle="Algo que pagas cada mes: alquiler, carro, internet." testId="fixed-sheet">
           <div className="sheet-body">

@@ -23,7 +23,7 @@ scripts/test-db.sh   Throwaway PostgreSQL for DB tests
 app/                 Next.js 16 App Router. Public: /, (auth)/{login,signup,forgot-password,reset-password}, /auth/confirm.
                      /bienvenida = onboarding (app/app/layout.tsx redirects there until it is completed).
                      /app/* = product: (home) Resumen, movimientos (list, [id], nuevo), revisar, plan, preguntar (Vels),
-                     analisis, presupuestos, compromisos, tarjetas, reglas, conexiones, importar, cuenta, ajustes, mas,
+                     analisis, presupuestos (Límites de gasto), compromisos (Próximos pagos), tarjetas, conexiones, importar, cuenta, ajustes, mas,
                      exportar (CSV route). Writes: app/app/actions.ts, app/app/plan/actions.ts,
                      app/app/preguntar/actions.ts, app/bienvenida/actions.ts, app/auth/actions.ts.
                      API: app/api/inbound/email (webhook).

@@ -79,7 +79,8 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
         const trend = monthlyTrend(txs, month, currency, trendMonths);
         const months = trend.filter((t) => t.incomeMinor > 0 || t.expensesMinor > 0).length;
         const top = topMerchants(txs, month, currency);
-        const changes = relevantChanges(cmp);
+        // The month in progress is partial: a drop against a whole previous month is not real yet, a rise already is.
+        const changes = relevantChanges(cmp).filter((c) => month !== current || c.pct > 0);
         const split = fixedVsVariable(txs, month, currency, fixedIds);
         const rate = savingsRate(s);
         const m = (v: number) => formatMoney({ amountMinor: Math.abs(v), currency });
@@ -120,7 +121,7 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
               {cats.length === 0 ? <p className="muted">Sin gastos confirmados en estos dos meses.</p> : (
                 <div className="table-wrap">
                   <table className="data-table" data-testid={`categories-${currency}`}>
-                    <thead><tr><th scope="col">Categoría</th><th scope="col">Este mes</th><th scope="col">{shortMonth(cmp.previous.month)}</th><th scope="col">Cambio</th></tr></thead>
+                    <thead><tr><th scope="col">Categoría</th><th scope="col">{month === current ? 'Este mes' : shortMonth(month)}</th><th scope="col">{shortMonth(cmp.previous.month)}</th><th scope="col">Cambio</th></tr></thead>
                     <tbody>
                       {cats.map((c) => (
                         <tr key={c.category}><th scope="row">{c.category}</th><td>{m(c.currentMinor)}</td><td className="muted">{m(c.previousMinor)}</td>
