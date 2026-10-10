@@ -106,7 +106,7 @@ a.tx-row:hover { background: var(--bg-secondary); }
 .day-head { padding: var(--space-16) 0 var(--space-4); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
 
 .reasons { margin: var(--space-4) 0 0; padding-left: 18px; color: var(--text-secondary); }
-.filters { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: flex-end; } .filters > label { min-width: 140px; flex: 1; } .filters .grow { flex: 3; min-width: 200px; }
+.filters { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: flex-end; } .filters > label { min-width: 140px; flex: 1; }
 .table { width: 100%; border-collapse: collapse; } .table th, .table td { text-align: left; padding: var(--space-8) var(--space-4); border-top: 1px solid var(--border-subtle); } .table th { color: var(--text-secondary); font-weight: 500; font-size: 14px; }
 .table td.num, .table th.num { text-align: right; }
 
@@ -357,10 +357,6 @@ code { font-size: 14px; overflow-wrap: anywhere; }
 .source.row .setting-text small { white-space: normal; }
 .source.row > .button, .source.row > .tag { flex: none; }
 
-.free-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); padding: var(--space-16) var(--space-24);
-  background: var(--surface-default); border-radius: var(--radius-card); text-decoration: none; color: inherit; }
-.free-row:hover { box-shadow: inset 0 0 0 1px var(--border-subtle); }
-.free-row > svg { color: var(--text-muted); flex: none; }
 
 /* ── Conversation (onboarding + Preguntar, ADR-0006) ───────────────────────────────────────────── */
 /* The list is the ONLY scrolling element: a bounded row (minmax(0,1fr), not 1fr = minmax(auto,1fr)), a flex column whose
