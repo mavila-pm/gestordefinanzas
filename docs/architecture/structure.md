@@ -23,7 +23,7 @@ scripts/test-db.sh   Throwaway PostgreSQL for DB tests
 app/                 Next.js 16 App Router. Public: /, (auth)/{login,signup,forgot-password,reset-password}, /auth/confirm.
                      /bienvenida = onboarding (app/app/layout.tsx redirects there until it is completed).
                      /app/* = product: (home) Resumen, movimientos (list, [id], nuevo), revisar, plan, preguntar (Vels),
-                     analisis, presupuestos (Límites de gasto), compromisos (Próximos pagos), tarjetas, conexiones, importar, cuenta, ajustes, mas,
+                     analisis, presupuestos (Límites de gasto), compromisos (Próximos pagos), tarjetas, conexiones (via Vels), importar, cuenta (→ ajustes/plan), ajustes/{perfil,plan,vels,finanzas,apariencia,notificaciones,accesibilidad,seguridad,privacidad}, mas,
                      exportar (CSV route). Writes: app/app/actions.ts, app/app/plan/actions.ts,
                      app/app/preguntar/actions.ts, app/bienvenida/actions.ts, app/auth/actions.ts.
                      API: app/api/inbound/email (webhook).
@@ -62,6 +62,7 @@ Swapping a synthetic template for a real one touches only `adapters/<bank>/` and
 | Observed vs planned, recurrence, scenarios, applied plans, card statements (ADR-0007/0008/0010/0013/0014) | `src/engine/{observed,recurring,scenarios,applied,cards}.ts`, `lib/{plan-applications,cards}.ts` | `observed`, `recurring`, `scenarios`, `applied`, `cards`, `db/*`, E2E `income-link` |
 | Vels (ADR-0011) | `src/ai/vels-answers.ts` (intents → engine answers), `src/ai/vels-*.ts`, `lib/vels.ts`, `components/vels.tsx`, `components/chat.tsx` | `ai-core`, E2E `vels` |
 | Gemini, the only model (ADR-0015) | `src/ai/config.ts` (`aiModel`), `src/ai/gemini.ts` (@google/genai), `src/ai/model.ts`, `src/ai/vels-route.ts`, `lib/ai.ts` (`infer`) | `ai-gemini`, `ai-resilience`, `ai-core` |
+| Ajustes + preferences | `app/app/ajustes/*`, `components/settings{,-client}.tsx`, `src/web/preferences.ts`, `lib/preferences.ts`, `velsUsage` in `src/ai/entitlements.ts`; cookies vs-theme/vs-text/vs-motion read in `app/layout.tsx` | `settings`, `db/user-preferences`, E2E `auth-dashboard`, `planning-account` |
 | E2E (real Supabase) | `scripts/e2e.sh`, `tests/e2e/{lib.ts,seed.sql,cleanup.sql}` | 10 suites + `visual` + `perf` |
 | CI | `.github/workflows/ci.yml` | `check` + `test:db` + `build` per push/PR |
 

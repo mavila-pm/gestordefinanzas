@@ -70,12 +70,12 @@ await runSuite('planning-account', async ({ page, check }) => {
   check('commitments never change expenses (still S/ 400.00)', (await page.getByTestId('expenses-PEN').textContent()) === 'S/ 400.00', (await page.getByTestId('expenses-PEN').textContent()) ?? '');
 
   // ── Account / plan ──────────────────────────────────────────────────────────────────────────────────
-  await page.goto(`${BASE}/app/cuenta`);
-  check('Free plan with limits shown', ((await page.getByTestId('plan').textContent()) ?? '').includes('Plan Free') && (await page.getByTestId('auto-usage').textContent()) === '0 / 50');
-  await act(page, () => page.click('form[aria-label="Probar Plus"] button'));
+  await page.goto(`${BASE}/app/ajustes/plan`);
+  check('Free plan with limits shown', (await page.getByTestId('plan-name').textContent()) === 'Free' && (await page.getByTestId('auto-usage').textContent()) === '0 de 50');
+  await act(page, () => page.getByTestId('upgrade').click());
   await page.reload();
-  check('trial active with exact end date', ((await page.getByTestId('plan').textContent()) ?? '').includes('Plan Plus (prueba)') && (await page.getByTestId('trial-end').count()) === 1);
-  check('trial cannot be offered again', (await page.locator('form[aria-label="Probar Plus"]').count()) === 0);
+  check('trial active with exact end date', (await page.getByTestId('plan-name').textContent()) === 'Plus · prueba' && (await page.getByTestId('trial-end').count()) === 1);
+  check('trial cannot be offered again', (await page.getByTestId('upgrade').count()) === 0);
 
   // ── Recurring detection (Plus, TASK-016): 3 monthly NETFLIX E2E charges in the seed ──────────────────
   await page.goto(`${BASE}/app/compromisos`);

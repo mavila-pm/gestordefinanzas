@@ -70,7 +70,7 @@ for (const theme of ['light', 'dark'] as const) {
     await login(page, probe('s78a'));
     for (const [name, path] of [['dashboard', `/app?month=${M0}`], ['movements', `/app/movimientos?month=${M0}`], ['review', '/app/revisar'], ['more', '/app/mas'],
       ['analysis', `/app/analisis?month=${M0}`], ['budgets', '/app/presupuestos'], ['payments', '/app/compromisos'], ['accounts', '/app/tarjetas'],
-      ['connections', '/app/conexiones'], ['account-plan', '/app/cuenta'], ['settings', '/app/ajustes'], ['new', '/app/movimientos/nuevo'],
+      ['settings', '/app/ajustes'], ['settings-plan', '/app/ajustes/plan'], ['settings-appearance', '/app/ajustes/apariencia'], ['new', '/app/movimientos/nuevo'],
       ['import', '/app/importar'], ['ask', '/app/preguntar']] as const) {
       await page.goto(`${BASE}${path}`);
       await shoot(page, name, width, theme, save);

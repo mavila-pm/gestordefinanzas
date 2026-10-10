@@ -2,10 +2,10 @@
 
 States: IMPLEMENTED · VERIFIED (reproducible evidence at the level `docs/qa.md` requires) · APPROVED (PO).
 Branch `claude/beautiful-keller-ikxlrj` (PR mavila-pm/gestordefinanzas#1, Vercel Preview per push). Supabase `jeloegnvaxlfqjntbbyy`,
-migrations applied through `20261010000038` (`…035` login_throttle_purge PENDING: contains DELETE, PO applies it in SQL Editor).
+migrations applied through `20261010000039` (`…035` login_throttle_purge PENDING: contains DELETE, PO applies it in SQL Editor).
 
 ## Checkpoint (2026-10-10)
-Unit 422 · DB 127 · build OK · CI green. Last full E2E: 2026-09-29 (289/289, visual 162 shots, perf 8/8); later blocks
+Unit 432 · DB 130 · build OK · CI green. Last full E2E: 2026-09-29 (289/289, visual 162 shots, perf 8/8); later blocks
 updated E2E copy without a full run (no E2E credentials in the agent environment).
 
 ## Product areas (all VERIFIED unless noted; detail in the ADRs and `docs/architecture/structure.md`)
@@ -21,6 +21,7 @@ updated E2E copy without a full run (no E2E credentials in the agent environment
 | AI: Gemini only (`aiModel()`), one door `lib/ai.ts` (quota → call → record, ≤ 1 retry), validated output, cost ceiling until `AI_PRICES` | 0006, 0015 | `AI_PRICES` with Gemini's published rate; privacy text still names old providers (needs a new legal version) |
 | Design system, motion, Manrope subset, UX writing pass, Resumen redesign | — | PO feel check on a phone |
 | Product UX pass (2026-10-10): Resumen at a glance ('Hola, Mauro.' · 'Tu dinero, más claro.', + Registrar movimiento → Vels or manual, Dinero disponible, fixed payments, próximos pagos, savings goal, 6-month chart, cards and loans, recent movements; no tutorials); Dinero libre → Dinero disponible (simulators, '¿Y si…?', 'Aplicar plan' UI removed: Vels asks/simulates/applies with the same engines); own categories (labels only); simple Por revisar; Próximos pagos in Próximos / Recurrentes / Tarjetas y préstamos; Análisis as a deep dashboard; Presupuestos → Límites de gasto; savings goal (migration 038); nav by product hierarchy, Por revisar only with a count; 'Lo que Velsuno recuerda' removed (rules keep working; 'Deshacer' moved to Próximos pagos) | — | PO walkthrough; E2E specs updated to the new UI, not run here (no E2E credentials) |
+| Ajustes (2026-10-10): avatar → /app/ajustes (sidebar foot / mobile topbar); 9 sections Perfil, Plan y uso, Vels, Finanzas, Apariencia, Notificaciones, Accesibilidad, Seguridad, Privacidad y datos (desktop sidebar + content, mobile list → screen). Account prefs in `user_preferences` (039): Vels style (presentation only) + proactive note, primary currency/account (defaults/order, no conversion), notice toggles (filter Resumen notices only). Device prefs in cookies: mode, text size, reduce motion. 'Uso de Vels' % = ai_usage / plan_config (no limit → no %), resets 1st of next Lima month. Removed from nav: Tu plan (`/app/cuenta` → `/app/ajustes/plan`), Conexiones (reached through Vels: 'quiero conectar mi correo'). Not shown, by design: second accent (only Cítrico approved), Fondo (= Modo), Mayor contraste (no tokens), Mostrar centavos (needs a display layer over `formatMoney`), ciclo financiero (Dinero disponible already runs to next income), session list (only 'Cerrar otras sesiones'), last password change (not stored), Seguridad notice (no consumer). Delete account = request to support | — | PO walkthrough; 36/36 local Playwright checks (390×844 + 1280, light/dark) |
 
 ## Blockers / decisions (external)
 - Gemini: open Vels on the Preview and ask something outside the local rules ("¿me da para unas zapatillas de 300?");

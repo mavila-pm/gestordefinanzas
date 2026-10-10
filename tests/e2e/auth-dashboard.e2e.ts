@@ -52,8 +52,13 @@ await runSuite('auth-dashboard', async ({ page, check }) => {
   check('A does NOT see B merchant', !list.includes('E2E SECRET B'), list);
   check('withdrawal shown apart, not as expense', (await page.content()).includes('Retiros de efectivo'));
 
-  check('Ajustes no longer offers account deletion', await (async () => { await page.goto(`${BASE}/app/ajustes`); return (await page.getByText(/Eliminar mi cuenta/).count()) === 0; })());
-  // Ajustes → Cambiar contraseña: sheet, show/hide, client validation (nothing is sent, the probe password stays as is).
+  check('Privacidad: account deletion is a request, never a direct destructive button', await (async () => {
+    await page.goto(`${BASE}/app/ajustes/privacidad`);
+    const del = page.getByText(/Eliminar mi cuenta/);
+    return (await del.count()) >= 1 && (await page.getByRole('button', { name: /Eliminar mi cuenta/ }).count()) === 0;
+  })());
+  // Ajustes → Seguridad → Cambiar contraseña: sheet, show/hide, client validation (nothing is sent, the probe password stays as is).
+  await page.goto(`${BASE}/app/ajustes/seguridad`);
   await page.getByRole('button', { name: 'Cambiar contraseña' }).first().click();
   const sheet = page.getByTestId('password-sheet');
   const npw = sheet.locator('input[name=password]');
@@ -71,9 +76,10 @@ await runSuite('auth-dashboard', async ({ page, check }) => {
   }
   await page.keyboard.press('Escape');
 
-  // 4. Logout
+  // 4. Logout (Ajustes → Seguridad)
   // Server-action redirect = client-side navigation (no new load event): wait for the URL instead of networkidle.
-  await Promise.all([page.waitForURL(/\/login/), page.click('text=Cerrar sesión')]);
+  await page.goto(`${BASE}/app/ajustes/seguridad`);
+  await Promise.all([page.waitForURL(/\/login/), page.getByRole('button', { name: 'Cerrar sesión', exact: true }).first().click()]);
   await page.goto(`${BASE}/app`);
   check('after logout /app redirects to /login', page.url().startsWith(`${BASE}/login`), page.url());
   // The successful sign-in reset A's counter: 1 earlier failure + 2 now would lock if it had not.
@@ -83,7 +89,8 @@ await runSuite('auth-dashboard', async ({ page, check }) => {
   check('success resets the counter (2 new failures: no lock yet)', afterReset === 'Correo o contraseña incorrectos. Por favor, inténtalo de nuevo.', afterReset ?? '');
   await login(page, A);
   check('3rd try with the right password still signs in (and clears the pending lock)', page.url().startsWith(`${BASE}/app`), page.url());
-  await Promise.all([page.waitForURL(/\/login/), page.click('text=Cerrar sesión')]);
+  await page.goto(`${BASE}/app/ajustes/seguridad`);
+  await Promise.all([page.waitForURL(/\/login/), page.getByRole('button', { name: 'Cerrar sesión', exact: true }).first().click()]);
 
   // 5. Password recovery for an unknown email: neutral message (Supabase sends nothing)
   await page.goto(`${BASE}/forgot-password`);

@@ -123,14 +123,14 @@ await runSuite('onboarding', async ({ page, check }) => {
   check('same photo again while the proposal is open (retry / double tap): same proposal, no second camera read', (await lastVelsuno(page)).includes('Encontré esto') && (await monthReads()) === reads1, `${reads1} → ${await monthReads()}`);
 
   // Plan / usage view and demo controls.
-  await page.goto(`${BASE}/app/cuenta`);
+  await page.goto(`${BASE}/app/ajustes/plan`);
   const ai = (await page.getByTestId('ai-usage').textContent()) ?? '';
-  check('usage shown as a bar and camera count, never tokens', ai.includes('Conversación') && ai.includes('2 de 2') && !/token/i.test(ai), ai);
+  check('usage shown as a percent meter and camera count, never tokens', /\d+ % usado/.test(ai) && ai.includes('2 de 2') && !/token/i.test(ai), ai);
   const demo = page.getByTestId('demo-controls');
   await demo.locator('label.segment', { hasText: 'Plus' }).click();
   await act(page, () => demo.getByRole('button', { name: 'Aplicar' }).click());
   await page.reload();
-  const ai2 = (await page.getByTestId('ai-usage').textContent()) ?? '';
+  const ai2 = `${(await page.getByTestId('ai-usage').textContent()) ?? ''} ${(await page.getByTestId('plan').textContent()) ?? ''}`;
   check('demo simulates Plus limits (50 camera reads; the Preguntar read counts), labelled as simulation', ai2.includes('2 de 50') && ai2.includes('Simulación Plus'), ai2);
   check('the real subscription is untouched', ((await api.from('subscriptions').select('plan')).data ?? []).length === 0);
 
