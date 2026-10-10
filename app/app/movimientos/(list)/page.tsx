@@ -9,6 +9,9 @@ import {
 } from '../../../../src/web/movement-filters';
 import { TxRow } from '../../../../components/tx-row';
 import { Icon } from '../../../../components/ui/icon';
+import { CategoriesSheet } from '../../../../components/categories-sheet';
+import { RegisterMenu } from '../../../../components/register-menu';
+import { plural } from '../../../../src/domain/plural';
 import { limaDateKey, limaDayLabel, monthLabel } from '../../../../src/web/labels';
 
 export const metadata = { title: 'Movimientos' };
@@ -53,11 +56,11 @@ export default async function Movements({ searchParams }: { searchParams: Promis
       <header className="row">
         <div className="page-head">
           <h1>Movimientos</h1>
-          <p data-testid="movement-count">{total} movimiento(s){f.month !== 'all' ? ` en ${f.month}` : ''}</p>
+          <p data-testid="movement-count">{plural(total, 'movimiento', 'movimientos')}{f.month !== 'all' ? ` en ${monthLabel(f.month).toLowerCase()}` : ''}</p>
         </div>
         <div className="actions">
-          <Link href="/app/importar" className="button quiet">Pegar mensaje</Link>
-          <Link href="/app/movimientos/nuevo" className="button">Registrar</Link>
+          <CategoriesSheet categories={catalog.categories} />
+          <RegisterMenu className="button" />
         </div>
       </header>
 
@@ -67,9 +70,9 @@ export default async function Movements({ searchParams }: { searchParams: Promis
           <Icon name="search" />
           <input id="q" name="q" type="search" defaultValue={f.q} maxLength={60} placeholder="Buscar comercio o monto" enterKeyHint="search" />
         </div>
-        <details open={activeFilters > 0}>
+        <details open={activeFilters > 0} className="filters-box">
           <summary>Filtros{activeFilters > 0 ? ` (${activeFilters})` : ''}</summary>
-          <div className="filters" style={{ paddingTop: 8 }}>
+          <div className="filters">
             <label className="stack-sm"><span>Mes</span><input name="month" type="month" min={firstMonth ?? undefined} max={current} defaultValue={f.month === 'all' ? '' : f.month} /></label>
             <label className="stack-sm"><span>Estado</span><select name="status" defaultValue={f.status}>
               {opt('all', 'Todos')}{opt('confirmed', 'Confirmados')}{opt('pending', 'Por revisar')}{opt('ignored', 'Ignorados')}</select></label>
@@ -87,11 +90,14 @@ export default async function Movements({ searchParams }: { searchParams: Promis
         <div className="actions">
           <button type="submit">Aplicar</button>
           {(activeFilters > 0 || f.q || f.month !== 'all') && <Link href="/app/movimientos?month=all" className="button secondary">Ver todo</Link>}
-          <a href={`/app/exportar?${filtersToQuery(f, { page: 1 })}`} data-testid="export-link" className="section-link" style={{ marginLeft: 'auto' }}>Exportar CSV</a>
         </div>
       </form>
 
-      {firstMonth && <p className="muted small" data-testid="history-window">Tu plan Free muestra desde {monthLabel(firstMonth).toLowerCase()}. Lo anterior sigue guardado: puedes exportarlo o <Link href="/app/cuenta">pasar a Plus</Link>.</p>}
+      {firstMonth && entitlements.limits.historyMonths !== null && (
+        <p className="muted small" data-testid="history-window">
+          Tu plan actual (Free) muestra los movimientos {entitlements.limits.historyMonths === 1 ? 'de este mes' : `de los últimos ${entitlements.limits.historyMonths} meses`}. Para consultar otros meses, <Link href="/app/cuenta">cambia a Plus</Link>.
+        </p>
+      )}
       <section aria-label="Lista de movimientos">
         {error && <p role="alert" className="notice error">No pudimos cargar los movimientos. Intenta de nuevo.</p>}
         {!error && txs.length === 0 && <p className="muted">{f.q ? `Nada coincide con “${f.q}”.` : `Aún no hay movimientos${f.month !== 'all' ? ` en ${monthLabel(f.month).toLowerCase()}` : ''}.`}</p>}

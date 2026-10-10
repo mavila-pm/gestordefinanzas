@@ -15,6 +15,7 @@ import { ingestRawEvent } from '../../src/engine/ingest';
 import { loadUserContext } from '../../lib/queries';
 import { SupabaseImportRepository } from '../../src/infrastructure/supabase/import-repository';
 import { parseImportForm, importOutcomeText } from '../../src/web/import-input';
+import { parseCategoryName } from '../../src/web/category-input';
 import {
   errorText, isUuid, parseAccountForm, parseCardCycleForm, parseCardStatementForm, parseCardForm, parseSplitForm, parseDebtForm, parseFixedExpenseForm, parseCorrectionForm, parseManualForm, parseReviewForm, type CorrectableState,
 } from '../../src/web/transaction-input';
@@ -387,3 +388,49 @@ export async function saveCardStatementAction(_prev: ActionState, form: FormData
   }
   return done('Estado de cuenta guardado.');
 }
+
+/**
+ * Own categories (labels only; RLS: user_id = auth.uid()). The default ones are shared and read-only. A category in
+ * use by movements, limits or rules cannot be deleted (foreign keys): rename it instead.
+ */
+async function categoryNames(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, exceptId?: string) {
+  const { data } = await supabase.from('categories').select('id,name');
+  return (data ?? []).filter((c) => c.id !== exceptId).map((c) => c.name as string);
+}
+
+export async function createCategoryAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const { supabase, user } = await session();
+  if (!user) return { error: 'No se guardó. Intenta de nuevo.' };
+  const parsed = parseCategoryName(form.get('name'), await categoryNames(supabase));
+  if (!parsed.ok) return { error: parsed.error };
+  const { error } = await supabase.from('categories').insert({ user_id: user.id, name: parsed.name });
+  if (error) return { error: 'No se guardó. Intenta de nuevo.' };
+  revalidatePath('/app', 'layout');
+  return { message: `Categoría ${parsed.name} creada.` };
+}
+
+export async function renameCategoryAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  if (!isUuid(id)) return { error: 'No se guardó. Intenta de nuevo.' };
+  const { supabase, user } = await session();
+  if (!user) return { error: 'No se guardó. Intenta de nuevo.' };
+  const parsed = parseCategoryName(form.get('name'), await categoryNames(supabase, id));
+  if (!parsed.ok) return { error: parsed.error };
+  const { data, error } = await supabase.from('categories').update({ name: parsed.name }).eq('id', id).eq('user_id', user.id).select('id');
+  if (error || !data?.length) return { error: 'No se guardó. Intenta de nuevo.' };
+  revalidatePath('/app', 'layout');
+  return { message: 'Categoría actualizada.' };
+}
+
+export async function deleteCategoryAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  if (!isUuid(id)) return { error: 'No se pudo quitar. Intenta de nuevo.' };
+  const { supabase, user } = await session();
+  if (!user) return { error: 'No se pudo quitar. Intenta de nuevo.' };
+  const { data, error } = await supabase.from('categories').delete().eq('id', id).eq('user_id', user.id).select('id');
+  if (error?.code === '23503') return { error: 'Tiene movimientos o límites. Cámbiale el nombre en vez de quitarla.' };
+  if (error || !data?.length) return { error: 'No se pudo quitar. Intenta de nuevo.' };
+  revalidatePath('/app', 'layout');
+  return { message: 'Categoría quitada.' };
+}
+

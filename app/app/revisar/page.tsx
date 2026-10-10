@@ -27,45 +27,51 @@ export default async function ReviewQueue() {
   const [codes, catalog] = await Promise.all([ingestionCodesFor(supabase, txs.map((t) => t.id)), loadCatalog(supabase)]);
   const cardLast4 = catalog.cards.filter((c) => c.active).map((c) => c.last4);
 
+  const accountName = new Map([...catalog.accounts.map((a) => [a.id, a.alias] as const), ...catalog.cards.map((c) => [c.id, c.alias] as const)]);
+
   return (
-    <main className="stack">
+    <main className="stack narrow-md">
       <div className="page-head">
         <h1>Por revisar</h1>
-        <p>{txs.length ? `${plural(txs.length, 'movimiento espera', 'movimientos esperan')} tu confirmación. No cuentan hasta que los confirmes.` : 'Lo que no esté claro llegará aquí.'}</p>
+        <p>{txs.length ? `${plural(txs.length, 'movimiento espera', 'movimientos esperan')} tu confirmación.` : 'Todo al día.'}</p>
       </div>
-      {txs.length === 0 ? <p className="notice positive"><Icon name="check" />Todo al día. No hay nada por revisar.</p> : (
-        <ul className="stack plain" data-testid="review-list">
+      {txs.length === 0 ? <p className="notice positive"><Icon name="check" />No hay nada por revisar.</p> : (
+        <ul className="stack-sm plain" data-testid="review-list">
           {txs.map((t) => {
             const reasons = reviewReasons(t, { ingestionCodes: codes.get(t.id) ?? [], registeredCardLast4: cardLast4, cardId: t.cardId });
             const sign = t.direction === 'inflow' ? '+' : t.direction === 'outflow' ? '−' : '';
+            const origin = (t.cardId && accountName.get(t.cardId)) || (t.accountId && accountName.get(t.accountId))
+              || (t.institution ? `${t.institution}${t.cardLast4 ? ` ····${t.cardLast4}` : ''}` : SOURCE_LABEL[t.sources[0]?.channel ?? 'manual']);
+            const dup = t.status === 'possible_duplicate';
             return (
-              <li key={t.id} className="card stack-sm review-card" data-testid="review-item">
-                <div className="row" style={{ alignItems: 'baseline' }}>
-                  <strong className="review-name">{t.merchantRaw ?? TYPE_LABEL[t.type]}</strong>
+              <li key={t.id} className="card review-card" data-testid="review-item">
+                <div className="review-top">
                   <span className="amount big">{sign}{formatMoney(t)}</span>
+                  {dup && <span className="tag review">Posible duplicado</span>}
                 </div>
-                <small className="muted">
-                  {[TYPE_LABEL[t.type], formatLimaDateTime(t.occurredAt), t.institution && t.cardLast4 ? `${t.institution} ····${t.cardLast4}` : t.institution,
-                    SOURCE_LABEL[t.sources[0]?.channel ?? 'manual']].filter(Boolean).join(' · ')}
-                </small>
-                <ul className="reasons why" aria-label="Por qué necesita revisión">
-                  {reasons.map((r) => <li key={r.code} data-reason={r.code}>{r.text}</li>)}
-                </ul>
-                {t.duplicateOfId && <small><Link href={`/app/movimientos/${t.duplicateOfId}`}>Ver el movimiento parecido</Link></small>}
+                <strong className="review-name">{t.merchantRaw ?? 'Sin comercio'}</strong>
+                <small className="muted">{formatLimaDateTime(t.occurredAt).slice(0, 10)} · {origin}</small>
+                <dl className="review-facts">
+                  <div><dt>Tipo</dt><dd>{t.type === 'unknown' ? <span className="warn">Por definir</span> : TYPE_LABEL[t.type]}</dd></div>
+                  <div><dt>Categoría</dt><dd>{t.category ?? <span className="muted">Sin categoría</span>}</dd></div>
+                </dl>
+                {reasons[0] && <small className="muted why" data-reason={reasons[0].code}>{reasons[0].text}</small>}
                 <div className="actions">
                   {t.type !== 'unknown' && (
                     <ActionForm action={reviewAction} className="inline" label="Confirmar">
                       <input type="hidden" name="id" value={t.id} />
                       <input type="hidden" name="action" value="confirm" />
-                      <button type="submit">{t.status === 'possible_duplicate' ? 'No es duplicado, confirmar' : 'Confirmar'}</button>
+                      <button type="submit">Confirmar</button>
                     </ActionForm>
                   )}
-                  <Link className="button secondary" href={`/app/movimientos/${t.id}`}>Corregir / ver origen</Link>
-                  <ActionForm action={reviewAction} className="inline" label="Ignorar">
-                    <input type="hidden" name="id" value={t.id} />
-                    <input type="hidden" name="action" value="ignore" />
-                    <button type="submit" className="link">{t.status === 'possible_duplicate' ? 'Es duplicado, ignorar' : 'Ignorar'}</button>
-                  </ActionForm>
+                  <Link className="button secondary" href={`/app/movimientos/${t.id}`}>Editar</Link>
+                  {dup && (
+                    <ActionForm action={reviewAction} className="inline" label="Es duplicado">
+                      <input type="hidden" name="id" value={t.id} />
+                      <input type="hidden" name="action" value="ignore" />
+                      <button type="submit" className="link">Es duplicado</button>
+                    </ActionForm>
+                  )}
                 </div>
               </li>
             );

@@ -106,7 +106,10 @@ a.tx-row:hover { background: var(--bg-secondary); }
 .day-head { padding: var(--space-16) 0 var(--space-4); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
 
 .reasons { margin: var(--space-4) 0 0; padding-left: 18px; color: var(--text-secondary); }
-.filters { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: flex-end; } .filters > label { min-width: 140px; flex: 1; }
+.filters-box { border-radius: var(--radius-card); background: var(--surface-default); padding: var(--space-12) var(--space-16); }
+.filters-box > summary { font-weight: 600; cursor: pointer; min-height: 32px; display: flex; align-items: center; }
+.filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); gap: var(--space-16) var(--space-12); padding-top: var(--space-12); }
+.filters > label { min-width: 0; } .filters select, .filters input { width: 100%; }
 .table { width: 100%; border-collapse: collapse; } .table th, .table td { text-align: left; padding: var(--space-8) var(--space-4); border-top: 1px solid var(--border-subtle); } .table th { color: var(--text-secondary); font-weight: 500; font-size: 14px; }
 .table td.num, .table th.num { text-align: right; }
 
@@ -573,3 +576,8 @@ input:hover:not(:focus):not(:disabled), select:hover:not(:focus):not(:disabled),
 .review-alert { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); text-decoration: none; color: inherit; }
 .debt-mini li { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--space-12); }
 .link-card { text-decoration: none; color: inherit; align-items: center; }
+.review-card { display: grid; gap: 4px; }
+.review-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+.review-facts { display: flex; flex-wrap: wrap; gap: var(--space-8) var(--space-24); margin: var(--space-8) 0 var(--space-4, 4px); }
+.review-facts div { display: grid; gap: 2px; } .review-facts dt { font-size: 12px; color: var(--text-secondary); } .review-facts dd { margin: 0; font-weight: 500; }
+.review-card .actions { margin-top: var(--space-8); }
