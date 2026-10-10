@@ -3,7 +3,7 @@
  * access to the Supabase host.
  * Run all suites: scripts/e2e.sh (seed: tests/e2e/seed.sql).
  */
-import { BASE, act, login, probe, runSuite } from './lib.ts';
+import { BASE, act, login, passCap, probe, runSuite } from './lib.ts';
 
 const A = probe('s3a');
 const B = probe('s3b');
@@ -15,6 +15,7 @@ await runSuite('auth-dashboard', async ({ page, check }) => {
     await page.goto(`${BASE}/login`);
     await page.fill('input[name=email]', email);
     await page.fill('input[name=password]', password);
+    await passCap(page);
     await act(page, () => page.click('form button[type=submit]'));
   }
 
@@ -95,6 +96,7 @@ await runSuite('auth-dashboard', async ({ page, check }) => {
   // 5. Password recovery for an unknown email: neutral message (Supabase sends nothing)
   await page.goto(`${BASE}/forgot-password`);
   await page.fill('input[name=email]', NOBODY);
+  await passCap(page);
   await act(page, () => page.click('form button[type=submit]'));
   const resetMsg = await page.locator('[role=status], [role=alert]:not(#__next-route-announcer__)').first().textContent();
   check('forgot-password neutral message', !!resetMsg?.includes('Si existe una cuenta'), resetMsg ?? '');

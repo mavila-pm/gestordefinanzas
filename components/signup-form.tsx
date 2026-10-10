@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useId, useState } from 'react';
 import { signup, type FormState } from '../app/auth/actions';
+import { CapField } from './cap-field';
 
 /** Wait before another link can be requested (Supabase Auth also refuses faster resends server-side). */
 const RESEND_SECONDS = 60;
@@ -33,6 +34,7 @@ export function SignupForm() {
           <p>Te enviamos un enlace a <strong>{sentTo}</strong> para continuar.</p>
         </div>
         <p className="muted">El enlace vence por seguridad. Si no lo ves, revisa spam o promociones.</p>
+        <CapField scope="signup" resetKey={state} />
         {state.error && <p role="alert" className="error">{state.error}</p>}
         <button type="submit" className="secondary wide" disabled={pending || wait > 0} data-testid="signup-resend">
           {pending ? 'Enviando…' : wait > 0 ? `Reenviar enlace en ${wait} s` : 'Reenviar enlace'}
@@ -49,6 +51,7 @@ export function SignupForm() {
           required value={email} onChange={(e) => setEmail(e.target.value)}
           aria-invalid={state.error ? true : undefined} aria-describedby={state.error ? `${id}-error` : undefined} />
       </div>
+      <CapField scope="signup" resetKey={state.error ? state : undefined} />
       {state.error && <p role="alert" className="error" id={`${id}-error`}>{state.error}</p>}
       <button type="submit" disabled={pending} className="wide">{pending ? 'Enviando…' : 'Continuar'}</button>
     </form>

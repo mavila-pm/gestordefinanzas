@@ -10,6 +10,7 @@ export default function ForgotPasswordPage() {
     <AuthScreen title="Recupera tu contraseña" lead="Te enviaremos un enlace para crear una nueva.">
       <AuthForm
         action={requestPasswordReset}
+        cap="recovery"
         submit="Enviar enlace"
         fields={[{ name: 'email', label: 'Correo electrónico', type: 'email', autoComplete: 'email' }]}
       />

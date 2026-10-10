@@ -702,3 +702,18 @@ a.link-kpi { min-height: 44px; }
   main.analysis { padding-left: var(--space-32); padding-right: var(--space-32); }
 }
 @media (min-width: 1440px) { .dash-top:not(.solo) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+
+/* ── Anti-bot check (Cap widget) in Velsuno tokens; the widget follows light/dark through these variables ─────────── */
+.cap-field { min-height: 58px; }
+.cap-field cap-widget {
+  display: block; width: 100%;
+  --cap-widget-width: 100%;
+  --cap-background: var(--surface-default); --cap-color: var(--text-primary); --cap-border-color: var(--border-control);
+  --cap-border-radius: var(--radius-control); --cap-font: var(--font-sans);
+  --cap-checkbox-background: var(--surface-default); --cap-checkbox-border: 2px solid var(--border-control);
+  --cap-spinner-color: var(--text-primary); --cap-spinner-background-color: var(--bg-secondary);
+  --cap-focus-ring: var(--focus-ring); --cap-invalid-border-color: var(--semantic-error);
+  --cap-invalid-ring-color: color-mix(in srgb, var(--semantic-error) 24%, transparent);
+}
+/* Provider help link (technical) is not shown; a failed check says what to do in the label itself. */
+.cap-field cap-widget::part(troubleshoot) { display: none; }

@@ -2,7 +2,8 @@
 
 Requires network access from the environment to `jeloegnvaxlfqjntbbyy.supabase.co`.
 
-1. `.env.local` with the public values (`.env.example`).
+1. `.env.local` with the public values (`.env.example`) and `CAP_SECRET` (the auth forms refuse without it; specs tap the
+   Cap widget through `passCap()` in `tests/e2e/lib.ts`).
 2. Seed: `E2E_PASSWORD=<random> scripts/e2e.sh render-seed [tags…]` and run the output with the Supabase SQL tool
    (or set `E2E_DB_URL` and the script seeds/cleans via psql). The seed is **insert-only**: each render gets a fresh
    run id and creates new users `e2e-<tag>-<run>@gestordefinanzas.invalid` (fixed B ids = `md5('<run>:<name>')`),

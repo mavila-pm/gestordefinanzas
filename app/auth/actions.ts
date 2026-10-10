@@ -10,6 +10,8 @@ import { PRIVACY_VERSION, TERMS_VERSION } from '../../src/web/legal';
 import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError } from '../../src/web/password-reset';
 import { passwordChangeOutcome, parseReauthCode, reauthRequestOutcome, type ChangePasswordState } from '../../src/web/password-change';
 import { LOGIN_INVALID, LOGIN_SERVER, lockoutMessage, loginOutcome } from '../../src/web/login';
+import { capPassed } from '../../lib/cap';
+import { CAP_ERROR } from '../../lib/cap-core';
 
 /** Remembers where the email link should land (the callback URL itself stays query-free). */
 async function rememberAuthNext(path: '/crear-cuenta' | '/reset-password') {
@@ -27,6 +29,9 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
   const email = parseEmail(form.get('email'));
   const password = form.get('password');
   if (!email || typeof password !== 'string' || !password) return { error: LOGIN_INVALID };
+  // Anti-bot first (Cap): a bot without a valid single-use token never reaches the lockout counter or Supabase Auth,
+  // so it cannot lock a real person's email either. The lockout below still applies to every verified attempt.
+  if (!(await capPassed(form, 'login'))) return { error: CAP_ERROR };
   const supabase = await createSupabaseServerClient();
   // Progressive lockout (migrations 033/034): reserved in the database before the password is checked, keyed on the email.
   // No IP: this RPC is public, so a caller-supplied IP could lock a shared carrier IP for everyone behind it.
@@ -56,6 +61,7 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
 export async function signup(_prev: FormState, form: FormData): Promise<FormState> {
   const email = parseEmail(form.get('email'));
   if (!email) return { error: 'Revisa tu correo electrónico.' };
+  if (!(await capPassed(form, 'signup'))) return { error: CAP_ERROR };
   const supabase = await createSupabaseServerClient();
   await rememberAuthNext('/crear-cuenta');
   const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: authCallbackUrl() } });
@@ -103,6 +109,7 @@ export async function completeProfile(_prev: FormState, form: FormData): Promise
 export async function requestPasswordReset(_prev: FormState, form: FormData): Promise<FormState> {
   const email = parseEmail(form.get('email'));
   if (!email) return { error: 'Ingresa un correo válido.' };
+  if (!(await capPassed(form, 'recovery'))) return { error: CAP_ERROR };
   const supabase = await createSupabaseServerClient();
   await rememberAuthNext('/reset-password');
   const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: authCallbackUrl() });

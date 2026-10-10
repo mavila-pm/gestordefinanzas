@@ -3,6 +3,8 @@
 import { useActionState, useId, useState } from 'react';
 import type { FormState } from '../app/auth/actions';
 import { PasswordInput } from './password-input';
+import { CapField } from './cap-field';
+import type { CapScope } from '../src/web/cap';
 
 interface Field { name: string; label: string; type: string; autoComplete: string; hint?: string; minLength?: number }
 
@@ -11,6 +13,8 @@ export function AuthForm(props: {
   fields: Field[];
   submit: string;
   hidden?: Record<string, string>;
+  /** Public auth forms: Cap anti-bot check, verified again by the server action. */
+  cap?: CapScope;
 }) {
   const [state, formAction, pending] = useActionState(props.action, {});
   // Controlled: React resets a form after its action; what the person typed must survive an error.
@@ -38,6 +42,7 @@ export function AuthForm(props: {
           </div>
         );
       })}
+      {props.cap && <CapField scope={props.cap} resetKey={state.error || state.message ? state : undefined} />}
       {state.error && <p role="alert" className="error" id={errorId}>{state.error}</p>}
       {state.message && <p role="status" className="notice positive">{state.message}</p>}
       <button type="submit" disabled={pending} className="wide">{pending ? 'Un momento…' : props.submit}</button>

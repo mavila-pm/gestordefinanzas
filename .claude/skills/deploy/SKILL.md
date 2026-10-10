@@ -13,7 +13,7 @@ change production env, or apply a migration outside `jeloegnvaxlfqjntbbyy` — t
    connector: hand that file to the PO for the Supabase SQL Editor and make the code degrade gracefully until it exists.
 3. **Env vars** (Vercel → Settings → Environment Variables, scope Preview first; link to project `gestordefinanzas`):
    public `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; server secrets (type Secret) `GEMINI_API_KEY`,
-   `DATABASE_URL`, `INBOUND_EMAIL_SECRET`; config `GEMINI_MODEL` (optional), `AI_PRICES`,
+   `CAP_SECRET` (required: without it login/signup/recovery refuse), `DATABASE_URL`, `INBOUND_EMAIL_SECRET`; config `GEMINI_MODEL` (optional), `AI_PRICES`,
    `INGEST_EMAIL_DOMAIN`. A changed env var needs a **Redeploy**. Never ask the user to paste a secret in chat.
 4. **Smoke (Preview)**: branch URL in `docs/runbooks/vercel-preview.md`. Check `/` and `/login` load; sign in with a synthetic
    or PO account (never modify PO data); `/app` renders Dinero libre; Vels answers a question the local rules do not cover (e.g. "¿me da para unas zapatillas de 300?") — "todavía no está activa" means no Gemini key.

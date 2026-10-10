@@ -87,10 +87,18 @@ export const changed = (page: Page, testId: string, before: string) => page.wait
   (a: { id: string; old: string }) => (document.querySelector(`[data-testid="${a.id}"]`)?.textContent ?? '') !== a.old,
   { id: testId, old: before }, { timeout: 20000 });
 
+/** Public auth forms carry the Cap anti-bot check: tap it and wait for its single-use token (needs CAP_SECRET on the server). */
+export async function passCap(page: Page): Promise<void> {
+  await page.mouse.move(20, 20);
+  await page.locator('cap-widget').click();
+  await page.waitForFunction(() => !!(document.querySelector('cap-widget input[name="cap-token"]') as HTMLInputElement | null)?.value, null, { timeout: 30000 });
+}
+
 export async function login(page: Page, email: string, password = PASSWORD()): Promise<void> {
   await page.goto(`${BASE}/login`);
   await page.fill('input[name=email]', email);
   await page.fill('input[name=password]', password);
+  await passCap(page);
   await nav(page, () => page.click('form button[type=submit]'));
 }
 

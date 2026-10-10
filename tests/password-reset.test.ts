@@ -35,6 +35,8 @@ describe('passwordResetOutcome (pure policy)', () => {
 const resetPasswordForEmail = vi.fn();
 const signInWithOtp = vi.fn();
 vi.mock('server-only', () => ({}));
+// Cap is covered in tests/cap.test.ts; here the person already passed it (the subject is anti-enumeration).
+vi.mock('../lib/cap', () => ({ capPassed: async () => true }));
 vi.mock('next/headers', () => ({ cookies: async () => ({ set: vi.fn(), get: vi.fn(), getAll: () => [] }) }));
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
 vi.mock('../lib/supabase/server', () => ({

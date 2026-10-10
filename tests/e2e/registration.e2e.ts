@@ -4,7 +4,7 @@
  * email link created its session). s16b: a completed account. The email itself is not sent here (the shared SMTP
  * cap is for people); the signup action is covered by unit tests with Supabase stubbed (tests/password-reset.test.ts).
  */
-import { ALERT, BASE, act, apiAs, login, probe, runSuite } from './lib.ts';
+import { ALERT, BASE, act, apiAs, login, passCap, probe, runSuite } from './lib.ts';
 
 const A = probe('s16a');
 const B = probe('s16b');
@@ -138,6 +138,7 @@ await runSuite('registration', async ({ page, check }) => {
   await page.goto(`${BASE}/login`);
   await page.fill('input[name=email]', A);
   await page.fill('input[name=password]', 'una clave equivocada 2026');
+  await passCap(page);
   await act(page, () => page.click('main button[type=submit]'));
   check('old/wrong password refused with the generic message', ((await page.locator(`main ${ALERT}`).textContent()) ?? '').includes('incorrectos'));
 

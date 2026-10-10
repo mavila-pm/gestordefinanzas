@@ -17,6 +17,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       )}
       <AuthForm
         action={login}
+        cap="login"
         submit="Entrar"
         hidden={{ next: safeNextPath(next) }}
         fields={[
