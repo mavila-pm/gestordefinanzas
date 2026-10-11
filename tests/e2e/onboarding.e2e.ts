@@ -22,8 +22,12 @@ await runSuite('onboarding', async ({ page, check }) => {
   check('first access goes to the conversation, not to an empty dashboard', page.url().endsWith('/bienvenida'));
   await page.getByTestId('velsuno-msg').nth(1).waitFor();
   const opening = (await page.getByTestId('velsuno-msg').allTextContents()).join(' ');
-  check('Vels greets first: who it is, what it will do, "con tus propias palabras", no step counter',
-    opening.includes('Soy Vels') && opening.includes('qué pagos vienen') && opening.includes('con tus propias palabras') && !/paso \d/i.test(opening), opening);
+  check('opening: "Vamos a ordenar tus finanzas juntos." then dependiente / independiente, no step counter',
+    opening.includes('Vamos a ordenar tus finanzas juntos.') && opening.includes('Antes de empezar, ¿trabajas como dependiente o independiente?') && !/paso \d/i.test(opening), opening);
+  const options = await page.locator('.chat-actions').last().getByRole('button').allTextContents();
+  check('two options under the question', JSON.stringify(options) === '["Dependiente","Independiente"]', JSON.stringify(options));
+  const emptyBoxes = () => page.locator('.chat-card').evaluateAll((els) => els.filter((e) => !(e.textContent ?? '').trim()).length);
+  check('no empty boxes under the messages', (await emptyBoxes()) === 0);
 
   // §5: many messy facts in one message → structured card + ONE important question.
   await send(page, 'Me pagan 5,700 el 5, uso BCP, pago el carro como el 10, debo en la tarjeta y también le debo plata a mi pareja.');
@@ -33,9 +37,12 @@ await runSuite('onboarding', async ({ page, check }) => {
   const u0 = await usage();
   check('deterministic reading costs no AI usage (§54)', u0.every((r) => r.requests === 0), JSON.stringify(u0));
 
-  await tap(page, 'Después');
+  await tap(page, 'Omitir');
   v = await lastVelsuno(page);
-  check('"Después" moves on (unknown, never 0)', !v.includes('¿Cuánto dinero tienes disponible hoy') && !v.includes('Saldo de hoy S/ 0'), v);
+  check('"Omitir" moves on (unknown, never 0)', !v.includes('¿Cuánto dinero tienes disponible hoy') && !v.includes('Saldo de hoy S/ 0'), v);
+  check('then other incomes, one question with Sí / No', v.includes('¿Tienes algún otro ingreso?'), v);
+  await tap(page, 'No');
+  v = await lastVelsuno(page);
   check('next: one payment at a time — the car (its day was given) needs its amount', v.includes('¿Cuánto pagas de carro?'), v);
   await send(page, '900');
   v = await lastVelsuno(page);
@@ -45,11 +52,9 @@ await runSuite('onboarding', async ({ page, check }) => {
   await send(page, 'no, el carro es 950');
   v = await lastVelsuno(page);
   check('corrections replace the value', v.includes('S/ 950'), v);
-  check('then subscriptions, one question', v.includes('¿Pagas alguna suscripción'), v);
-  await send(page, 'Netflix 44.90 el 15');
+  check('debts before cards: what is owed to the partner (one question)', v.includes('¿Cuánto le debes a tu pareja?'), v);
+  await tap(page, 'No sé');
   v = await lastVelsuno(page);
-  check('a subscription is understood with its amount and day', /netflix/i.test(v) && v.includes('44.90') && v.includes('15'), v);
-  if (v.includes('¿Pagas alguna') || v.includes('otra suscripción')) { await send(page, 'no tengo más'); v = await lastVelsuno(page); }
   check('then the card, one field at a time: what is owed now', v.includes('¿Cuánto debes ahora en la tarjeta BCP?'), v);
 
   // Something the rules cannot read → the (fixture) provider is called and usage is recorded on the onboarding allowance.
@@ -83,15 +88,19 @@ await runSuite('onboarding', async ({ page, check }) => {
   // Summary → Empezar → real Resumen.
   if (!(await page.getByTestId('onboarding-summary').count())) await tap(page, 'Ver mi resumen');
   const summary = (await page.getByTestId('onboarding-summary').last().textContent()) ?? '';
-  check('summary groups the essentials and lists what is pending', summary.includes('Ingresos') && summary.includes('Deudas') && summary.includes('Por confirmar') && summary.includes('Saldo de hoy'), summary);
-  await Promise.all([page.waitForURL(`${BASE}/app`), page.locator('.chat-actions').getByRole('button', { name: 'Empezar' }).last().click()]);
-  check('Empezar lands on the real Resumen', page.url() === `${BASE}/app`);
+  check('summary: "Revísalo antes de continuar", grouped, with what is pending',
+    (await lastVelsuno(page)).includes('Este es el resumen de tus finanzas. Revísalo antes de continuar.') && summary.includes('Ingresos y fechas') && summary.includes('Deudas y tarjetas') && summary.includes('Por confirmar') && summary.includes('Saldo de hoy'), summary);
+  check('the summary keeps states: estimated and unknown, never invented', summary.includes('aprox.') && summary.includes('Por confirmar'), summary);
+  check('still no empty boxes in the whole conversation', (await emptyBoxes()) === 0);
+  await page.reload();
+  check('the summary persists after reloading', (await page.getByTestId('onboarding-summary').count()) >= 1);
+  await Promise.all([page.waitForURL(`${BASE}/app`), page.locator('.chat-actions').getByRole('button', { name: 'Confirmar y continuar' }).last().click()]);
+  check('"Confirmar y continuar" lands on the real Resumen (the tour starts there)', page.url() === `${BASE}/app`);
   const inc = (await api.from('expected_incomes').select('name,amount_minor,day_of_month')).data ?? [];
   const fx = (await api.from('fixed_expenses').select('name,amount_minor,amount_status')).data ?? [];
   const debts = (await api.from('debts').select('name,balance_minor')).data ?? [];
   check('onboarding feeds planning: income S/ 5,700 day 5', inc.length === 1 && inc[0]!.amount_minor === 570000 && inc[0]!.day_of_month === 5, JSON.stringify(inc));
   check('obligations written (carro S/ 950; card payment with minimum)', fx.some((o) => o.name === 'Carro' && o.amount_minor === 95000) && fx.some((o) => o.name === 'Tarjeta BCP' && o.amount_minor === 28430), JSON.stringify(fx));
-  check('subscription written once as a subscription with its provider', fx.filter((o) => o.name === 'Netflix').length === 1, JSON.stringify(fx));
   check('card debt written; personal debt with unknown balance is NOT invented', debts.length === 1 && debts[0]!.balance_minor === 243000, JSON.stringify(debts));
   await page.goto(`${BASE}/app`);
   check('after finishing, /app no longer redirects', page.url() === `${BASE}/app`);
@@ -209,7 +218,23 @@ await runSuite('onboarding', async ({ page, check }) => {
   check('reset removes exactly the onboarding rows; data created later (assistant balance) stays',
     after[0].data!.length === 0 && after[1].data!.length === 0 && after[2].data!.length === 1 && after[2].data![0]!.amount_minor === 300000, JSON.stringify(after.map((r) => r.data)));
   check('reset gives the onboarding allowance back', (await usage()).find((r) => r.bucket === 'onboarding')?.requests === 0);
+  await page.getByTestId('velsuno-msg').nth(1).waitFor();
   check('fresh greeting after reset', (await page.getByTestId('velsuno-msg').count()) === 2);
+
+  // Dependiente route in the browser (after the reset), on a phone: one question per message, exact copy.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await tap(page, 'Dependiente');
+  check('dependiente → "Perfecto. ¿Cuál es tu sueldo mensual?"', (await lastVelsuno(page)).startsWith('Perfecto. ¿Cuál es tu sueldo mensual?'), await lastVelsuno(page));
+  await send(page, '3,500');
+  check('→ "Entiendo. ¿En qué fechas te pagan?"', (await lastVelsuno(page)).startsWith('Entiendo. ¿En qué fechas te pagan?'), await lastVelsuno(page));
+  await send(page, '15 y 30');
+  v = await lastVelsuno(page);
+  check('two pay dates understood → other income asked', v.includes('días 15 y 30') && v.includes('¿Tienes algún otro ingreso aparte de tu sueldo?'), v);
+  check('phone: no empty boxes, nothing wider than the screen', (await emptyBoxes()) === 0
+    && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/onb-phone.png` });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/onb-desktop.png` });
 
   // Isolation.
   const msgs = (await api.from('conversation_messages').select('body')).data ?? [];

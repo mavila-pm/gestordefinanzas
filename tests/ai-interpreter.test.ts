@@ -40,11 +40,11 @@ describe('local interpreter (no provider)', () => {
   });
 
   it('a bare answer fills the pending question; "no sé" records unknown, never 0', () => {
-    const { draft, asked } = talk('Me pagan 5,700 el 5, debo en la tarjeta BCP', 'no sé', 'no tengo más', 'no tengo', '2,430', 'no sé', 'el 19');
+    const { draft, asked } = talk('Me pagan 5,700 el 5, debo en la tarjeta BCP', 'no sé', 'no tengo otros ingresos', 'no tengo más', 'no tengo', '2,430', 'no sé', 'el 19');
     expect(draft.balance).toEqual({ currency: 'PEN', amountMinor: null, status: 'unknown' });
     const id = draft.debts[0]!.id;
-    // balance → other payments? → subscriptions? → the card, one field at a time: what is owed → minimum ("no sé": unknown, never 0) → due day
-    expect(asked.slice(0, 6)).toEqual(['balance', 'group:obligations', 'group:subscriptions', `debt:${id}:balance`, `debt:${id}:minimum`, `debt:${id}:day`]);
+    // balance → other income? → fixed payments? → debts or loans? → the card, one field at a time: owed → minimum ("no sé": unknown, never 0) → due day
+    expect(asked.slice(0, 7)).toEqual(['balance', 'income:other', 'group:obligations', 'group:loans', `debt:${id}:balance`, `debt:${id}:minimum`, `debt:${id}:day`]);
     expect(draft.debts[0]).toMatchObject({ dueDay: 19, minimumMinor: null, balanceMinor: 243000, balanceStatus: 'confirmed' });
   });
 

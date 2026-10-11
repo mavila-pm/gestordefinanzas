@@ -30,6 +30,8 @@ export function domainWrites(d: Draft, userId: string): DomainWrites {
   const w: DomainWrites = { incomes: [], obligations: [], debts: [], accounts: [], cards: [], balance: null, settings: null, savingsGoal: null, deferred: [] };
   for (const i of d.incomes) {
     if (i.day === null) { w.deferred.push(`${i.name}: falta el día`); continue; }
+    // One-off or irregular: never planned as a recurring income (it would invent future money).
+    if (i.frequency === 'occasional') { w.deferred.push(`${i.name}: ingreso ocasional, no se proyecta`); continue; }
     const semi = i.frequency === 'semimonthly' && i.secondDay !== null;
     w.incomes.push({
       user_id: userId, name: i.name.slice(0, 60), currency: i.currency, amount_minor: i.amountMinor, amount_status: i.amountMinor === null ? 'unknown' : i.amountStatus,
@@ -70,7 +72,9 @@ export function domainWrites(d: Draft, userId: string): DomainWrites {
   for (const a of d.accounts) {
     const institution = KNOWN_INSTITUTIONS.has(a.institution) ? a.institution : null;
     if (a.kind === 'card') {
-      if (a.last4) w.cards.push({ user_id: userId, institution_code: institution, alias: `Tarjeta ${a.institution === 'OTRO' ? '' : a.institution}`.trim().slice(0, 60), kind: 'credit', currency: 'PEN', last4: a.last4 });
+      // The cut-off day the person gave for that card (same bank and last 4), never guessed.
+      const cut = d.debts.find((x) => x.kind === 'card' && x.last4 === a.last4 && (!x.institution || x.institution === a.institution))?.cutDay ?? null;
+      if (a.last4) w.cards.push({ user_id: userId, institution_code: institution, alias: `Tarjeta ${a.institution === 'OTRO' ? '' : a.institution}`.trim().slice(0, 60), kind: 'credit', currency: 'PEN', last4: a.last4, ...(cut ? { statement_day: cut } : {}) });
       continue;
     }
     w.accounts.push({ user_id: userId, institution_code: institution, alias: (institution ?? a.institution).slice(0, 60), currency: 'PEN' });

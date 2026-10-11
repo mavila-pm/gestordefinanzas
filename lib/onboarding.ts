@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { domainWrites, validPatches } from '../src/ai/apply';
 import { isReplay } from './idempotency';
 import type { ChatMessage, MessageCard } from '../src/ai/conversation';
-import { agendaLine, canStart, compactState, hasFacts, mergePatches, money, nextQuestion, pendingReply, shortReply, summarize, unreadNumbers, upcomingFromDraft, yesNoReply, type Changed } from '../src/ai/draft';
+import { agendaLine, canStart, compactState, finalSummary, hasFacts, mergePatches, nextQuestion, pendingReply, shortReply, unreadNumbers, upcomingFromDraft, workIn, yesNoReply, type Changed } from '../src/ai/draft';
 import { limaToday, shortDate } from '../src/domain/dates';
 import { checkImage, IMAGE_ERROR_TEXT, imageReadKey, READ_REUSE_MINUTES } from '../src/ai/image';
 import { interpret, isSmallTalk } from '../src/ai/interpreter';
@@ -62,23 +62,29 @@ export async function startOnboarding(supabase: SupabaseClient, userId: string):
   return { status: data!.status, isDemo: data!.is_demo, draft: { ...emptyDraft(), ...(data!.facts ?? {}) }, applied: data!.applied ?? {}, startedAt: data!.started_at ?? null };
 }
 
-/** The opening is fixed copy, not stored: it is always there and cannot be lost or duplicated (§4). */
+/**
+ * The opening is fixed copy, not stored: it is always there and cannot be lost or duplicated (§4). The second line
+ * asks how the person earns (it orders the income questions); its two options show only before the first answer.
+ */
 export async function onboardingConversation(supabase: SupabaseClient): Promise<ChatMessage[]> {
-  const [name, messages] = await Promise.all([loadProfile(supabase).then(preferredName), loadMessages(supabase, 'onboarding')]);
+  const [name, messages, state] = await Promise.all([loadProfile(supabase).then(preferredName), loadMessages(supabase, 'onboarding'), loadOnboarding(supabase)]);
+  const fresh = !messages.length && !state?.draft.work;
   return [
-    { id: 'greet-1', role: 'velsuno', body: `¡Hola${name ? `, ${name}` : ''}! Soy Vels. Vamos a organizar tus finanzas para que sepas cuánto tienes, cuánto gastas y qué pagos vienen. Puedes contarme todo con tus propias palabras.`, card: null },
-    { id: 'greet-2', role: 'velsuno', body: 'Empecemos por tus ingresos: ¿cuánto recibes y qué día te pagan? Si prefieres, sáltala y seguimos.',
-      card: messages.length ? null : { actions: [{ kind: 'camera', label: 'Mostrar una foto' }] } },
+    { id: 'greet-1', role: 'velsuno', body: `Hola${name ? `, ${name}` : ''}. Vamos a ordenar tus finanzas juntos.`, card: null },
+    { id: 'greet-2', role: 'velsuno', body: 'Antes de empezar, ¿trabajas como dependiente o independiente?', card: fresh ? { replies: ['Dependiente', 'Independiente'] } : null },
     ...messages,
   ];
 }
+
+const closing = (name: string | null) => `Listo${name ? `, ${name}` : ''}. Este es el resumen de tus finanzas. Revísalo antes de continuar.`;
+const REVIEW_ACTIONS: MessageCard['actions'] = [{ kind: 'correct', label: 'Corregir información' }, { kind: 'start', label: 'Confirmar y continuar' }];
 
 /**
  * The reply after a turn: a short line about what changed, then the ONE next question. When the fixed payments are
  * complete, the next ones in calendar order (planning engine, Lima date). At the end, what comes until the next
  * income and today's balance — all from the person's facts and the engine, never from a model.
  */
-export function followUp(draft: Draft, changed: Changed[], today: string = limaToday(), answered: string | null = null): { body: string; card: MessageCard; draft: Draft } {
+export function followUp(draft: Draft, changed: Changed[], today: string = limaToday(), answered: string | null = null, name: string | null = null): { body: string; card: MessageCard; draft: Draft } {
   const q = nextQuestion(draft);
   const card: MessageCard = {};
   const facts = changed.filter((c) => c.ref !== 'removed');
@@ -97,15 +103,14 @@ export function followUp(draft: Draft, changed: Changed[], today: string = limaT
     card.question = q.text;
     card.replies = q.replies.filter((r) => r !== 'Tomar foto');
     card.actions = [...(q.replies.includes('Tomar foto') ? [{ kind: 'camera' as const, label: 'Tomar foto' }] : []), ...(canStart(draft) ? [{ kind: 'summary' as const, label: 'Ver mi resumen' }] : [])];
-    return { body: lead ? `${lead} ${q.text}` : q.text, card, draft };
+    // A question that already acknowledges ("Entiendo. ¿En qué fechas te pagan?") is said alone after a single answer.
+    const acknowledges = /^(Perfecto|Entiendo)\./.test(q.text) && changed.length <= 1;
+    return { body: lead && !acknowledges ? `${lead} ${q.text}` : q.text, card, draft };
   }
-  const up = upcomingFromDraft(draft, today);
-  const lines = up.items.slice(0, 6).map((x) => `• ${x.name} · ${shortDate(x.date)} · ${x.amountMinor === null ? 'monto por confirmar' : money(x.amountMinor, x.currency)}`);
-  const balance = draft.balance?.amountMinor != null ? `Y hoy tienes ${money(draft.balance.amountMinor, draft.balance.currency)} disponibles.` : '';
-  card.summary = summarize(draft);
-  card.actions = [{ kind: 'correct', label: 'Corregir' }, { kind: 'start', label: 'Empezar' }];
-  const body = ['Ya lo tengo.', lines.length ? `${up.until ? 'Hasta tu próximo ingreso vienen:' : 'Lo próximo:'}\n${lines.join('\n')}` : '', balance].filter(Boolean).join(lines.length ? '\n\n' : ' ');
-  return { body, card, draft };
+  // Enough to start: the person reviews everything (with its state) before anything is written.
+  card.summary = finalSummary(draft, today);
+  card.actions = REVIEW_ACTIONS;
+  return { body: closing(name), card, draft };
 }
 
 export async function onboardingText(supabase: SupabaseClient, userId: string, raw: string): Promise<void> {
@@ -113,10 +118,15 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   const { text } = sanitizeUserText(raw);
   if (!text) return;
   await say(supabase, userId, 'onboarding', 'user', text);
+  const name = preferredName(await loadProfile(supabase));
+  // The opening asks how the person earns (fixed copy, not stored): its answer is pending until given.
+  if (!state.draft.work && !state.draft.asked.includes('work') && !state.draft.incomes.length) { state.draft.asked.push('work'); state.draft.pending = 'work'; }
+  // "Soy independiente, cobro unos 3,000…": the work type is kept and the rest is read normally.
+  if (!state.draft.work) { const w = workIn(fold(text)); if (w) state.draft.work = w; }
   // Replies only the pending question can place ("sí, el 15", a loan's entity or "36, llevo 10").
   const placed = pendingReply(state.draft, text);
   if (placed) {
-    const next = followUp(placed.draft, placed.changed, limaToday(), state.draft.pending);
+    const next = followUp(placed.draft, placed.changed, limaToday(), state.draft.pending, name);
     await save(supabase, userId, next.draft);
     await say(supabase, userId, 'onboarding', 'velsuno', next.body, next.card);
     return;
@@ -126,7 +136,7 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   if (yn && (yn.patches.length || yn.reask)) {
     if (yn.reask) { await say(supabase, userId, 'onboarding', 'velsuno', yn.reask, { actions: canStart(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] }); return; }
     const merged = mergePatches(state.draft, yn.patches, null);
-    const next = followUp(merged.draft, merged.changed);
+    const next = followUp(merged.draft, merged.changed, limaToday(), state.draft.pending, name);
     await save(supabase, userId, next.draft);
     await say(supabase, userId, 'onboarding', 'velsuno', next.body, next.card);
     return;
@@ -159,20 +169,21 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
     return;
   }
   const merged = mergePatches(state.draft, read.patches, read.bare);
-  const next = followUp(merged.draft, merged.changed, limaToday(), state.draft.pending);
+  const next = followUp(merged.draft, merged.changed, limaToday(), state.draft.pending, name);
   await save(supabase, userId, next.draft);
   await say(supabase, userId, 'onboarding', 'velsuno', next.body, next.card);
 }
 
 /** "Después" / "No sé" chips: the pending question stays unknown (never 0) and we move on. */
 export async function onboardingSkip(supabase: SupabaseClient, userId: string, label: string): Promise<void> {
-  await onboardingText(supabase, userId, label === 'No tengo más' ? 'no tengo más pagos' : label === 'Quincenal' ? 'quincenal' : 'no sé');
+  await onboardingText(supabase, userId, label === 'No tengo más' ? 'no tengo más pagos' : label === 'Quincenal' ? 'quincenal' : label === 'Omitir' ? 'omitir' : 'no sé');
 }
 
 export async function onboardingSummary(supabase: SupabaseClient, userId: string): Promise<void> {
   const state = await loadOnboarding(supabase);
   if (!state) return;
-  await say(supabase, userId, 'onboarding', 'velsuno', 'Esto es lo que tengo:', { summary: summarize(state.draft), actions: [{ kind: 'correct', label: 'Corregir' }, { kind: 'start', label: 'Empezar' }] });
+  const name = preferredName(await loadProfile(supabase));
+  await say(supabase, userId, 'onboarding', 'velsuno', closing(name), { summary: finalSummary(state.draft, limaToday()), actions: REVIEW_ACTIONS });
 }
 
 export type ImageRead = { ok: true; proposal: VisionProposal; readKey: string; reused?: boolean } | { ok: false; text: string; stop?: boolean } | { ok: false; empty: true };
@@ -242,7 +253,7 @@ export async function onboardingVision(supabase: SupabaseClient, userId: string,
   state.draft.vision = null;
   await say(supabase, userId, 'onboarding', 'user', 'Confirmar');
   const merged = mergePatches(state.draft, patches, null);
-  const next = followUp(merged.draft, merged.changed);
+  const next = followUp(merged.draft, merged.changed, limaToday(), null, preferredName(await loadProfile(supabase)));
   await save(supabase, userId, next.draft);
   await say(supabase, userId, 'onboarding', 'velsuno', next.body, next.card);
 }

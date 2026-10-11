@@ -29,7 +29,8 @@ export default async function Bienvenida() {
       <main className="onboarding-body" id="main">
         <h1 className="sr-only">Configura Velsuno conversando</h1>
         <Chat initial={messages} send={onboardingAction} camera={aiAvailable()} label="Conversación de bienvenida"
-          placeholder="Escribe como te salga…" />
+          placeholder="Escribe como te salga…" intro={messages.length === 2}
+          examples={['Gano 3,500 al mes', 'Me pagan el 15 y el 30', 'Pago alquiler 1,200 el 1']} />
       </main>
     </div>
   );

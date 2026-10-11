@@ -8,7 +8,7 @@ import {
 } from '../../lib/onboarding';
 import type { ChatState } from '../../src/ai/conversation';
 
-const SKIP = new Set(['Después', 'No sé', 'No tengo más', 'Quincenal']);
+const SKIP = new Set(['Después', 'No sé', 'No tengo más', 'Quincenal', 'Omitir', 'Todavía no sé']);
 
 /** One entry point for the onboarding conversation: text, a quick reply, a tap (op) or photos. */
 export async function onboardingAction(_prev: ChatState, form: FormData): Promise<ChatState> {

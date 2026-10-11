@@ -193,6 +193,8 @@ export function interpret(message: string): Interpretation {
     // "Eso no lo pago" without naming it: it answers the pending question (the payment Vels just asked about).
     if (NOT_THIS.test(c.replace(/[.!¡¿?]/g, '').trim())) { bare = { ...(bare ?? {}), none: true }; continue; }
     if (/\b(no tengo|no tenemos|sin|tampoco tengo)( ningun| ninguna)? (prestamos?|creditos?)\b/.test(c)) { patches.push({ t: 'done', group: 'loans' }); continue; }
+    if (/\b(no tengo|no pago|sin|tampoco tengo)( ninguna)? (suscripciones?|membresias?)\b/.test(c)) { patches.push({ t: 'done', group: 'subscriptions' }); continue; }
+    if (/\b(no tengo|tampoco tengo)( ningun)? (otros? ingresos?|mas ingresos)\b/.test(c)) { patches.push({ t: 'done', group: 'incomes' }); continue; }
     if (/\b(no tengo|no tenemos|sin|tampoco tengo)( ninguna)? (tarjetas?|tarjeta de credito)\b/.test(c)) { patches.push({ t: 'done', group: 'cards' }); continue; }
     // A loan is read as a whole: its numbers mean different things (amount lent, installment, count, paid).
     if (LOAN.test(c) && !lender && !CARD.test(c)) {

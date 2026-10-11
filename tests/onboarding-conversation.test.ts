@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { followUp } from '../lib/onboarding';
 import { domainWrites, validPatches } from '../src/ai/apply';
-import { mergePatches, pendingReply, upcomingFromDraft, yesNoReply } from '../src/ai/draft';
+import { finalSummary, mergePatches, pendingReply, upcomingFromDraft, workIn, yesNoReply } from '../src/ai/draft';
+import { fold } from '../src/ai/text';
 import { interpret, readLoan } from '../src/ai/interpreter';
 import { emptyDraft, type Draft } from '../src/ai/types';
 
@@ -11,9 +12,16 @@ import { emptyDraft, type Draft } from '../src/ai/types';
  * question can place → yes/no → the deterministic reading → merge → the short reply + ONE next question.
  */
 function chat(today: string, ...messages: string[]): { draft: Draft; said: string[] } {
+  return converse(today, false, messages);
+}
+/** From the opening ("¿dependiente o independiente?" pending), exactly as lib/onboarding.ts starts a turn. */
+const fromOpening = (today: string, ...messages: string[]) => converse(today, true, messages);
+function converse(today: string, opening: boolean, messages: string[]): { draft: Draft; said: string[] } {
   let draft = emptyDraft();
   const said: string[] = [];
   for (const m of messages) {
+    if (opening && !draft.work && !draft.asked.includes('work') && !draft.incomes.length) { draft.asked.push('work'); draft.pending = 'work'; }
+    if (opening && !draft.work) { const w = workIn(fold(m)); if (w) draft = { ...draft, work: w }; }
     const answered = draft.pending;
     let merged = pendingReply(draft, m);
     if (!merged) {
@@ -30,7 +38,7 @@ function chat(today: string, ...messages: string[]): { draft: Draft; said: strin
 }
 const TODAY = '2026-10-09';
 /** Skips income and balance so each test starts at the payments. */
-const START = ['me pagan 4500 el 30', 'tengo 5000'];
+const START = ['me pagan 4500 el 30', 'tengo 5000, no tengo otros ingresos'];
 
 describe('"no pago X": the payment does not apply', () => {
   it('1: asked the day of alquiler → "no pago alquiler" removes it; never asks its amount afterwards', () => {
@@ -134,7 +142,7 @@ describe('dates in plain words', () => {
 describe('cards and loans, one question at a time', () => {
   it('"¿Tienes tarjeta de crédito?" → "sí, BCP" → owed → minimum → due day', () => {
     const { draft, said } = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '120', 'el 25');
-    expect(said[2]).toContain('¿Pagas alguna suscripción');
+    expect(said[2]).toContain('¿Tienes deudas o préstamos?');
     expect(said[3]).toContain('¿Tienes tarjeta de crédito?');
     expect(said[4]).toContain('¿Cuánto debes ahora en la tarjeta BCP?');
     expect(said[5]).toContain('¿Cuál es el pago mínimo de la tarjeta BCP?');
@@ -185,19 +193,19 @@ describe('cards and loans, one question at a time', () => {
 
 describe('card and loan answers: a short recap of only what was just said', () => {
   it('"S/" keeps its case and earlier facts are not repeated', () => {
-    const { said } = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '450', 'el 25', 'tengo un préstamo', 'BCP', 'Personal', '12 mil', '850', 'el 10', '36, llevo 10');
-    expect(said.slice(4)).toEqual([
-      'Anotado: tarjeta BCP. ¿Cuánto debes ahora en la tarjeta BCP?',
-      'Listo, debes S/ 2,400. ¿Cuál es el pago mínimo de la tarjeta BCP?',
-      'Listo, mínimo S/ 450. ¿Qué día vence el pago de la tarjeta BCP?',
-      'Perfecto. Vence el 25. ¿Tienes algún préstamo?',
+    const { said } = chat(TODAY, ...START, 'no tengo más pagos', 'tengo un préstamo', 'BCP', 'Personal', '12 mil', '850', 'el 10', '36, llevo 10', 'sí, BCP', '2400', '450', 'el 25');
+    expect(said.slice(3)).toEqual([
       'Anotado: préstamo. ¿Con qué banco o entidad es el préstamo?',
       'Anotado: préstamo BCP. ¿Qué tipo de préstamo es?',
       'Anotado: préstamo personal BCP. ¿Cuánto te falta pagar?',
       'Listo, debes S/ 12,000. ¿Cuánto pagas cada mes?',
       'Listo, cuota de S/ 850. ¿Qué día pagas la cuota?',
       'Perfecto. La cuota queda para el 10. ¿De cuántas cuotas es y cuántas llevas pagadas?',
-      expect.stringMatching(/^Listo, llevas 10 de 36 cuotas\. ¿Cuánto gastas al mes en lo básico/),
+      'Listo, llevas 10 de 36 cuotas. ¿Tienes tarjeta de crédito?',
+      'Anotado: tarjeta BCP. ¿Cuánto debes ahora en la tarjeta BCP?',
+      'Listo, debes S/ 2,400. ¿Cuál es el pago mínimo de la tarjeta BCP?',
+      'Listo, mínimo S/ 450. ¿Qué día vence el pago de la tarjeta BCP?',
+      expect.stringMatching(/^Perfecto\. Vence el 25\. ¿Pagas alguna suscripción o membresía/),
     ]);
     expect(said.join(' ')).not.toMatch(/s\/ \d/);
   });
@@ -233,19 +241,25 @@ describe('review fixes: loan currency, amount ceiling, stored readings', () => {
 
 describe('the end: what comes until the next income, from the person + the engine', () => {
   it('lists the next payments chronologically with today\'s balance', () => {
-    const { said } = chat('2026-10-09', 'me pagan 4500 el 30', 'tengo 5000', 'agua 120 el 15, internet 90 el 20', 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '450', 'el 25', 'no tengo', 'unos 800', 'después');
-    expect(said.at(-1)).toBe('Ya lo tengo.\n\nHasta tu próximo ingreso vienen:\n• Agua · 15 oct · S/ 120\n• Internet · 20 oct · S/ 90\n• Tarjeta BCP · 25 oct · S/ 450\n\nY hoy tienes S/ 5,000 disponibles.');
+    const { said, draft } = chat('2026-10-09', 'me pagan 4500 el 30', 'tengo 5000, no tengo otros ingresos', 'agua 120 el 15, internet 90 el 20', 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '450', 'el 25', 'no tengo', 'unos 800', 'después');
+    expect(said.at(-1)).toBe('Listo. Este es el resumen de tus finanzas. Revísalo antes de continuar.');
+    const end = followUp(draft, [], '2026-10-09', null, 'Mauro');
+    expect(end.body).toBe('Listo, Mauro. Este es el resumen de tus finanzas. Revísalo antes de continuar.');
+    const groups = Object.fromEntries(end.card.summary!.groups.map((g) => [g.title, g.items.map((i) => `${i.label} · ${i.value}`)]));
+    expect(groups['Próximos pagos']).toEqual(['Agua · 15 oct · S/ 120', 'Internet · 20 oct · S/ 90', 'Tarjeta BCP · 25 oct · S/ 450']);
+    expect(groups['Dinero actual']).toEqual(['Saldo de hoy · S/ 5,000']);
+    expect(end.card.actions?.map((a) => a.label)).toEqual(['Corregir información', 'Confirmar y continuar']);
   });
 });
 
 describe('subscriptions and the savings goal in the same conversation', () => {
   it('a subscription named in answer becomes a subscription obligation with its catalogue service; "no tengo" closes the group', () => {
     const { draft, said } = chat(TODAY, ...START, 'no tengo más pagos', 'netflix 44.90 el 15');
-    expect(said[2]).toContain('¿Pagas alguna suscripción');
+    expect(said[2]).toContain('¿Tienes deudas o préstamos?');
     expect(draft.obligations.find((o) => o.name === 'Netflix')).toMatchObject({ kind: 'subscription', amountMinor: 4490, day: 15 });
     const w = domainWrites(draft, 'u1');
     expect(w.obligations.find((o) => o.name === 'Netflix')).toMatchObject({ kind: 'subscription', provider: 'netflix' });
-    expect(chat(TODAY, ...START, 'no tengo más pagos', 'no tengo').draft.done).toContain('subscriptions');
+    expect(chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'no tengo', 'no tengo').draft.done).toContain('subscriptions');
   });
   it('savings goal: an amount is stored as the monthly goal; "Después" leaves it unknown (never 0)', () => {
     const base = [...START, 'no tengo más pagos', 'no tengo', 'no tengo', 'no tengo', 'unos 800'] as const;
@@ -257,5 +271,64 @@ describe('subscriptions and the savings goal in the same conversation', () => {
     const later = chat(TODAY, ...base, 'no sé').draft;
     expect(later.savings).toMatchObject({ amountMinor: null, status: 'unknown' });
     expect(domainWrites(later, 'u1').savingsGoal).toBeNull();
+  });
+});
+
+describe('opening: dependiente / independiente, one question at a time', () => {
+  it('dependiente: sueldo → fechas → otro ingreso (cuánto, cada cuánto, cuándo) → dinero hoy → pagos …', () => {
+    const { draft, said } = fromOpening(TODAY, 'Dependiente', '3,500', '15 y 30', 'sí', 'clases particulares 400', 'Cada mes', 'el 20', '2,000');
+    expect(said[0]).toBe('Perfecto. ¿Cuál es tu sueldo mensual?');
+    expect(said[1]).toBe('Entiendo. ¿En qué fechas te pagan?');
+    expect(said[2]).toMatch(/días 15 y 30\. ¿Tienes algún otro ingreso aparte de tu sueldo\?$/);
+    expect(said[3]).toContain('de dónde viene');
+    expect(said[5]).toContain('¿Qué día lo cobras?');
+    expect(said[6]).toContain('¿Cuánto dinero tienes hoy entre tus cuentas y efectivo?');
+    expect(said[7]).toContain('¿Qué pagos fijos tienes cada mes?');
+    expect(draft.incomes[0]).toMatchObject({ name: 'Sueldo', amountMinor: 350000, day: 15, secondDay: 30, frequency: 'semimonthly' });
+    expect(draft.incomes[1]).toMatchObject({ amountMinor: 40000, frequency: 'monthly', day: 20 });
+    expect(draft.balance).toMatchObject({ amountMinor: 200000 });
+    const w = domainWrites(draft, 'u1');
+    expect(w.incomes.map((i) => [i.frequency, i.day_of_month, i.second_day])).toEqual([['semimonthly', 15, 30], ['monthly', 20, null]]);
+  });
+  it('independiente: dinero en cuentas → de dónde → próximo cobro → cuándo → frecuencia → otro ingreso', () => {
+    const { draft, said } = fromOpening(TODAY, 'Independiente', '8,000', 'de mis clientes de diseño', '2,500', 'el 25', 'ocasional', 'no');
+    expect(said[0]).toBe('Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas bancarias?');
+    expect(said[1]).toContain('¿De dónde provienen normalmente tus ingresos?');
+    expect(said[2]).toBe('Entiendo, ingresos de clientes de diseño. ¿Cuál es tu próximo cobro?');
+    expect(said[3]).toContain('¿Cuándo esperas recibirlo?');
+    expect(said[4]).toContain('¿Lo recibes con frecuencia o es un ingreso ocasional?');
+    expect(said[5]).toContain('¿Tienes algún otro ingreso que debamos considerar?');
+    expect(said[6]).toContain('¿Qué pagos fijos tienes cada mes?');
+    expect(draft.incomes[0]).toMatchObject({ name: 'Clientes de diseño', amountMinor: 250000, day: 25, frequency: 'occasional' });
+    // An occasional income is shown but never projected as a recurring expected income (nothing invented).
+    expect(domainWrites(draft, 'u1').incomes).toEqual([]);
+    expect(upcomingFromDraft(draft, TODAY).until).toBeNull();
+  });
+  it('out of order: facts from another section are kept, and the work type is read inside a sentence', () => {
+    const { draft, said } = fromOpening(TODAY, 'soy independiente, pago alquiler 1,200 el 1', '5,000');
+    expect(draft.work).toBe('independent');
+    expect(draft.obligations).toMatchObject([{ name: 'Alquiler', amountMinor: 120000, day: 1 }]);
+    expect(said[0]).toContain('¿Cuánto dinero tienes actualmente en tus cuentas bancarias?');
+    expect(draft.balance).toMatchObject({ amountMinor: 500000 });
+  });
+  it('several payments at once are kept apart; only the missing data is asked; "no tengo deudas" moves on', () => {
+    const { draft, said } = chat(TODAY, ...START, 'pago luz 120 el 10, agua 80 e internet 99 el 20', 'el 15', 'no tengo más pagos', 'no tengo deudas');
+    expect(draft.obligations.map((o) => [o.name, o.amountMinor, o.day])).toEqual([['Luz', 12000, 10], ['Agua', 8000, 15], ['Internet', 9900, 20]]);
+    expect(said[2]).toContain('¿Qué día pagas el agua?');
+    expect(said.at(-1)).toContain('¿Tienes tarjeta de crédito?');
+  });
+  it('a correction replaces the value; skipping keeps it unknown and the summary says so', () => {
+    const { draft } = fromOpening(TODAY, 'Dependiente', '3,500', 'no, es 3,800', 'omitir');
+    expect(draft.incomes[0]).toMatchObject({ amountMinor: 380000, day: null });
+    // "Ver mi resumen" at this point: the skipped day stays pending, never filled in.
+    const sum = finalSummary(draft, TODAY);
+    expect(sum.pending).toContain('Día de sueldo');
+    expect(sum.groups.find((g) => g.title === 'Ingresos y fechas')?.items[0]?.value).toBe('S/ 3,800 · día por confirmar · esperado');
+  });
+  it('a bare "30" to "¿En qué fechas te pagan?" is the day, never S/ 30 over the salary', () => {
+    const { draft } = fromOpening(TODAY, 'Dependiente', '3,500', '30');
+    expect(draft.incomes[0]).toMatchObject({ amountMinor: 350000, day: 30 });
+    const pay = chat(TODAY, ...START, 'pago alquiler 1200', '15').draft.obligations[0];
+    expect(pay).toMatchObject({ amountMinor: 120000, day: 15 });
   });
 });

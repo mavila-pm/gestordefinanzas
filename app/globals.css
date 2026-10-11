@@ -911,3 +911,10 @@ html[data-theme="dark"] .card-visual[data-tone="account"], html[data-theme="dark
 .tour-bubble[data-side="below"]::before { top: -7px; left: calc(var(--arrow, 24px) - 7px); }
 .tour-bubble[data-side="above"]::before { bottom: -7px; left: calc(var(--arrow, 24px) - 7px); transform: rotate(225deg); }
 @media (prefers-reduced-motion: reduce) { .tour-bubble { animation-name: fade-in; } }
+/* Chat: a new Vels message writes itself word by word (opacity only); its card follows; a card with only options has no box. */
+.tw { animation: fade-in var(--dur-2) var(--ease-out) both; }
+.msg.fresh > .chat-card { animation: rise-in var(--dur-3) var(--ease-out) both; }
+.chat-card.bare { background: none; box-shadow: none; padding: 0; }
+.chat-card.bare > .chat-actions { padding-top: 0; }
+@media (prefers-reduced-motion: reduce) { .tw, .msg.fresh > .chat-card { animation: none; } }
+html[data-motion="reduce"] .tw, html[data-motion="reduce"] .msg.fresh > .chat-card { animation: none; }

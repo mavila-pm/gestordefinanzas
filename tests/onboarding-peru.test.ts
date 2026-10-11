@@ -44,7 +44,11 @@ describe('onboarding: the real Peruvian example', () => {
     const yes = turn(t.d, 'Sí');
     expect(yes.reask).toBe('Me falta ese dato. ¿Cuánto dinero tienes disponible hoy?');
     expect(yes.d.balance).toBeNull();
-    t = turn(t.d, '300'); // pending: other fixed payments
+    t = turn(t.d, '300'); // pending: other income
+    expect(t.d.pending).toBe('income:other');
+    expect(turn(t.d, 'sí').reask).toContain('de dónde viene');
+    t = turn(t.d, 'No'); // pending: other fixed payments
+    expect(t.d.done).toContain('incomes');
     expect(t.d.pending).toBe('group:obligations:more'); // "¿Tienes algún otro pago fijo?"
     expect(turn(t.d, 'sí').reask).toContain('Dime el nombre y cuánto pagas');
     const no = turn(t.d, 'No');

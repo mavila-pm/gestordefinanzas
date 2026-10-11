@@ -36,11 +36,18 @@ async function shrink(file: File): Promise<Blob> {
   }
 }
 
-function Card({ card, live, onOp, onReply, onCamera, onCorrect }: {
-  card: MessageCard; live: boolean; onOp: (op: string) => void; onReply: (text: string) => void; onCamera: () => void; onCorrect: () => void;
+/** Something to show: a title, rows, a summary, or (only while it is the live message) something to tap. */
+const hasContent = (c: MessageCard, live: boolean) => !!(c.title || c.rows?.length || c.summary
+  || (live && (c.replies?.length || c.actions?.length || c.links?.length || c.acts?.length)));
+
+function Card({ card, live, delay, onOp, onReply, onCamera, onCorrect }: {
+  card: MessageCard; live: boolean; delay?: number; onOp: (op: string) => void; onReply: (text: string) => void; onCamera: () => void; onCorrect: () => void;
 }) {
+  // No empty box: a card with nothing to show (old buttons, no rows) is not rendered at all.
+  if (!hasContent(card, live)) return null;
+  const onlyActions = !card.title && !card.rows?.length && !card.summary;
   return (
-    <div className="chat-card">
+    <div className={onlyActions ? 'chat-card bare' : 'chat-card'} style={delay ? { animationDelay: `${delay}ms` } : undefined}>
       {card.title && <p className="chat-card-title">{card.title}</p>}
       {card.rows && card.rows.length > 0 && (
         <dl className="facts compact">
@@ -84,7 +91,50 @@ function Card({ card, live, onOp, onReply, onCamera, onCorrect }: {
   );
 }
 
-export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolean; placeholder: string; label: string; suggestions?: string[] }) {
+const reducedMotion = () => typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.motion === 'reduce';
+
+/** Reveal time for a message: ~45 ms a word, never more than 1.1 s (no long waits). */
+const revealMs = (text: string) => { const n = text.split(/\s+/).filter(Boolean).length; return Math.round(Math.min(45, 1100 / Math.max(1, n)) * n); };
+
+/**
+ * A new Vels message "writes itself" word by word. The full text is in the DOM from the start (screen readers and
+ * copy get it at once); only the opacity of each word is animated. Reduced motion: no animation (CSS).
+ */
+function Reveal({ text }: { text: string }) {
+  const parts = text.split(/(\s+)/);
+  const n = parts.filter((w) => w.trim()).length;
+  const step = Math.min(45, 1100 / Math.max(1, n));
+  let k = 0;
+  return <>{parts.map((w, i) => (w.trim() ? <span key={i} className="tw" style={{ animationDelay: `${Math.round(k++ * step)}ms` }}>{w}</span> : w))}</>;
+}
+
+/** Example phrases typed and erased in the empty composer, once (never a loop); stops as soon as the person types. */
+function useTypedHint(input: React.RefObject<HTMLTextAreaElement | null>, examples: string[] | undefined, fallback: string, startAfter: number) {
+  useEffect(() => {
+    const el = input.current;
+    if (!el || !examples?.length || reducedMotion()) return;
+    let cancelled = false;
+    const timers: number[] = [];
+    const wait = (ms: number) => new Promise<void>((r) => { timers.push(window.setTimeout(r, ms)); });
+    const idle = () => !cancelled && !el.value && document.activeElement !== el;
+    (async () => {
+      await wait(startAfter);
+      for (const ex of examples) {
+        for (let i = 1; i <= ex.length; i++) { if (!idle()) return; el.placeholder = ex.slice(0, i); await wait(42); }
+        await wait(1400);
+        for (let i = ex.length; i >= 0; i--) { if (!idle()) return; el.placeholder = ex.slice(0, i); await wait(18); }
+        await wait(250);
+      }
+    })().finally(() => { if (!cancelled) el.placeholder = fallback; });
+    const stop = () => { cancelled = true; el.placeholder = fallback; };
+    el.addEventListener('focus', stop, { once: true });
+    return () => { cancelled = true; timers.forEach(clearTimeout); el.removeEventListener('focus', stop); el.placeholder = fallback; };
+  }, [input, examples, fallback, startAfter]);
+}
+
+export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolean; placeholder: string; label: string; suggestions?: string[];
+  /** First visit: the opening messages arrive one by one (three dots, then each line). */
+  intro?: boolean; examples?: string[] }) {
   const [state, formAction, pending] = useActionState(props.send, { messages: props.initial });
   const [text, setText] = useState('');
   const [hint, setHint] = useState(props.placeholder);
@@ -96,6 +146,23 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
   // stored conversation replaces it when the answer arrives.
   const [messages, addSent] = useOptimistic(state.messages, (cur, m: ChatMessage) => [...cur, m]);
   const [reading, setReading] = useState(false);
+  // Messages present at mount are history (no animation); later Vels messages reveal themselves. The opening of a
+  // first visit is staged: dots → first line → dots → second line with its options.
+  const seenIds = useRef(new Set(props.intro ? [] : props.initial.map((m) => m.id)));
+  const introLen = props.intro ? props.initial.length : 0;
+  const [stage, setStage] = useState(props.intro ? 0 : introLen);
+  useEffect(() => {
+    if (!props.intro) return;
+    if (reducedMotion()) { setStage(introLen); return; }
+    const timers: number[] = [];
+    let at = 450;
+    for (let i = 1; i <= introLen; i++) {
+      timers.push(window.setTimeout(() => setStage(i), at));
+      at += revealMs(props.initial[i - 1]?.body ?? '') + 500;
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [props.intro, introLen, props.initial]);
+  useTypedHint(input, props.examples, props.placeholder, props.intro ? 4200 : 1200);
 
   // Scroll like a messaging app: follow new messages only at the bottom or right after the person sends; never pull
   // a reader back down while they read older messages (a "new messages" button appears instead).
@@ -161,17 +228,27 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
   const hasActions = (c: MessageCard | null) => !!c && !!(c.replies?.length || c.actions?.length || c.acts?.length || c.links?.length);
   const lastVelsuno = [...messages].reverse().find((m) => m.role === 'velsuno' && hasActions(m.card))?.id;
 
+  const shown = stage >= introLen ? messages : messages.slice(0, stage);
+  const introTyping = stage < introLen;
+  // Once shown, a message is history: re-renders (a new message, a tap) never replay its animation.
+  useEffect(() => { const t = window.setTimeout(() => { for (const m of shown) seenIds.current.add(m.id); }, 1600); return () => clearTimeout(t); });
+
   return (
     <div className="chat" aria-label={props.label}>
       <ol className="chat-list" ref={list} aria-live="polite" onScroll={onScroll} data-testid="chat-list">
-        {messages.map((m, i) => (
-          <li key={m.id} className={`msg ${m.role}${m.role === 'velsuno' && messages[i - 1]?.role !== 'velsuno' ? ' first' : ''}`} data-testid={m.role === 'velsuno' ? 'velsuno-msg' : 'user-msg'}>
-            {m.role === 'velsuno' && messages[i - 1]?.role !== 'velsuno' && <span className="msg-avatar"><VelsAvatar size={28} /></span>}
-            <p>{m.body}</p>
-            {m.card && <Card card={props.camera ? m.card : { ...m.card, actions: m.card.actions?.filter((a) => a.kind !== 'camera') }} live={m.id === lastVelsuno && !pending} onOp={sendOp} onReply={sendReply}
-              onCamera={() => file.current?.click()} onCorrect={() => { setHint('Dime qué cambio, por ejemplo: "el carro es 900"'); input.current?.focus(); }} />}
-          </li>
-        ))}
+        {shown.map((m, i) => {
+          const animate = m.role === 'velsuno' && !seenIds.current.has(m.id) && !m.id.startsWith('sent-');
+          return (
+            <li key={m.id} className={`msg ${m.role}${m.role === 'velsuno' && shown[i - 1]?.role !== 'velsuno' ? ' first' : ''}${animate ? ' fresh' : ''}`} data-testid={m.role === 'velsuno' ? 'velsuno-msg' : 'user-msg'}>
+              {m.role === 'velsuno' && shown[i - 1]?.role !== 'velsuno' && <span className="msg-avatar"><VelsAvatar size={28} /></span>}
+              <p>{animate ? <Reveal text={m.body} /> : m.body}</p>
+              {m.card && <Card card={props.camera ? m.card : { ...m.card, actions: m.card.actions?.filter((a) => a.kind !== 'camera') }} live={m.id === lastVelsuno && !pending} onOp={sendOp} onReply={sendReply}
+                delay={animate ? revealMs(m.body) : undefined}
+                onCamera={() => file.current?.click()} onCorrect={() => { setHint('Dime qué cambio, por ejemplo: "el carro es 900"'); input.current?.focus(); }} />}
+            </li>
+          );
+        })}
+        {introTyping && <li className="msg velsuno typing" aria-label="Escribiendo"><span /><span /><span /></li>}
         {(pending || reading) && (reading
           ? <li className="msg velsuno" role="status"><p className="muted">Leyendo…</p></li>
           : <li className="msg velsuno typing" aria-label="Escribiendo"><span /><span /><span /></li>)}

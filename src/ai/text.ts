@@ -4,7 +4,7 @@ import type { Currency } from '../domain/money';
 export const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
 export const APPROX = /\b(como|aprox\w*|mas o menos|unos|unas|alrededor|cerca de|casi|entre|por ahi)\b/;
-export const UNKNOWN = /\b(no se|nose|ni idea|aun no|todavia no|despues|luego|no me acuerdo|no recuerdo|mas tarde|no estoy segur[oa]|no lo se|ahorita no)\b/;
+export const UNKNOWN = /\b(omitir|no se|nose|ni idea|aun no|todavia no|despues|luego|no me acuerdo|no recuerdo|mas tarde|no estoy segur[oa]|no lo se|ahorita no)\b/;
 
 export interface Amount { minor: number; currency: Currency | null; approx: boolean; index: number; end: number }
 export interface Day { day: number; dayMax: number | null; second: number | null; approx: boolean; index: number; end: number }
