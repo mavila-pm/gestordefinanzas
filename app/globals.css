@@ -369,11 +369,11 @@ code { font-size: 14px; overflow-wrap: anywhere; }
   overflow-y: auto; overscroll-behavior-y: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; scroll-padding-bottom: var(--space-24); }
 .chat-list::before { content: ''; margin-top: auto; }
 .msg { max-width: min(88%, 520px); display: grid; gap: var(--space-8); overflow-wrap: anywhere; flex: none; }
-.msg > p { margin: 0; padding: 10px 14px; border-radius: 18px; line-height: 24px; white-space: pre-line; }
+.msg > p { margin: 0; padding: 12px 16px; border-radius: 18px; line-height: 24px; white-space: pre-line; }
 /* Vels messages line by line: a new line is its own block (concept, then question); a blank line adds a paragraph gap. */
-.msg > p.msg-text { white-space: normal; display: grid; gap: 6px; }
+.msg > p.msg-text { white-space: normal; display: grid; gap: 10px; }
 .msg-line { display: block; }
-.msg-line.gap { margin-top: 8px; }
+.msg-line.gap { margin-top: 6px; }
 .msg.velsuno { align-self: flex-start; position: relative; padding-left: 36px; }
 .msg-avatar { position: absolute; left: 0; top: 3px; }
 .msg.velsuno > p { background: var(--surface-default); border-bottom-left-radius: 6px; }
@@ -382,14 +382,16 @@ code { font-size: 14px; overflow-wrap: anywhere; }
   border-radius: var(--radius-pill); background: var(--surface-default); color: var(--text-primary); font-size: 14px; font-weight: 600;
   box-shadow: 0 4px 16px rgb(0 0 0 / .14), inset 0 0 0 1px var(--border-subtle); }
 .msg.user > p { background: var(--action-bg); color: var(--action-fg); border-bottom-right-radius: 6px; }
-.msg + .msg.velsuno:not(:has(> .chat-card)) { margin-top: -4px; }
+/* Rhythm: consecutive Vels bubbles sit close (one turn); a change of speaker gets clear air. */
+.msg.velsuno + .msg.velsuno { margin-top: -4px; }
+.msg.user + .msg.velsuno, .msg.velsuno + .msg.user { margin-top: var(--space-8); }
 .chat-card { background: var(--surface-default); border-radius: var(--radius-card); padding: var(--space-12) var(--space-16); display: grid; gap: var(--space-8); box-shadow: inset 0 0 0 1px var(--border-subtle); }
 .chat-card-title { margin: 0; font-weight: 600; }
 .facts.compact > div { padding: var(--space-8) 0; }
 .facts.compact dd { display: inline-flex; gap: var(--space-8); align-items: center; justify-content: flex-end; flex-wrap: wrap; }
 .chat-summary { display: grid; gap: var(--space-12); }
 .chat-summary section { display: grid; gap: 2px; }
-.chat-actions { display: flex; flex-wrap: wrap; gap: var(--space-12); padding-top: var(--space-8); }
+.chat-actions { display: flex; flex-wrap: wrap; gap: var(--space-12); padding-top: var(--space-4); }
 .chat-actions .chip { flex: 0 1 auto; justify-content: center; min-width: 96px; }
 .chip, a.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 16px; border-radius: var(--radius-pill); background: var(--bg-secondary); color: var(--text-primary); font-weight: 600; font-size: 15px; text-decoration: none; }
 .chip:hover, a.chip:hover { background: var(--border-subtle); }
