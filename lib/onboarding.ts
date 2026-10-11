@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { domainWrites, validPatches } from '../src/ai/apply';
 import { isReplay } from './idempotency';
 import type { ChatMessage, MessageCard } from '../src/ai/conversation';
-import { agendaLine, canStart, compactState, finalSummary, hasFacts, mergePatches, nextQuestion, pendingReply, shortReply, unreadNumbers, upcomingFromDraft, workIn, yesNoReply, type Changed } from '../src/ai/draft';
+import { agendaLine, canStart, clarify, compactState, finalSummary, hasFacts, mergePatches, nextQuestion, pendingReply, setWork, shortReply, unreadNumbers, upcomingFromDraft, workIn, WORK_HELP, yesNoReply, type Changed } from '../src/ai/draft';
 import { limaToday, shortDate } from '../src/domain/dates';
 import { checkImage, IMAGE_ERROR_TEXT, imageReadKey, READ_REUSE_MINUTES } from '../src/ai/image';
 import { interpret, isSmallTalk } from '../src/ai/interpreter';
@@ -121,8 +121,15 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   const name = preferredName(await loadProfile(supabase));
   // The opening asks how the person earns (fixed copy, not stored): its answer is pending until given.
   if (!state.draft.work && !state.draft.asked.includes('work') && !state.draft.incomes.length) { state.draft.asked.push('work'); state.draft.pending = 'work'; }
+  // A doubt ("¿qué es dependiente?", "no entiendo") is explained and the same question stays pending: never an answer.
+  const help = clarify(state.draft, text);
+  if (help) {
+    await save(supabase, userId, state.draft);
+    await say(supabase, userId, 'onboarding', 'velsuno', help.text, { replies: help.replies.filter((r) => r !== 'Tomar foto') });
+    return;
+  }
   // "Soy independiente, cobro unos 3,000…": the work type is kept and the rest is read normally.
-  if (!state.draft.work) { const w = workIn(fold(text)); if (w) state.draft.work = w; }
+  if (!state.draft.work) { const w = workIn(fold(text)); if (w) setWork(state.draft, w); }
   // Replies only the pending question can place ("sí, el 15", a loan's entity or "36, llevo 10").
   const placed = pendingReply(state.draft, text);
   if (placed) {
@@ -144,6 +151,12 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   if (isSmallTalk(text) && !state.draft.pending) { await say(supabase, userId, 'onboarding', 'velsuno', '¿Algo más que quieras contarme? Si no, puedes ver tu resumen.', { actions: hasFacts(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] }); return; }
 
   let read = interpret(text);
+  // The work question waits for a choice: something unreadable is not an answer (no provider call, no skip).
+  if (state.draft.pending === 'work' && !state.draft.work && !read.patches.length) {
+    await save(supabase, userId, state.draft);
+    await say(supabase, userId, 'onboarding', 'velsuno', `No te entendí. ${WORK_HELP}`, { replies: ['Dependiente', 'Independiente'] });
+    return;
+  }
   const partial = unreadNumbers(fold(text), read) > 0;
   if ((!read.patches.length && !read.bare) || partial) {
     const pendingQ = state.draft.pending ? `Pregunta pendiente: ${state.draft.pending}` : 'Sin pregunta pendiente';

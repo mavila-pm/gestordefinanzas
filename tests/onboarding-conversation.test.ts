@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { followUp } from '../lib/onboarding';
 import { domainWrites, validPatches } from '../src/ai/apply';
-import { finalSummary, mergePatches, pendingReply, upcomingFromDraft, workIn, yesNoReply } from '../src/ai/draft';
+import { clarify, finalSummary, mergePatches, pendingReply, setWork, upcomingFromDraft, workIn, WORK_HELP, yesNoReply } from '../src/ai/draft';
 import { fold } from '../src/ai/text';
 import { interpret, readLoan } from '../src/ai/interpreter';
 import { emptyDraft, type Draft } from '../src/ai/types';
@@ -21,7 +21,9 @@ function converse(today: string, opening: boolean, messages: string[]): { draft:
   const said: string[] = [];
   for (const m of messages) {
     if (opening && !draft.work && !draft.asked.includes('work') && !draft.incomes.length) { draft.asked.push('work'); draft.pending = 'work'; }
-    if (opening && !draft.work) { const w = workIn(fold(m)); if (w) draft = { ...draft, work: w }; }
+    const help = opening ? clarify(draft, m) : null;
+    if (help) { said.push(help.text); continue; }
+    if (opening && !draft.work) { const w = workIn(fold(m)); if (w) { draft = structuredClone(draft); setWork(draft, w); } }
     const answered = draft.pending;
     let merged = pendingReply(draft, m);
     if (!merged) {
@@ -277,7 +279,7 @@ describe('subscriptions and the savings goal in the same conversation', () => {
 describe('opening: dependiente / independiente, one question at a time', () => {
   it('dependiente: sueldo → fechas → otro ingreso (cuánto, cada cuánto, cuándo) → dinero hoy → pagos …', () => {
     const { draft, said } = fromOpening(TODAY, 'Dependiente', '3,500', '15 y 30', 'sí', 'clases particulares 400', 'Cada mes', 'el 20', '2,000');
-    expect(said[0]).toBe('Perfecto. ¿Cuál es tu sueldo mensual?');
+    expect(said[0]).toBe('Perfecto. ¿Cuánto recibes de sueldo al mes?');
     expect(said[1]).toBe('Entiendo. ¿En qué fechas te pagan?');
     expect(said[2]).toMatch(/días 15 y 30\. ¿Tienes algún otro ingreso aparte de tu sueldo\?$/);
     expect(said[3]).toContain('de dónde viene');
@@ -292,7 +294,7 @@ describe('opening: dependiente / independiente, one question at a time', () => {
   });
   it('independiente: dinero en cuentas → de dónde → próximo cobro → cuándo → frecuencia → otro ingreso', () => {
     const { draft, said } = fromOpening(TODAY, 'Independiente', '8,000', 'de mis clientes de diseño', '2,500', 'el 25', 'ocasional', 'no');
-    expect(said[0]).toBe('Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas bancarias?');
+    expect(said[0]).toBe('Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas?');
     expect(said[1]).toContain('¿De dónde provienen normalmente tus ingresos?');
     expect(said[2]).toBe('Entiendo, ingresos de clientes de diseño. ¿Cuál es tu próximo cobro?');
     expect(said[3]).toContain('¿Cuándo esperas recibirlo?');
@@ -308,7 +310,7 @@ describe('opening: dependiente / independiente, one question at a time', () => {
     const { draft, said } = fromOpening(TODAY, 'soy independiente, pago alquiler 1,200 el 1', '5,000');
     expect(draft.work).toBe('independent');
     expect(draft.obligations).toMatchObject([{ name: 'Alquiler', amountMinor: 120000, day: 1 }]);
-    expect(said[0]).toContain('¿Cuánto dinero tienes actualmente en tus cuentas bancarias?');
+    expect(said[0]).toContain('¿Cuánto dinero tienes actualmente en tus cuentas?');
     expect(draft.balance).toMatchObject({ amountMinor: 500000 });
   });
   it('several payments at once are kept apart; only the missing data is asked; "no tengo deudas" moves on', () => {
@@ -330,5 +332,49 @@ describe('opening: dependiente / independiente, one question at a time', () => {
     expect(draft.incomes[0]).toMatchObject({ amountMinor: 350000, day: 30 });
     const pay = chat(TODAY, ...START, 'pago alquiler 1200', '15').draft.obligations[0];
     expect(pay).toMatchObject({ amountMinor: 120000, day: 15 });
+  });
+});
+
+describe('regression: a doubt is never an answer (the work question stays pending)', () => {
+  it('"¿Qué es dependiente o independiente?" → the explanation + the two options; nothing is chosen', () => {
+    const { draft, said } = fromOpening(TODAY, '¿Qué es dependiente o independiente?');
+    expect(said[0]).toBe('Dependiente: trabajas para una empresa y recibes un sueldo.\nIndependiente: trabajas por tu cuenta, tienes un negocio o recibes ingresos por tus servicios.\n¿Con cuál te identificas más?');
+    expect(draft.work ?? null).toBeNull();
+    expect(draft.pending).toBe('work');
+    expect(draft.incomes).toEqual([]);
+    expect(clarify({ ...draft }, 'qué significa independiente')?.replies).toEqual(['Dependiente', 'Independiente']);
+  });
+  it('other doubts and "no sé" do not count either; the choice afterwards continues normally', () => {
+    for (const doubt of ['no entiendo', '¿a qué te refieres?', 'cuál es la diferencia', 'no sé', 'que es independiente?']) {
+      const r = fromOpening(TODAY, doubt);
+      expect(r.said[0], doubt).toBe(WORK_HELP);
+      expect(r.draft.work ?? null, doubt).toBeNull();
+    }
+    expect(fromOpening(TODAY, '¿Qué es dependiente o independiente?', 'Dependiente').said[1]).toBe('Perfecto. ¿Cuánto recibes de sueldo al mes?');
+    expect(fromOpening(TODAY, 'no entiendo', 'Independiente').said[1]).toBe('Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas?');
+  });
+  it('natural answers: "tengo un negocio", "trabajo en planilla", "hago ambos" (both incomes are registered)', () => {
+    expect(fromOpening(TODAY, 'tengo un negocio').draft.work).toBe('independent');
+    expect(fromOpening(TODAY, 'trabajo en planilla').draft.work).toBe('employee');
+    const both = fromOpening(TODAY, 'hago ambos', '3,000', '15 y 30', '1,500', 'Ocasional');
+    expect(both.draft.work).toBe('both');
+    expect(both.said[0]).toBe('Perfecto, anotamos tus dos ingresos: sueldo y negocio. Empecemos por el sueldo: ¿cuánto recibes al mes?');
+    expect(both.said[2]).toContain('Y por tu negocio o tus servicios, ¿cuánto esperas cobrar en tu próximo cobro?');
+    expect(both.said[3]).toContain('¿Lo recibes con frecuencia o es un ingreso ocasional?');
+    expect(both.said[4]).toContain('¿Tienes algún otro ingreso además de tu sueldo y tu negocio?');
+    expect(both.draft.incomes.map((i) => [i.name, i.amountMinor, i.frequency])).toEqual([['Sueldo', 300000, 'semimonthly'], ['Negocio o servicios', 150000, 'occasional']]);
+    expect(fromOpening(TODAY, 'trabajo en planilla y también tengo mi negocio').draft.work).toBe('both');
+  });
+  it('a doubt on any later question explains it and asks the same question again (still pending)', () => {
+    const { draft, said } = fromOpening(TODAY, 'Dependiente', '3,500', '15 y 30', 'no', '¿qué cuenta como dinero hoy?', 'no entiendo');
+    expect(said.at(-1)).toMatch(/^Es el dinero que tienes hoy en tus cuentas y en efectivo\..*\n¿Cuánto dinero tienes hoy entre tus cuentas y efectivo\?$/s);
+    expect(draft.pending).toBe('balance');
+    expect(draft.balance).toBeNull();
+  });
+  it('"No sé" and "Omitir" only where they make sense, never both on one question', () => {
+    const asked = fromOpening(TODAY, 'Dependiente', '3,500', '15 y 30', 'no').draft;
+    expect(asked.pending).toBe('balance');
+    const q = clarify(asked, 'no entiendo')!;
+    expect(q.replies).toEqual(['No sé']);
   });
 });

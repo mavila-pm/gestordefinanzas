@@ -285,20 +285,22 @@ export function nextQuestion(d: Draft): Question | null {
   const [main, ...others] = d.incomes;
   const named = (i: { name: string }) => (i.name.toLowerCase() === 'sueldo' ? 'el sueldo' : i.name.toLowerCase());
   // Extra incomes ("aparte de tu sueldo"): how much, how often, when; occasional ones are never given a day.
+  const business = (i: { name: string }) => i.name === 'Negocio o servicios';
   const extraIncome = others.flatMap((i) => [
-    () => (i.amountMinor === null && i.amountStatus === 'unknown' ? ask(`income:${i.id}:amount`, `¿Cuánto recibes de ${i.name.toLowerCase()}?`, ['No sé', 'Omitir']) : null),
-    () => (i.frequency === null ? ask(`income:${i.id}:frequency`, '¿Cada cuánto lo recibes?', ['Cada mes', 'Cada quincena', 'Ocasional']) : null),
-    () => (i.day === null && i.frequency !== 'occasional' ? ask(`income:${i.id}:day`, '¿Qué día lo cobras?', ['No sé']) : null),
+    () => (i.amountMinor === null && i.amountStatus === 'unknown' ? ask(`income:${i.id}:amount`, business(i) ? 'Y por tu negocio o tus servicios, ¿cuánto esperas cobrar en tu próximo cobro?' : `¿Cuánto recibes de ${i.name.toLowerCase()}?`, ['No sé']) : null),
+    () => (i.frequency === null ? ask(`income:${i.id}:frequency`, business(i) ? '¿Lo recibes con frecuencia o es un ingreso ocasional?' : '¿Cada cuánto lo recibes?', ['Cada mes', 'Cada quincena', 'Ocasional']) : null),
+    () => (i.day === null && i.frequency !== 'occasional' ? ask(`income:${i.id}:day`, business(i) ? '¿Cuándo esperas recibirlo?' : '¿Qué día lo cobras?', ['No sé']) : null),
   ]);
-  const balanceQ = () => (d.balance === null ? ask('balance', work === 'independent' ? 'Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas bancarias?'
-    : work === 'employee' ? '¿Cuánto dinero tienes hoy entre tus cuentas y efectivo?' : '¿Cuánto dinero tienes disponible hoy?', ['No sé', 'Omitir']) : null);
+  const salaried = work === 'employee' || work === 'both';
+  const balanceQ = () => (d.balance === null ? ask('balance', work === 'independent' ? 'Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas?'
+    : salaried ? '¿Cuánto dinero tienes hoy entre tus cuentas y efectivo?' : '¿Cuánto dinero tienes disponible hoy?', ['No sé']) : null);
   const otherQ = (text: string) => () => (d.done.includes('incomes') ? null : ask('income:other', text, ['No', 'Sí']));
   // Income first, in the order that fits how the person earns (§ dependiente / independiente).
   const incomeFlow: Array<() => Question | null> = work === 'independent' ? [
     balanceQ,
     () => (!main ? ask('income:source', '¿De dónde provienen normalmente tus ingresos?') : null),
     ...(main ? [
-      () => (main.amountMinor === null && main.amountStatus === 'unknown' ? ask(`income:${main.id}:amount`, '¿Cuál es tu próximo cobro?', ['No sé', 'Omitir']) : null),
+      () => (main.amountMinor === null && main.amountStatus === 'unknown' ? ask(`income:${main.id}:amount`, '¿Cuál es tu próximo cobro?', ['No sé']) : null),
       () => (main.day === null ? ask(`income:${main.id}:day`, '¿Cuándo esperas recibirlo?', ['No sé']) : null),
       // A day alone does not say it repeats: asked once for an independent income (occasional → never projected).
       () => ask(`income:${main.id}:frequency`, '¿Lo recibes con frecuencia o es un ingreso ocasional?', ['Cada mes', 'Cada quincena', 'Ocasional']),
@@ -306,14 +308,17 @@ export function nextQuestion(d: Draft): Question | null {
     otherQ('¿Tienes algún otro ingreso que debamos considerar?'),
     ...extraIncome,
   ] : [
-    () => (!main ? ask('income:new', work === 'employee' ? 'Perfecto. ¿Cuál es tu sueldo mensual?' : '¿Cuánto recibes y qué día te pagan?', ['Omitir']) : null),
+    () => (!main ? ask('income:new', work === 'employee' ? 'Perfecto. ¿Cuánto recibes de sueldo al mes?' : '¿Cuánto recibes y qué día te pagan?', ['Omitir']) : null),
     ...(main ? [
-      () => (main.amountMinor === null && main.amountStatus === 'unknown' ? ask(`income:${main.id}:amount`, work === 'employee' && main.name === 'Sueldo' ? '¿Cuál es tu sueldo mensual?' : `¿Cuánto recibes de ${main.name.toLowerCase()}?`) : null),
-      () => (main.day === null ? ask(`income:${main.id}:day`, work === 'employee' ? 'Entiendo. ¿En qué fechas te pagan?' : `¿Qué día te pagan ${named(main)}?`, ['Quincenal', 'No sé']) : null),
+      () => (main.amountMinor === null && main.amountStatus === 'unknown' ? ask(`income:${main.id}:amount`, work === 'both' ? 'Perfecto, anotamos tus dos ingresos: sueldo y negocio. Empecemos por el sueldo: ¿cuánto recibes al mes?'
+        : salaried && main.name === 'Sueldo' ? '¿Cuánto recibes de sueldo al mes?' : `¿Cuánto recibes de ${main.name.toLowerCase()}?`, ['Omitir']) : null),
+      () => (main.day === null ? ask(`income:${main.id}:day`, salaried ? 'Entiendo. ¿En qué fechas te pagan?' : `¿Qué día te pagan ${named(main)}?`, ['Quincenal', 'No sé']) : null),
     ] : []),
+    // Salary and business: the business income right after the salary (its amount, frequency and date).
+    ...(work === 'both' ? extraIncome : []),
     // Without the work type (facts given straight away), today's balance keeps its place right after the income.
-    ...(work === 'employee' ? [] : [balanceQ]),
-    otherQ(work === 'employee' ? '¿Tienes algún otro ingreso aparte de tu sueldo?' : '¿Tienes algún otro ingreso?'),
+    ...(salaried ? [] : [balanceQ]),
+    otherQ(work === 'both' ? '¿Tienes algún otro ingreso además de tu sueldo y tu negocio?' : work === 'employee' ? '¿Tienes algún otro ingreso aparte de tu sueldo?' : '¿Tienes algún otro ingreso?'),
     ...extraIncome,
     balanceQ,
   ];
@@ -395,10 +400,66 @@ function adaptToPending(d: Draft, patches0: readonly Patch[]): Patch[] {
 }
 
 /** "Dependiente", "en planilla", "soy independiente", "trabajo por mi cuenta". Checked before "dependiente". */
-export function workIn(folded: string): 'employee' | 'independent' | null {
-  if (/\b(independiente|freelance|freelancer|por mi cuenta|negocio propio|mi propio negocio|emprend\w*|recibos? por honorarios|por honorarios|cuenta propia)\b/.test(folded)) return 'independent';
-  if (/\b(dependiente|en planilla|planilla|empleado|empleada|trabajo en una empresa|asalariad\w*)\b/.test(folded)) return 'employee';
-  return null;
+export function workIn(folded: string): 'employee' | 'independent' | 'both' | null {
+  if (isDoubt(folded)) return null; // "¿qué es dependiente?" names the word but answers nothing
+  const indep = /\b(independiente|freelance|freelancer|por mi cuenta|negocio propio|mi propio negocio|tengo (un|mi) negocio|mi negocio|emprend\w*|recibos? por honorarios|por honorarios|cuenta propia|vendo|mis clientes)\b/.test(folded);
+  const dep = /\b(dependiente|en planilla|planilla|empleado|empleada|trabajo en una empresa|trabajo para una empresa|asalariad\w*|me pagan sueldo|tengo sueldo)\b/.test(folded.replace(/\bindependiente\b/g, ''));
+  if (/\b(ambos|ambas|las dos|los dos|hago (las )?dos|de los dos|un poco de los dos)\b/.test(folded) || (indep && dep)) return 'both';
+  return indep ? 'independent' : dep ? 'employee' : null;
+}
+
+/** "¿Qué es…?", "no entiendo", "¿a qué te refieres?": a doubt about the question, never an answer to it. */
+export function isDoubt(folded: string): boolean {
+  const t = folded.replace(/[¿?¡!.,]/g, ' ').replace(/\s+/g, ' ').trim();
+  return /^(que es|que son|que significa|que quiere decir|que seria|a que te refieres|como asi|cual es la diferencia|que diferencia|explica|explicame|no entiendo|no entendi|no se que es|que es eso)\b/.test(t)
+    || /\b(que es|que significa|no entiendo|a que te refieres|cual es la diferencia)\b/.test(t) && !/\d/.test(t);
+}
+
+export const WORK_HELP = 'Dependiente: trabajas para una empresa y recibes un sueldo.\nIndependiente: trabajas por tu cuenta, tienes un negocio o recibes ingresos por tus servicios.\n¿Con cuál te identificas más?';
+const BUSINESS = 'Negocio o servicios';
+
+/** The work type is kept; "ambos" registers both sources (salary + business), each asked for its own data later. */
+export function setWork(d: Draft, w: 'employee' | 'independent' | 'both'): void {
+  d.work = w;
+  if (w !== 'both') return;
+  const blank = (name: string) => ({ id: newId('i'), name, currency: 'PEN' as const, amountMinor: null, amountStatus: 'unknown' as const, frequency: null, day: null, dayMax: null, secondDay: null, dayStatus: 'unknown' as const });
+  if (!d.incomes.some((i) => i.name === 'Sueldo')) d.incomes.unshift(blank('Sueldo'));
+  if (!d.incomes.some((i) => i.name === BUSINESS)) d.incomes.push(blank(BUSINESS));
+}
+
+const HELP: Array<[RegExp, string]> = [
+  [/^balance$/, 'Es el dinero que tienes hoy en tus cuentas y en efectivo. No cuentes la línea de tu tarjeta: eso es deuda, no dinero tuyo.'],
+  [/^income:other$/, 'Por ejemplo: un trabajo extra, clases, un alquiler o ventas. Si no tienes, dime "no".'],
+  [/^income:source$/, 'Por ejemplo: clientes, ventas de tu negocio, comisiones o servicios.'],
+  [/^income:[^:]+:frequency$/, 'Con frecuencia: lo recibes cada mes o cada quincena. Ocasional: llega de vez en cuando, sin fecha fija.'],
+  [/^income:[^:]+:day$/, 'Es el día del mes en que te depositan. Si te pagan dos veces, dime ambos días, por ejemplo "15 y 30".'],
+  [/^group:obligations/, 'Son pagos que se repiten cada mes: alquiler, luz, agua, internet, colegio.'],
+  [/^group:loans$/, 'Cualquier dinero que debas devolver: un préstamo del banco, una caja, una financiera o una persona.'],
+  [/^debt:[^:]+:minimum$/, 'Es lo menos que el banco te pide pagar este mes para estar al día. Aparece en tu estado de cuenta.'],
+  [/^debt:[^:]+:cut$/, 'Es el día en que el banco cierra el mes de tu tarjeta: lo que compras después entra en el siguiente estado de cuenta.'],
+  [/^group:subscriptions$/, 'Servicios que te cobran solos cada mes: streaming, música, gimnasio, apps o almacenamiento.'],
+  [/^variable:basics$/, 'Lo que gastas en el día a día y cambia cada mes: comida, transporte, salidas.'],
+  [/^savings:goal$/, 'Es lo que quieres separar cada mes para ti. Puede ser poco; lo importante es que sea constante.'],
+];
+
+/**
+ * A doubt about the pending question ("¿qué es dependiente?", "no entiendo"): explained in one line and the SAME
+ * question asked again, with its options. It never counts as an answer: the pending question stays.
+ * For the work question, "no sé" is a doubt too (there is nothing to skip: it orders the next questions).
+ */
+export function clarify(d: Draft, text: string): Question | null {
+  const pending = d.pending;
+  if (!pending) return null;
+  const t = fold(text).replace(/[.!¡¿?]/g, '').trim();
+  // A question back without numbers ("¿qué cuenta como dinero?", "¿cuál pongo?") is a doubt too.
+  const askedBack = /[¿?]/.test(text) && !/\d/.test(t) && /^(que|como|cual|cuales|cuanto cuenta|a que|por que|para que|quien|eso)\b/.test(t);
+  const doubt = isDoubt(t) || askedBack || (pending === 'work' && UNKNOWN.test(t) && !workIn(t));
+  if (!doubt) return null;
+  if (pending === 'work') return { key: 'work', text: WORK_HELP, replies: ['Dependiente', 'Independiente'] };
+  const q = nextQuestion({ ...d, asked: d.asked.filter((k) => k !== pending) });
+  if (!q || q.key !== pending) return null;
+  const help = HELP.find(([re]) => re.test(pending))?.[1] ?? 'Te lo pregunto para calcular cuánto puedes usar sin afectar tus pagos.';
+  return { key: pending, text: `${help}\n${q.text}`, replies: q.replies };
 }
 
 /** "De mis clientes de diseño" → "Clientes de diseño" (≤ 40 chars, letters only); null when nothing usable. */
@@ -422,7 +483,7 @@ export function pendingReply(d: Draft, text: string): MergeResult | null {
     const work = workIn(t);
     if (!work || /\d/.test(t)) return null; // facts in the same message: the normal reading keeps them
     const draft = structuredClone(d);
-    draft.work = work;
+    setWork(draft, work);
     draft.pending = null;
     return { draft, changed: [] };
   }

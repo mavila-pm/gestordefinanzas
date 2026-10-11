@@ -52,7 +52,7 @@ export interface Draft {
   /** Groups the person said are complete ("no tengo más pagos", "no tengo tarjeta"). */
   done: Array<DoneGroup>;
   /** How the person earns (first question): orders the income questions; null = not said (generic order). */
-  work?: 'employee' | 'independent' | null;
+  work?: 'employee' | 'independent' | 'both' | null;
   /** Monthly savings goal the person stated (planning_settings.savings_goal_minor at "Empezar"); unknown ≠ 0. */
   savings?: { currency: Currency; amountMinor: number | null; status: FactStatus } | null;
   /** Payments the person said do not apply ("no pago alquiler"): never asked about again. */

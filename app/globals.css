@@ -385,7 +385,7 @@ code { font-size: 14px; overflow-wrap: anywhere; }
 .facts.compact dd { display: inline-flex; gap: var(--space-8); align-items: center; justify-content: flex-end; flex-wrap: wrap; }
 .chat-summary { display: grid; gap: var(--space-12); }
 .chat-summary section { display: grid; gap: 2px; }
-.chat-actions { display: flex; flex-wrap: wrap; gap: var(--space-8); padding-top: var(--space-4); }
+.chat-actions { display: flex; flex-wrap: wrap; gap: var(--space-12); padding-top: var(--space-8); }
 .chip, a.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 16px; border-radius: var(--radius-pill); background: var(--bg-secondary); color: var(--text-primary); font-weight: 600; font-size: 15px; text-decoration: none; }
 .chip:hover, a.chip:hover { background: var(--border-subtle); }
 .chat-actions .button { min-height: 44px; border-radius: var(--radius-pill); }

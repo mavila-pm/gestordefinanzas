@@ -37,9 +37,9 @@ await runSuite('onboarding', async ({ page, check }) => {
   const u0 = await usage();
   check('deterministic reading costs no AI usage (§54)', u0.every((r) => r.requests === 0), JSON.stringify(u0));
 
-  await tap(page, 'Omitir');
+  await tap(page, 'No sé');
   v = await lastVelsuno(page);
-  check('"Omitir" moves on (unknown, never 0)', !v.includes('¿Cuánto dinero tienes disponible hoy') && !v.includes('Saldo de hoy S/ 0'), v);
+  check('"No sé" moves on (unknown, never 0)', !v.includes('¿Cuánto dinero tienes disponible hoy') && !v.includes('Saldo de hoy S/ 0'), v);
   check('then other incomes, one question with Sí / No', v.includes('¿Tienes algún otro ingreso?'), v);
   await tap(page, 'No');
   v = await lastVelsuno(page);
@@ -223,8 +223,16 @@ await runSuite('onboarding', async ({ page, check }) => {
 
   // Dependiente route in the browser (after the reset), on a phone: one question per message, exact copy.
   await page.setViewportSize({ width: 390, height: 844 });
+  // Regression: a doubt is never an answer — explained, the same two options, nothing chosen.
+  await send(page, '¿Qué es dependiente o independiente?');
+  v = await lastVelsuno(page);
+  const help = await page.locator('.chat-actions').last().getByRole('button').allTextContents();
+  const gap = await page.locator('.chat-actions').last().evaluate((e) => parseFloat(getComputedStyle(e).columnGap));
+  check('"¿Qué es dependiente o independiente?" → explanation, same question, two separated options',
+    v.startsWith('Dependiente: trabajas para una empresa y recibes un sueldo.') && v.includes('¿Con cuál te identificas más?') && JSON.stringify(help) === '["Dependiente","Independiente"]' && gap >= 12, `${v} ${JSON.stringify(help)} ${gap}`);
+  check('nothing was chosen or written for the doubt', !((await api.from('onboarding_states').select('facts').single()).data!.facts as { work?: string }).work);
   await tap(page, 'Dependiente');
-  check('dependiente → "Perfecto. ¿Cuál es tu sueldo mensual?"', (await lastVelsuno(page)).startsWith('Perfecto. ¿Cuál es tu sueldo mensual?'), await lastVelsuno(page));
+  check('dependiente → "Perfecto. ¿Cuánto recibes de sueldo al mes?"', (await lastVelsuno(page)).startsWith('Perfecto. ¿Cuánto recibes de sueldo al mes?'), await lastVelsuno(page));
   await send(page, '3,500');
   check('→ "Entiendo. ¿En qué fechas te pagan?"', (await lastVelsuno(page)).startsWith('Entiendo. ¿En qué fechas te pagan?'), await lastVelsuno(page));
   await send(page, '15 y 30');
