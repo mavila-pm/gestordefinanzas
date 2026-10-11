@@ -157,7 +157,38 @@ function spendingList(all: string): { items: Patch[]; rest: string } {
 export const loanName = (type: string | null | undefined, institution: string | null | undefined) =>
   `Préstamo${type ? ` ${type}` : ''}${institution ? ` ${BANK_LABEL[institution] ?? institution}` : ''}`.slice(0, 60);
 
+const CASH_WORDS = /\b(efectivo|cash|en (la )?mano|en fisico|en billetera|en mi billetera|sencillo|en casa)\b/;
+const BANK_WORDS = /\b(cuentas?|banco|bancos|bancari[ao]s?|digital|ahorros|tarjeta de debito|yape|plin|en el app)\b/;
+
+/**
+ * "Tengo S/ 4,000 en mis cuentas y S/ 150 en efectivo": money today with its breakdown (banks vs cash). Each amount
+ * is classified by the words right after it ("… en efectivo"), else right before it ("en efectivo tengo 150").
+ * null unless at least one amount is clearly cash or bank. Never invents a part that was not said.
+ */
+export function balanceSplit(folded: string): { bankMinor?: number; cashMinor?: number; currency?: Currency } | null {
+  if (INCOME.test(folded) || DEBT.test(folded) || /\b(pago|pagar|gasto|cuota)\b/.test(folded)) return null;
+  const amounts = findAmounts(folded, findDays(folded));
+  if (!amounts.length) return null;
+  const out: { bankMinor?: number; cashMinor?: number; currency?: Currency } = {};
+  amounts.forEach((a, i) => {
+    const after = folded.slice(a.end, amounts[i + 1]?.index ?? folded.length).split(/\by\b|,|;/)[0] ?? '';
+    const before = folded.slice(amounts[i - 1]?.end ?? 0, a.index);
+    const kind = CASH_WORDS.test(after) ? 'cash' : BANK_WORDS.test(after) ? 'bank' : CASH_WORDS.test(before) ? 'cash' : BANK_WORDS.test(before) ? 'bank' : null;
+    if (kind === 'cash' && out.cashMinor === undefined) out.cashMinor = a.minor;
+    else if (kind === 'bank' && out.bankMinor === undefined) out.bankMinor = a.minor;
+    if (a.currency && !out.currency) out.currency = a.currency;
+  });
+  return out.cashMinor !== undefined || out.bankMinor !== undefined ? out : null;
+}
+
 export function interpret(message: string): Interpretation {
+  // Money today with its breakdown (cuentas / efectivo) is read first and kept whole: never only the last amount.
+  const split = balanceSplit(fold(message));
+  if (split) return { patches: [{ t: 'balance', ...split }], bare: null };
+  return interpretRest(message);
+}
+
+function interpretRest(message: string): Interpretation {
   const spending = spendingList(fold(message));
   const all = spending.rest;
   const banksInMessage = bankIn(all);

@@ -56,7 +56,7 @@ export function FreeHero({ p }: { p: Plan }) {
         <div><dt><i className="free" />Disponible</dt><dd>{money(shown, c)}</dd></div>
       </dl>
       <div className="hero-foot">
-        <span>{fix ? (p.missing.length === 1 ? `Falta 1 dato: ${missingLabel(fix).replace(/^(el|la) /, '')}` : `Faltan ${p.missing.length} datos, empieza por ${missingLabel(fix)}`) : `Saldo ${money(p.base.amountMinor, c)}`}</span>
+        <span>{fix ? (p.missing.length === 1 ? `Falta 1 dato: ${missingLabel(fix).replace(/^(el|la) /, '')}` : `Faltan ${p.missing.length} datos, empieza por ${missingLabel(fix)}`) : `Saldo ${money(p.base.amountMinor, c)}${p.base.kind === 'balance' && p.base.bankMinor != null && p.base.cashMinor != null ? ` · cuentas ${money(p.base.bankMinor, c)} · efectivo ${money(p.base.cashMinor, c)}` : ''}`}</span>
         <Link href="/app/plan">{fix ? 'Completar' : 'Ver cálculo'}</Link>
       </div>
     </section>

@@ -50,7 +50,9 @@ export interface Draft {
   debts: DebtFact[];
   accounts: AccountFact[];
   variable: VariableFact[];
-  balance: { currency: Currency; amountMinor: number | null; status: FactStatus } | null;
+  /** Money today. amountMinor is the declared total; bankMinor / cashMinor keep the breakdown when it was said
+   *  ("S/ 4,000 en mis cuentas y S/ 150 en efectivo"); a part not said stays null (unknown, never 0). */
+  balance: { currency: Currency; amountMinor: number | null; status: FactStatus; bankMinor?: number | null; cashMinor?: number | null } | null;
   /** Question keys already asked once (never nag twice). */
   asked: string[];
   /** Groups the person said are complete ("no tengo más pagos", "no tengo tarjeta"). */
@@ -87,7 +89,7 @@ export type Patch =
       loanType?: string; principalMinor?: number; installmentMinor?: number; installmentsTotal?: number; installmentsPaid?: number; installmentsLeft?: number }
   | { t: 'account'; institution: string; kind: 'bank' | 'card'; last4?: string }
   | { t: 'variable'; name: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean }
-  | { t: 'balance'; amountMinor?: number; currency?: Currency; unknown?: boolean }
+  | { t: 'balance'; amountMinor?: number; currency?: Currency; unknown?: boolean; bankMinor?: number; cashMinor?: number }
   | { t: 'remove'; name: string; declined?: boolean }
   | { t: 'done'; group: DoneGroup };
 

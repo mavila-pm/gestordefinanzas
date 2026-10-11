@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { domainWrites, validPatches } from '../src/ai/apply';
 import { isReplay } from './idempotency';
 import type { ChatMessage, MessageCard } from '../src/ai/conversation';
-import { agendaLine, canStart, clarify, compactState, finalSummary, hasFacts, mergePatches, nextQuestion, pendingReply, setWork, shortReply, unreadNumbers, upcomingFromDraft, workIn, WORK_HELP, yesNoReply, type Changed } from '../src/ai/draft';
+import { agendaLine, answerFromDraft, canStart, clarify, compactState, finalSummary, hasFacts, mergePatches, nextQuestion, pendingReply, setWork, shortReply, unreadNumbers, upcomingFromDraft, workIn, WORK_HELP, yesNoReply, type Changed } from '../src/ai/draft';
 import { limaToday, shortDate } from '../src/domain/dates';
 import { checkImage, IMAGE_ERROR_TEXT, imageReadKey, READ_REUSE_MINUTES } from '../src/ai/image';
 import { interpret, isSmallTalk } from '../src/ai/interpreter';
@@ -123,6 +123,15 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   const name = preferredName(await loadProfile(supabase));
   // The opening asks how the person earns (fixed copy, not stored): its answer is pending until given.
   if (!state.draft.work && !state.draft.asked.includes('work') && !state.draft.incomes.length) { state.draft.asked.push('work'); state.draft.pending = 'work'; }
+  // A question about what was already said ("¿cuánto tengo digital y cuánto en efectivo?"): answered from the saved
+  // facts, then the same pending question again — the conversation keeps its thread.
+  const known = answerFromDraft(state.draft, text);
+  if (known) {
+    if (!state.draft.pending && known.key) { state.draft.pending = known.key; if (!state.draft.asked.includes(known.key)) state.draft.asked.push(known.key); }
+    await save(supabase, userId, state.draft);
+    await say(supabase, userId, 'onboarding', 'velsuno', known.text, { replies: known.replies.filter((r) => r !== 'Tomar foto') });
+    return;
+  }
   // A doubt ("¿qué es dependiente?", "no entiendo") is explained and the same question stays pending: never an answer.
   const help = clarify(state.draft, text);
   if (help) {

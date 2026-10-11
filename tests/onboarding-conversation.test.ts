@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { followUp } from '../lib/onboarding';
 import { domainWrites, validPatches } from '../src/ai/apply';
-import { clarify, finalSummary, mergePatches, pendingReply, setWork, upcomingFromDraft, workIn, WORK_HELP, yesNoReply } from '../src/ai/draft';
+import { answerFromDraft, clarify, finalSummary, mergePatches, pendingReply, setWork, upcomingFromDraft, workIn, WORK_HELP, yesNoReply } from '../src/ai/draft';
 import { fold } from '../src/ai/text';
 import { interpret, readLoan } from '../src/ai/interpreter';
 import { emptyDraft, type Draft } from '../src/ai/types';
@@ -21,6 +21,12 @@ function converse(today: string, opening: boolean, messages: string[]): { draft:
   const said: string[] = [];
   for (const m of messages) {
     if (opening && !draft.work && !draft.asked.includes('work') && !draft.incomes.length) { draft.asked.push('work'); draft.pending = 'work'; }
+    const known = opening ? answerFromDraft(draft, m) : null;
+    if (known) {
+      if (!draft.pending && known.key) { draft.pending = known.key; if (!draft.asked.includes(known.key)) draft.asked.push(known.key); }
+      said.push(known.text);
+      continue;
+    }
     const help = opening ? clarify(draft, m) : null;
     if (help) { said.push(help.text); continue; }
     if (opening && !draft.work) { const w = workIn(fold(m)); if (w) { draft = structuredClone(draft); setWork(draft, w); } }
@@ -449,6 +455,40 @@ describe('exact dates: "cada 1/5 de cada mes", quincenal, fin de mes', () => {
     const { draft, said } = chat(TODAY, ...START, 'pago luz 120', 'a fin de mes', 'el último día');
     expect(said[3]).toBe('¿Te refieres al último día de cada mes?');
     expect(draft.obligations[0]).toMatchObject({ name: 'Luz', amountMinor: 12000, day: 31 });
+  });
+});
+
+describe('regression: money in accounts and in cash — kept apart, answered, corrected, never skipping a question', () => {
+  const CONVO = ['Dependiente', '5000', 'cada 1 de cada mes', 'no', 'Tengo S/ 4,000 en mis cuentas y S/ 150 en efectivo',
+    '¿Cuánto tengo digital y cuánto en efectivo?', 'en realidad en efectivo tengo S/ 200', 'alquiler 1,200 el 1'] as const;
+  it('the exact conversation', () => {
+    const { draft, said } = fromOpening(TODAY, ...CONVO);
+    expect(said[4]).toBe('Listo: en tus cuentas tienes S/ 4,000 y en efectivo S/ 150. En total, S/ 4,150. ¿Qué pagos fijos tienes cada mes? Alquiler, luz, internet…');
+    // A question about what was said: answered from the saved facts, then the SAME pending question again.
+    expect(said[5]).toBe('En tus cuentas tienes S/ 4,000 y en efectivo S/ 150.\nEn total tienes S/ 4,150.\n\n¿Qué pagos fijos tienes cada mes? Alquiler, luz, internet…');
+    // A correction updates that part (the bank part stays) and the fixed-payments question comes back (not skipped).
+    expect(said[6]).toBe('Listo: en tus cuentas tienes S/ 4,000 y en efectivo S/ 200. En total, S/ 4,200. ¿Qué pagos fijos tienes cada mes? Alquiler, luz, internet…');
+    expect(said[7]).toContain('¿Tienes algún otro pago fijo?');
+    expect(draft.balance).toEqual({ currency: 'PEN', amountMinor: 420000, status: 'confirmed', bankMinor: 400000, cashMinor: 20000 });
+    expect(draft.obligations).toMatchObject([{ name: 'Alquiler', amountMinor: 120000, day: 1 }]);
+    // Written once, with its breakdown; nothing invented (no bank accounts are created from it).
+    const w = domainWrites(draft, 'u1');
+    expect(w.balance).toEqual({ user_id: 'u1', currency: 'PEN', amount_minor: 420000, bank_minor: 400000, cash_minor: 20000 });
+    expect(w.accounts).toEqual([]);
+  });
+  it('the reader keeps both amounts (never only the last) and a part not said stays unknown', () => {
+    expect(fromOpening(TODAY, 'Independiente', 'Tengo S/ 4,000 en mis cuentas y S/ 150 en efectivo').draft.balance).toMatchObject({ amountMinor: 415000, bankMinor: 400000, cashMinor: 15000 });
+    expect(fromOpening(TODAY, 'Independiente', 'en efectivo tengo 150 y en el banco 4 mil').draft.balance).toMatchObject({ amountMinor: 415000, bankMinor: 400000, cashMinor: 15000 });
+    const onlyBank = fromOpening(TODAY, 'Independiente', 'tengo 4,000 en el banco').draft.balance;
+    expect(onlyBank).toMatchObject({ amountMinor: 400000, bankMinor: 400000, cashMinor: null });
+    expect(domainWrites({ ...emptyDraft(), balance: onlyBank }, 'u1').balance).toEqual({ user_id: 'u1', currency: 'PEN', amount_minor: 400000, bank_minor: 400000 });
+  });
+  it('questions about other facts are answered too, and never become data', () => {
+    const { draft, said } = fromOpening(TODAY, 'Dependiente', '5000', 'cada 1 de cada mes', '¿cuánto gano?');
+    expect(said[3]).toBe('Sueldo: S/ 5,000 · día 1.\n\n¿Tienes algún otro ingreso aparte de tu sueldo?');
+    expect(draft.pending).toBe('income:other');
+    expect(draft.incomes).toHaveLength(1);
+    expect(fromOpening(TODAY, 'Dependiente', '¿cuánto tengo?').said[1]).toBe('Todavía no me dijiste cuánto tienes hoy.\n\nPerfecto. ¿Cuánto recibes de sueldo al mes?');
   });
 });
 

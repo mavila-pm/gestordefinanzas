@@ -58,7 +58,7 @@ describe('local interpreter (no provider)', () => {
     expect(talk('cobro quincenal 2,500 el 15 y 30').draft.incomes[0]).toMatchObject({ amountMinor: 250000, frequency: 'semimonthly', day: 15, secondDay: 30 });
     const card = talk('mi tarjeta visa terminada en 4821 del bbva, debo 2.430 y el mínimo es 284.30, vence el 19').draft.debts[0];
     expect(card).toMatchObject({ kind: 'card', institution: 'BBVA', last4: '4821', balanceMinor: 243000, minimumMinor: 28430, dueDay: 19 });
-    expect(talk('tengo 3,200 en la cuenta').draft.balance).toEqual({ currency: 'PEN', amountMinor: 320000, status: 'confirmed' });
+    expect(talk('tengo 3,200 en la cuenta').draft.balance).toEqual({ currency: 'PEN', amountMinor: 320000, status: 'confirmed', bankMinor: 320000, cashMinor: null });
     expect(talk('me pagan US$ 2,000 el 30').draft.incomes[0]).toMatchObject({ currency: 'USD', amountMinor: 200000 });
     expect(talk('tengo 2 tarjetas').draft.balance).toBeNull();
   });

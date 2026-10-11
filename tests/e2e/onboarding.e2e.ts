@@ -261,6 +261,28 @@ await runSuite('onboarding', async ({ page, check }) => {
   const incs = ((await api.from('onboarding_states').select('facts').single()).data!.facts as { incomes: Array<{ name: string; amountMinor: number | null; day: number | null; frequency: string | null }> }).incomes;
   check('saved: the salary and ONE extra income (S/ 300, day 5, monthly), no duplicate',
     incs.length === 2 && incs[1]!.name === 'Diseños de arte digital' && incs[1]!.amountMinor === 30000 && incs[1]!.day === 5 && incs[1]!.frequency === 'monthly', JSON.stringify(incs));
+
+  // Money in accounts and in cash: kept apart, answered, corrected — and the pending question is never skipped.
+  await tap(page, 'No');
+  check('next: money today', (await lastVelsuno(page)).includes('¿Cuánto dinero tienes hoy entre tus cuentas y efectivo?'), await lastVelsuno(page));
+  await send(page, 'Tengo S/ 4,000 en mis cuentas y S/ 150 en efectivo');
+  v = await lastVelsuno(page);
+  check('both parts understood (never only S/ 150), then fixed payments', v.includes('en tus cuentas tienes S/ 4,000 y en efectivo S/ 150') && v.includes('S/ 4,150') && v.includes('¿Qué pagos fijos tienes cada mes?'), v);
+  await send(page, '¿Cuánto tengo digital y cuánto en efectivo?');
+  v = await lastVelsuno(page);
+  check('the question is answered from the saved facts and the fixed-payments question comes back',
+    v.startsWith('En tus cuentas tienes S/ 4,000 y en efectivo S/ 150.') && v.includes('En total tienes S/ 4,150.') && v.includes('¿Qué pagos fijos tienes cada mes?') && !v.includes('No te entendí'), v);
+  await send(page, 'en realidad en efectivo tengo S/ 200');
+  v = await lastVelsuno(page);
+  check('a correction updates that part (bank stays) and does not skip fixed payments', v.includes('en efectivo S/ 200') && v.includes('S/ 4,200') && v.includes('¿Qué pagos fijos tienes cada mes?'), v);
+  await page.reload();
+  await page.getByTestId('velsuno-msg').last().waitFor();
+  const bal = ((await api.from('onboarding_states').select('facts').single()).data!.facts as { balance: Record<string, unknown> }).balance;
+  check('after reloading: the breakdown is saved (total S/ 4,200 = cuentas 4,000 + efectivo 200) and the conversation is there',
+    bal.amountMinor === 420000 && bal.bankMinor === 400000 && bal.cashMinor === 20000 && (await lastVelsuno(page)).includes('S/ 4,200'), JSON.stringify(bal));
+  await send(page, '¿Cuánto tengo digital y cuánto en efectivo?');
+  v = await lastVelsuno(page);
+  check('after reloading, Vels still answers from memory', v.startsWith('En tus cuentas tienes S/ 4,000 y en efectivo S/ 200.') && v.includes('En total tienes S/ 4,200.'), v);
   check('phone: no empty boxes, nothing wider than the screen', (await emptyBoxes()) === 0
     && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/onb-phone.png` });

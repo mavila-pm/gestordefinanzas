@@ -172,7 +172,8 @@ export interface PlanInput {
   currency: Currency;
   today: string;
   /** What the plan distributes: the declared balance, or an income that just arrived. */
-  base: { kind: 'balance'; amountMinor: number; asOf: string; stale: boolean } | { kind: 'income'; amountMinor: number; date: string } | null;
+  /** bankMinor / cashMinor: the breakdown the person gave (display only; the engine uses amountMinor). */
+  base: { kind: 'balance'; amountMinor: number; asOf: string; stale: boolean; bankMinor?: number | null; cashMinor?: number | null } | { kind: 'income'; amountMinor: number; date: string } | null;
   obligations: readonly Obligation[];
   /** obligationId -> periods already paid (linked to a real transaction). */
   settledObligations: ReadonlyMap<string, ReadonlySet<string>>;

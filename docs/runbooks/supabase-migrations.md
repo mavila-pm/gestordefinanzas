@@ -60,6 +60,7 @@
 | 20261010000041_cap_spend_ttl.sql | cap_spend TTL bound 1..600 s (was 3600; the redeem token lives 10 min) | 2026-10-10 |
 | 20261010000042_subscriptions.sql | fixed_expenses + provider (catalogue slug), card_id / account_id (composite FKs, at most one, set null on delete); subscriptions = obligations kind subscription | 2026-10-10 |
 | 20261010000043_tour.sql | tour (user_preferences.tour_completed_at: first-use tour finished/skipped; null = pending or restarted; own-row RLS/grants unchanged) | 2026-10-11 |
+| 20261011000044_balance_breakdown.sql | balance_snapshots + bank_minor / cash_minor (breakdown as said; parts ≥ 0; both present ⇒ sum = amount_minor); same RLS/grants | 2026-10-11 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`

@@ -139,7 +139,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
               <section className="stack-sm" data-testid={`${testId}-setup`}>
                 <p>Para calcularlo necesitamos dos datos:</p>
                 <ol className="plain stack-sm">
-                  <li className="source row"><span className="setting-text"><strong>Cuánto tienes hoy</strong><small className="muted">{d.balances[c] ? 'Listo' : 'El saldo de tus cuentas'}</small></span>
+                  <li className="source row"><span className="setting-text"><strong>Cuánto tienes hoy</strong><small className="muted" data-testid={`balance-breakdown-${c}`}>{d.balances[c] ? (d.balances[c]!.bankMinor != null && d.balances[c]!.cashMinor != null ? `Cuentas ${formatMoney({ amountMinor: d.balances[c]!.bankMinor!, currency: c })} · efectivo ${formatMoney({ amountMinor: d.balances[c]!.cashMinor!, currency: c })}` : 'Listo') : 'El saldo de tus cuentas'}</small></span>
                     <BalanceSheet c={c} current={d.balances[c]?.amountMinor ?? null} /></li>
                   <li className="source row"><span className="setting-text"><strong>Tu próximo ingreso</strong><small className="muted">{p.nextIncome ? 'Listo' : 'Cuándo te pagan'}</small></span>
                     <IncomeSheet c={c} /></li>

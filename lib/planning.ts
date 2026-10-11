@@ -21,7 +21,7 @@ export interface PlanningData {
   incomes: ExpectedIncome[];
   settledObligations: Map<string, Set<string>>;
   settledIncomes: Map<string, Set<string>>;
-  balances: Partial<Record<Currency, { amountMinor: number; asOf: string; stale: boolean }>>;
+  balances: Partial<Record<Currency, { amountMinor: number; asOf: string; stale: boolean; bankMinor: number | null; cashMinor: number | null }>>;
   settings: Partial<Record<Currency, { essentialsMonthlyMinor: number | null; essentialsEstimated: boolean; cushionMinor: number; allowZeroForDebt: boolean; savingsGoalMinor: number | null }>>;
   debts: Array<{ id: string; name: string; currency: Currency; balanceMinor: number; annualRateBp: number | null }>;
   recentIncome: { transactionId: string; amountMinor: number; currency: Currency; date: string; merchant: string | null } | null;
@@ -44,7 +44,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     supabase.from('debts').select('id,name,currency,balance_minor,annual_rate_bp,installment_minor,installments_total,installments_paid,due_day,active,created_at,last_payment_on'),
     supabase.from('expected_incomes').select('id,name,currency,amount_minor,amount_status,frequency,day_of_month,day_max,second_day,anchor_date,paused_until,ended_on').eq('active', true),
     supabase.from('plan_settlements').select('fixed_expense_id,expected_income_id,period,transaction_id,variance_ack,tx:transactions(amount_minor)').order('period', { ascending: false }).limit(500),
-    supabase.from('balance_snapshots').select('currency,amount_minor,as_of').order('as_of', { ascending: false }).limit(20),
+    supabase.from('balance_snapshots').select('currency,amount_minor,bank_minor,cash_minor,as_of').order('as_of', { ascending: false }).limit(20),
     supabase.from('planning_settings').select('currency,essentials_monthly_minor,essentials_status,cushion_minor,allow_zero_for_debt,savings_goal_minor'),
     supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed').gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(1000),
     loadDecisions(supabase),
@@ -91,7 +91,8 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     // Stale: old, or money moved in the account after it (credit card purchases don't move the account).
     const moved = transactions.some((t) => t.currency === cur && Date.parse(t.occurredAt) > Date.parse(asOf) && t.type !== 'credit_card_purchase'
       && ['income', 'expense', 'transfer_to_cash', 'expense_reduction'].includes(financialEffect(t.type)));
-    balances[cur] = { amountMinor: Number(b.amount_minor), asOf, stale: moved || Date.parse(asOf) < now.getTime() - STALE_DAYS * 86_400_000 };
+    balances[cur] = { amountMinor: Number(b.amount_minor), asOf, stale: moved || Date.parse(asOf) < now.getTime() - STALE_DAYS * 86_400_000,
+      bankMinor: b.bank_minor == null ? null : Number(b.bank_minor), cashMinor: b.cash_minor == null ? null : Number(b.cash_minor) };
   }
   const settings: PlanningData['settings'] = {};
   for (const s of set.data ?? []) settings[s.currency as Currency] = { essentialsMonthlyMinor: s.essentials_monthly_minor === null ? null : Number(s.essentials_monthly_minor), essentialsEstimated: s.essentials_status === 'estimated', cushionMinor: Number(s.cushion_minor), allowZeroForDebt: s.allow_zero_for_debt === true, savingsGoalMinor: s.savings_goal_minor == null ? null : Number(s.savings_goal_minor) };
@@ -135,7 +136,7 @@ export function planInputFor(d: PlanningData, currency: Currency, base: 'balance
   let planBase: PlanInput['base'] = null;
   if (base === 'balance') {
     const b = d.balances[currency];
-    planBase = b ? { kind: 'balance', amountMinor: b.amountMinor, asOf: b.asOf, stale: b.stale } : null;
+    planBase = b ? { kind: 'balance', amountMinor: b.amountMinor, asOf: b.asOf, stale: b.stale, bankMinor: b.bankMinor, cashMinor: b.cashMinor } : null;
   } else {
     const t = d.transactionsById.get(base.transactionId);
     planBase = t ? { kind: 'income', amountMinor: t.amountMinor, date: t.occurredOn } : null;

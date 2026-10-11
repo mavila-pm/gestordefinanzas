@@ -19,6 +19,13 @@ const newId = (p: string) => `${p}${Date.now().toString(36)}${(seq++).toString(3
 const status = (known: boolean, approx?: boolean): FactStatus => (!known ? 'unknown' : approx ? 'estimated' : 'confirmed');
 const same = (a: string, b: string) => fold(a) === fold(b);
 
+/** "S/ 4,150 (cuentas S/ 4,000 · efectivo S/ 150)"; a part not said is "por confirmar". */
+export function balanceText(b: NonNullable<Draft['balance']>): string {
+  if (b.bankMinor == null && b.cashMinor == null) return money(b.amountMinor, b.currency);
+  const part = (v: number | null | undefined) => (v == null ? 'por confirmar' : money(v, b.currency));
+  return `${money(b.amountMinor, b.currency)} (cuentas ${part(b.bankMinor)} · efectivo ${part(b.cashMinor)})`;
+}
+
 export interface Changed { label: string; value: string; /** What it is about (for the short reply). */ ref?: string }
 export interface MergeResult { draft: Draft; changed: Changed[] }
 
@@ -118,12 +125,22 @@ export function mergePatches(draft0: Draft, patches0: readonly Patch[], bare: Ba
         touched.add(`variable:${v.id}`);
         break;
       }
-      case 'balance':
-        draft.balance = p.unknown || p.amountMinor === undefined
-          ? { currency: p.currency ?? 'PEN', amountMinor: null, status: 'unknown' }
-          : { currency: p.currency ?? 'PEN', amountMinor: p.amountMinor, status: 'confirmed' };
+      case 'balance': {
+        if (p.bankMinor !== undefined || p.cashMinor !== undefined) {
+          // A breakdown: each part said replaces that part (a correction of one keeps the other); the total is
+          // their sum when both are known, else the part known (shown with what is missing). Never only the last amount.
+          const cur = draft.balance && draft.balance.currency === (p.currency ?? draft.balance.currency) ? draft.balance : null;
+          const bank = p.bankMinor !== undefined ? p.bankMinor : cur?.bankMinor ?? null;
+          const cash = p.cashMinor !== undefined ? p.cashMinor : cur?.cashMinor ?? null;
+          draft.balance = { currency: p.currency ?? cur?.currency ?? 'PEN', amountMinor: (bank ?? 0) + (cash ?? 0), status: 'confirmed', bankMinor: bank, cashMinor: cash };
+        } else {
+          draft.balance = p.unknown || p.amountMinor === undefined
+            ? { currency: p.currency ?? 'PEN', amountMinor: null, status: 'unknown' }
+            : { currency: p.currency ?? 'PEN', amountMinor: p.amountMinor, status: 'confirmed' };
+        }
         touched.add('balance');
         break;
+      }
       case 'remove': {
         const n = fold(p.name);
         const hit = (name: string) => fold(name).includes(n) || n.includes(fold(name));
@@ -141,9 +158,32 @@ export function mergePatches(draft0: Draft, patches0: readonly Patch[], bare: Ba
   }
 
   if (bare && draft.pending) applyBare(draft, draft.pending, bare, touched);
+  // A correction or a fact about something else ("en realidad tengo 4,200 en cuentas" while fixed payments were
+  // asked) does NOT answer the pending question: it is asked again after the reply, never skipped.
+  if (draft.pending && !bare && (touched.size || patches.length) && !answersPending(draft.pending, touched, patches)) {
+    draft.asked = draft.asked.filter((k) => k !== draft.pending);
+  }
   // Answered or superseded: the pending question is settled once the person replied anything we could use.
   if (touched.size || bare || patches.length) draft.pending = null;
   return { draft, changed: describe(draft, touched) };
+}
+
+/** Whether what this turn changed is about the pending question's subject (else the question stays open). */
+function answersPending(pending: string, touched: Set<string>, patches: readonly Patch[]): boolean {
+  const keys = [...touched];
+  const has = (prefix: string) => keys.some((k) => k.startsWith(prefix));
+  const done = (g: string) => patches.some((p) => p.t === 'done' && p.group === g);
+  const [kind, id] = pending.split(':');
+  if (pending === 'balance') return has('balance');
+  if (pending === 'work') return true; // the work question has its own handling (never re-asked here)
+  if (kind === 'income') return has('income:') || done('incomes');
+  if (pending.startsWith('group:obligations')) return has('obligation:') || has('variable:') || has('removed:') || done('obligations');
+  if (pending === 'group:subscriptions') return has('obligation:') || done('subscriptions');
+  if (pending === 'group:loans') return has('debt:') || done('loans') || done('debts');
+  if (pending === 'group:cards') return has('debt:') || has('account:') || done('cards');
+  if (kind === 'obligation' || kind === 'debt' || kind === 'variable') return has(`${kind}:${id}`) || has('removed:') || (kind === 'variable' && has('variable:'));
+  if (pending === 'savings:goal') return has('savings');
+  return true;
 }
 
 /** A value without subject answers the pending question ("950", "el 10", "no sé"). */
@@ -259,7 +299,7 @@ function describe(d: Draft, touched: Set<string>): Changed[] {
   if (d.savings && touched.has('savings')) out.push({ ref: 'savings', label: 'Meta de ahorro', value: d.savings.amountMinor === null ? 'Por definir' : `${money(d.savings.amountMinor, d.savings.currency)} al mes` });
   for (const a of d.accounts) if (touched.has(`account:${a.institution}:${a.kind}`)) out.push({ ref: 'account', label: accountLabel(a), value: a.kind === 'card' ? 'Tarjeta' : 'Cuenta' });
   for (const v of d.variable) if (touched.has(`variable:${v.id}`)) out.push({ ref: `variable:${v.id}`, label: v.name, value: v.amountMinor === null ? 'Monto por confirmar' : `${money(v.amountMinor, v.currency)} al mes${v.amountStatus === 'estimated' ? ' aprox.' : ''}` });
-  if (touched.has('balance') && d.balance) out.push({ ref: 'balance', label: 'Saldo de hoy', value: money(d.balance.amountMinor, d.balance.currency) });
+  if (touched.has('balance') && d.balance) out.push({ ref: 'balance', label: 'Saldo de hoy', value: balanceText(d.balance) });
   for (const k of touched) if (k.startsWith('removed:')) out.push({ ref: 'removed', label: 'Quitado', value: k.slice(8) });
   return out;
 }
@@ -462,6 +502,10 @@ function adaptToPending(d: Draft, patches0: readonly Patch[], said?: string): Pa
     if (inc && GENERIC_INCOME.has(inc.name) && named && !patches0.some((p) => p.t === 'income')) patches0 = [...patches0, { t: 'income', id: targetId, name: named.name, source: named.source }];
   }
   patches0 = patches0.map((p) => unend(p));
+  // "No tengo más" closes the group being asked (other incomes, subscriptions, loans, cards), not fixed payments.
+  const closes: Record<string, 'incomes' | 'subscriptions' | 'loans' | 'cards'> = { 'group:subscriptions': 'subscriptions', 'group:loans': 'loans', 'group:cards': 'cards' };
+  const asked = pending.startsWith('income:other') ? 'incomes' : closes[pending];
+  if (asked) patches0 = patches0.map((p): Patch => (p.t === 'done' && p.group === 'obligations' ? { t: 'done', group: asked } : p));
   // A known service ("netflix 44.90 el 15") or any payment named in answer to the subscriptions question is a
   // subscription (same obligation engine, its own kind); a catalogue name is written as the service is called.
   const patches = patches0.map((p): Patch => {
@@ -522,6 +566,46 @@ export function setWork(d: Draft, w: 'employee' | 'independent' | 'both'): void 
   const blank = (name: string) => ({ id: newId('i'), name, currency: 'PEN' as const, amountMinor: null, amountStatus: 'unknown' as const, frequency: null, day: null, dayMax: null, secondDay: null, dayStatus: 'unknown' as const });
   if (!d.incomes.some((i) => i.name === 'Sueldo')) d.incomes.unshift(blank('Sueldo'));
   if (!d.incomes.some((i) => i.name === BUSINESS)) d.incomes.push(blank(BUSINESS));
+}
+
+/**
+ * A question about what the person already told ("¿cuánto tengo digital y cuánto en efectivo?", "¿cuánto gano?",
+ * "¿qué llevas anotado?"): answered from the draft (the facts, never a model), then the pending question again
+ * with its options. null = not such a question.
+ */
+export function answerFromDraft(d: Draft, text: string): Question | null {
+  const t = fold(text).replace(/[¿?¡!.,]/g, ' ').replace(/\s+/g, ' ').trim();
+  const question = /[¿?]/.test(text) || /^(cuanto|cuantos|cuantas|que|cual|cuales|dime|recuerdame)\b/.test(t);
+  if (!question || /\d/.test(t)) return null;
+  let answer: string | null = null;
+  if (/\bcuanto\b.*\b(tengo|hay|me queda|me quedan|dinero|plata|efectivo|digital|cuentas?|banco)\b/.test(t) && !/\b(gano|cobro|recibo|debo|pago|gasto)\b/.test(t)) {
+    const b = d.balance;
+    const m = (v: number) => money(v, b?.currency ?? 'PEN');
+    if (!b || b.amountMinor === null) answer = 'Todavía no me dijiste cuánto tienes hoy.';
+    else if (b.bankMinor != null && b.cashMinor != null) answer = `En tus cuentas tienes ${m(b.bankMinor)} y en efectivo ${m(b.cashMinor)}.\nEn total tienes ${m(b.amountMinor)}.`;
+    else if (b.bankMinor != null) answer = `En tus cuentas tienes ${m(b.bankMinor)}.\nEl efectivo no me lo dijiste todavía.`;
+    else if (b.cashMinor != null) answer = `En efectivo tienes ${m(b.cashMinor)}.\nLo de tus cuentas no me lo dijiste todavía.`;
+    else answer = /\b(efectivo|digital|cuentas?|banco)\b/.test(t)
+      ? `Me dijiste que hoy tienes ${m(b.amountMinor)} en total.\nNo me dijiste cuánto es en cuentas y cuánto en efectivo.`
+      : `Hoy tienes ${m(b.amountMinor)}.`;
+  } else if (/\b(cuanto|que)\b.*\b(gano|cobro|recibo|me pagan|sueldo|ingresos?)\b/.test(t)) {
+    const rows = describe(d, new Set(d.incomes.map((i) => `income:${i.id}`)));
+    answer = rows.length ? rows.map((r) => `${r.label}: ${r.value}.`).join('\n') : 'Todavía no me dijiste tus ingresos.';
+  } else if (/\b(que|cuales)\b.*\b(pagos|gastos)\b.*\b(tengo|anotaste|registraste|dije)\b/.test(t)) {
+    const rows = describe(d, new Set(d.obligations.map((o) => `obligation:${o.id}`)));
+    answer = rows.length ? rows.map((r) => `${r.label}: ${r.value}.`).join('\n') : 'Todavía no me dijiste pagos fijos.';
+  } else if (/\b(que|cuanto)\b.*\b(debo|deudas?)\b/.test(t)) {
+    const rows = describe(d, new Set(d.debts.map((x) => `debt:${x.id}`)));
+    answer = rows.length ? rows.map((r) => `${r.label}: ${r.value}.`).join('\n') : 'Todavía no me dijiste deudas.';
+  } else if (/\b(que (llevas|tienes|anotaste|registraste|te dije)|que me falta)\b/.test(t)) {
+    const s = summarize(d);
+    answer = [...s.groups.map((g) => `${g.title}: ${g.items.map((i) => `${i.label.toLowerCase()} ${i.value}`).join('; ')}.`), s.pending.length ? `Falta: ${s.pending.slice(0, 4).join(', ').toLowerCase()}.` : ''].filter(Boolean).join('\n') || 'Todavía no me contaste nada.';
+  }
+  if (!answer) return null;
+  const pending = d.pending;
+  const q = pending ? nextQuestion({ ...d, asked: d.asked.filter((k) => k !== pending) }) : nextQuestion(d);
+  const again = q && (!pending || q.key === pending) ? q : null;
+  return { key: again?.key ?? pending ?? '', text: again ? `${answer}\n\n${again.text}` : answer, replies: again?.replies ?? [] };
 }
 
 const HELP: Array<[RegExp, string]> = [
@@ -852,13 +936,22 @@ export function shortReply(d: Draft, changed: readonly Changed[], answered: stri
   }
   if (others.length === 1) {
     const c = others[0]!;
-    if (c.ref === 'balance' && d.balance) out.push(d.balance.amountMinor === null ? 'Lo dejamos pendiente.' : `Listo, ${money(d.balance.amountMinor, d.balance.currency)} disponibles hoy.`);
+    if (c.ref === 'balance' && d.balance) out.push(d.balance.amountMinor === null ? 'Lo dejamos pendiente.' : balanceSentence(d.balance));
     else if (c.ref?.startsWith('income:')) out.push(incomeAck(d, c));
     else if (c.ref?.startsWith('debt:')) out.push(debtRecap(d, c, answered));
     else if (c.ref?.startsWith('variable:')) out.push(`Listo, ${c.value.toLowerCase()} en ${c.label.toLowerCase()}.`);
     else out.push('Anotado.');
   } else if (others.length > 1) out.push('Ya lo tengo.');
   return out.join(' ').replace(/, \./g, '.').replace(/\s+/g, ' ').trim();
+}
+
+/** "Listo: en tus cuentas tienes S/ 4,000 y en efectivo S/ 150. En total, S/ 4,150." (or the plain total). */
+export function balanceSentence(b: NonNullable<Draft['balance']>): string {
+  const m = (v: number) => money(v, b.currency);
+  if (b.bankMinor != null && b.cashMinor != null) return `Listo: en tus cuentas tienes ${m(b.bankMinor)} y en efectivo ${m(b.cashMinor)}. En total, ${m(b.amountMinor!)}.`;
+  if (b.bankMinor != null) return `Listo: en tus cuentas tienes ${m(b.bankMinor)}. El efectivo queda por confirmar.`;
+  if (b.cashMinor != null) return `Listo: en efectivo tienes ${m(b.cashMinor)}. Lo de tus cuentas queda por confirmar.`;
+  return `Listo, ${m(b.amountMinor!)} disponibles hoy.`;
 }
 
 /** "Anotado: sueldo de S/ 3,500.", "Entiendo, ingresos de clientes.", "Anotado: sueldo, S/ 3,500, días 15 y 30." */
