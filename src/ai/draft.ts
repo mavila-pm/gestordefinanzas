@@ -396,7 +396,7 @@ export function nextQuestion(d: Draft): Question | null {
     ...(main ? [
       () => (main.amountMinor === null && main.amountStatus === 'unknown' ? ask(`income:${main.id}:amount`, work === 'both' ? 'Perfecto, anotamos tus dos ingresos: sueldo y negocio. Empecemos por el sueldo: ¿cuánto recibes al mes?'
         : salaried && main.name === 'Sueldo' ? '¿Cuánto recibes de sueldo al mes?' : `¿Cuánto recibes de ${main.name.toLowerCase()}?`, ['Omitir']) : null),
-      () => (main.day === null ? ask(`income:${main.id}:day`, salaried ? 'Entiendo. ¿En qué fechas te pagan?' : `¿Qué día te pagan ${named(main)}?`, ['Quincenal', 'No sé']) : null),
+      () => (main.day === null ? ask(`income:${main.id}:day`, salaried ? 'Entiendo. ¿En qué fechas te pagan?' : `¿Qué día te pagan ${named(main)}?`) : null),
       ...dateQs(main),
     ] : []),
     // Salary and business: the business income right after the salary (its amount, frequency and date).
