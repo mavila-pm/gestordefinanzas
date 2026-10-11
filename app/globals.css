@@ -887,3 +887,27 @@ html[data-theme="dark"] .card-visual[data-tone="account"], html[data-theme="dark
 .cap-retry { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-8); margin: 0; color: var(--semantic-error); font-size: 14px; line-height: 20px; }
 .cap-retry span { min-width: 0; overflow-wrap: anywhere; }
 .cap-retry .link { min-height: 44px; color: var(--text-primary); }
+/* Tour (first use): dim + highlighted real element + bubble with arrow. Never blocks: only the bubble takes pointer input. */
+.tour { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.tour-dim { position: fixed; inset: 0; background: rgb(0 0 0 / .5); animation: fade-in var(--dur-2) var(--ease-out) both; }
+.tour-spot { position: fixed; border-radius: 14px; box-shadow: 0 0 0 2px var(--brand-accent), 0 0 0 9999px rgb(0 0 0 / .5);
+  animation: fade-in var(--dur-2) var(--ease-out) both; }
+.tour-bubble { position: fixed; pointer-events: auto; width: min(320px, calc(100vw - 24px)); display: grid; gap: var(--space-8);
+  padding: var(--space-16); border-radius: var(--radius-card); background: var(--surface-default); color: var(--text-primary);
+  box-shadow: 0 12px 32px rgb(0 0 0 / .24), inset 0 0 0 1px var(--border-subtle); animation: rise-in var(--dur-3) var(--ease-out) both; }
+.tour-bubble:focus { outline: none; } .tour-bubble:focus-visible { outline: 3px solid var(--brand-accent); outline-offset: 2px; }
+.tour-bubble p { margin: 0; }
+.tour-title { margin: 0; font-size: 18px; line-height: 24px; }
+.tour-count { font-weight: 600; }
+.tour-examples { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.tour-examples li { padding: 4px 10px; border-radius: var(--radius-control); background: var(--bg-secondary); font-size: 14px; line-height: 20px; }
+.tour-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-top: var(--space-4); }
+.tour-actions button:not(.link) { min-height: 44px; padding: 0 var(--space-16); }
+.tour-bubble::before { content: ''; position: absolute; width: 14px; height: 14px; background: inherit; transform: rotate(45deg);
+  box-shadow: inset 1px 1px 0 var(--border-subtle); }
+.tour-bubble[data-side="center"]::before { display: none; }
+.tour-bubble[data-side="right"]::before { left: -7px; top: calc(var(--arrow, 24px) - 7px); transform: rotate(-45deg); }
+.tour-bubble[data-side="left"]::before { right: -7px; top: calc(var(--arrow, 24px) - 7px); transform: rotate(135deg); }
+.tour-bubble[data-side="below"]::before { top: -7px; left: calc(var(--arrow, 24px) - 7px); }
+.tour-bubble[data-side="above"]::before { bottom: -7px; left: calc(var(--arrow, 24px) - 7px); transform: rotate(225deg); }
+@media (prefers-reduced-motion: reduce) { .tour-bubble { animation-name: fade-in; } }

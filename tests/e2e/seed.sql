@@ -167,5 +167,7 @@ begin
     -- Every probe user has finished onboarding except s12a, the first-time user of the onboarding suite (ADR-0006).
     if r.tag not in ('s12a', 's16a') then insert into public.onboarding_states (user_id, status, completed_at) values (u, 'completed', now()); end if;
     if r.tag = 's12a' then insert into public.demo_access (user_id) values (u); end if;
+    -- The first-use tour (migration 043) is already seen, except by s12a, who meets it after the conversation.
+    if r.tag not in ('s12a', 's16a') then insert into public.user_preferences (user_id, tour_completed_at) values (u, now()); end if;
   end loop;
 end $$;

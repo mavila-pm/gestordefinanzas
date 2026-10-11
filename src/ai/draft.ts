@@ -1,4 +1,5 @@
 import type { Currency } from '../domain/money';
+import { matchProvider } from '../domain/subscriptions';
 import { formatMoney } from '../domain/money';
 import { incomeOccurrencesBetween, occurrencesBetween, type ExpectedIncome, type Obligation } from '../engine/planning';
 import { addDays, shortDate } from '../domain/dates';
@@ -170,6 +171,13 @@ function applyBare(d: Draft, key: string, b: Bare, touched: Set<string>) {
     if (markUnknown) d.done.push(id as 'obligations');
     return;
   }
+  if (kind === 'savings' && id === 'goal') {
+    if (b.amountMinor !== undefined) d.savings = { currency: b.currency ?? 'PEN', amountMinor: b.amountMinor, status: b.approx ? 'estimated' : 'confirmed' };
+    else if (markUnknown) d.savings = { currency: 'PEN', amountMinor: null, status: 'unknown' };
+    else return;
+    touched.add('savings');
+    return;
+  }
   if (kind === 'variable' && id === 'basics') {
     mergeInto(d, { t: 'variable', name: 'Gastos básicos', ...(b.amountMinor !== undefined ? { amountMinor: b.amountMinor, approx: b.approx } : { unknownAmount: true }) }, touched);
     return;
@@ -213,6 +221,7 @@ function describe(d: Draft, touched: Set<string>): Changed[] {
   for (const i of d.incomes) if (touched.has(`income:${i.id}`)) out.push({ ref: `income:${i.id}`, label: i.name, value: `${i.amountMinor === null ? 'Monto por confirmar' : money(i.amountMinor, i.currency) + (i.amountStatus === 'estimated' ? ' aprox.' : '')} · ${dayText(i.day, i.dayMax, i.secondDay, i.dayStatus)}` });
   for (const o of d.obligations) if (touched.has(`obligation:${o.id}`)) out.push({ ref: `obligation:${o.id}`, label: o.name, value: `${o.amountMinor === null ? 'Monto por confirmar' : money(o.amountMinor, o.currency) + (o.amountStatus === 'estimated' ? ' aprox.' : '')} · ${dayText(o.day, o.dayMax, null, o.dayStatus)}` });
   for (const x of d.debts) if (touched.has(`debt:${x.id}`)) out.push({ ref: `debt:${x.id}`, label: debtLabel(x), value: debtValue(x) });
+  if (d.savings && touched.has('savings')) out.push({ ref: 'savings', label: 'Meta de ahorro', value: d.savings.amountMinor === null ? 'Por definir' : `${money(d.savings.amountMinor, d.savings.currency)} al mes` });
   for (const a of d.accounts) if (touched.has(`account:${a.institution}:${a.kind}`)) out.push({ ref: 'account', label: accountLabel(a), value: a.kind === 'card' ? 'Tarjeta' : 'Cuenta' });
   for (const v of d.variable) if (touched.has(`variable:${v.id}`)) out.push({ ref: `variable:${v.id}`, label: v.name, value: v.amountMinor === null ? 'Monto por confirmar' : `${money(v.amountMinor, v.currency)} al mes${v.amountStatus === 'estimated' ? ' aprox.' : ''}` });
   if (touched.has('balance') && d.balance) out.push({ ref: 'balance', label: 'Saldo de hoy', value: money(d.balance.amountMinor, d.balance.currency) });
@@ -272,6 +281,8 @@ export function nextQuestion(d: Draft): Question | null {
     () => (d.done.includes('obligations') ? null : d.obligations.length + d.variable.length
       ? ask('group:obligations:more', '¿Tienes algún otro pago fijo?', ['No tengo más'])
       : ask('group:obligations', `¿Qué pagos fijos tienes cada mes? ${['Alquiler', 'luz', 'internet'].filter((x) => !declined.includes(fold(x))).join(', ')}…`, ['No tengo más'])),
+    // Subscriptions are payments too (same engine); asked once, apart, because people forget them.
+    () => (d.done.includes('subscriptions') ? null : ask('group:subscriptions', '¿Pagas alguna suscripción, como Netflix o Spotify? Dime cuál, cuánto y qué día.', ['No tengo'])),
     () => (!cards.length && !d.accounts.some((a) => a.kind === 'card') && !d.done.includes('cards') ? ask('group:cards', '¿Tienes tarjeta de crédito?', ['No tengo']) : null),
     ...cards.flatMap((x) => [
       () => (x.balanceMinor === null && x.balanceStatus === 'unknown' ? ask(`debt:${x.id}:balance`, `¿Cuánto debes ahora en ${cardRef(x)}?`, ['No sé', 'Tomar foto']) : null),
@@ -289,6 +300,7 @@ export function nextQuestion(d: Draft): Question | null {
     ]),
     ...d.debts.filter((x) => x.kind === 'personal').map((x) => () => (x.balanceMinor === null ? ask(`debt:${x.id}:balance`, `¿Cuánto le debes a ${x.lender}?`) : null)),
     () => (d.variable.length === 0 ? ask('variable:basics', '¿Cuánto gastas al mes en lo básico, como comida y transporte?', ['No sé']) : null),
+    () => (d.savings == null ? ask('savings:goal', '¿Cuánto te gustaría ahorrar cada mes?', ['Después']) : null),
   ];
   for (const c of candidates) { const q = c(); if (q) return q; }
   return null;
@@ -298,8 +310,16 @@ export function nextQuestion(d: Draft): Question | null {
  * Answers to group questions name a bank: "sí, BCP" to "¿Tienes tarjeta de crédito?" is a card at BCP; "BCP" to
  * "¿Con qué banco es el préstamo?" is that loan's entity. Turns the bank mention into the right fact.
  */
-function adaptToPending(d: Draft, patches: readonly Patch[]): Patch[] {
+function adaptToPending(d: Draft, patches0: readonly Patch[]): Patch[] {
   const pending = d.pending ?? '';
+  // A known service ("netflix 44.90 el 15") or any payment named in answer to the subscriptions question is a
+  // subscription (same obligation engine, its own kind); a catalogue name is written as the service is called.
+  const patches = patches0.map((p): Patch => {
+    if (p.t !== 'obligation') return p;
+    const known = matchProvider(p.name);
+    if (known) return { ...p, kind: 'subscription', name: known.name };
+    return pending === 'group:subscriptions' && (p.kind === 'other' || p.kind === 'services') ? { ...p, kind: 'subscription' } : p;
+  });
   const banks = patches.filter((p): p is Extract<Patch, { t: 'account' }> => p.t === 'account');
   if (!banks.length) return [...patches];
   const rest = patches.filter((p) => p.t !== 'account');
@@ -403,7 +423,7 @@ export interface Summary { groups: Array<{ title: string; items: Changed[] }>; p
 
 export function summarize(d: Draft): Summary {
   const all = new Set<string>([...d.incomes.map((i) => `income:${i.id}`), ...d.obligations.map((o) => `obligation:${o.id}`), ...d.debts.map((x) => `debt:${x.id}`),
-    ...d.accounts.map((a) => `account:${a.institution}:${a.kind}`), ...d.variable.map((v) => `variable:${v.id}`), ...(d.balance ? ['balance'] : [])]);
+    ...d.accounts.map((a) => `account:${a.institution}:${a.kind}`), ...d.variable.map((v) => `variable:${v.id}`), ...(d.balance ? ['balance'] : []), ...(d.savings ? ['savings'] : [])]);
   const rows = describe(d, all);
   const pick = (labels: string[]) => rows.filter((r) => labels.includes(r.label));
   const groups = [
@@ -411,6 +431,7 @@ export function summarize(d: Draft): Summary {
     { title: 'Cuentas', items: pick(d.accounts.map(accountLabel)) },
     { title: 'Pagos', items: [...pick(d.obligations.map((o) => o.name)), ...pick(d.variable.map((v) => v.name))] },
     { title: 'Deudas', items: pick(d.debts.map(debtLabel)) },
+    { title: 'Ahorro', items: pick(d.savings ? ['Meta de ahorro'] : []) },
   ].filter((g) => g.items.length);
   const pending: string[] = [];
   for (const i of d.incomes) { if (i.amountMinor === null) pending.push(`Monto de ${i.name.toLowerCase()}`); if (i.day === null) pending.push(`Día de ${i.name.toLowerCase()}`); }
@@ -440,6 +461,7 @@ export function yesNoReply(d: Draft, text: string): { patches: Patch[]; reask: s
   if (d.pending === 'group:obligations' || d.pending === 'group:obligations:more') {
     return no ? { patches: [{ t: 'done', group: 'obligations' }], reask: null } : { patches: [], reask: '¿Cuál es? Dime el nombre y cuánto pagas, por ejemplo "internet 90".' };
   }
+  if (d.pending === 'group:subscriptions') return no ? { patches: [{ t: 'done', group: 'subscriptions' }], reask: null } : { patches: [], reask: '¿Cuál? Dime el servicio, cuánto pagas y qué día, por ejemplo "Netflix 44.90 el 15".' };
   if (d.pending === 'group:cards') return no ? { patches: [{ t: 'done', group: 'cards' }], reask: null } : { patches: [], reask: '¿De qué banco es?' };
   if (d.pending === 'group:loans') return no ? { patches: [{ t: 'done', group: 'loans' }], reask: null } : { patches: [], reask: '¿Con qué banco o entidad?' };
   if (!d.pending) return { patches: [], reask: null };

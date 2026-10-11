@@ -1,4 +1,5 @@
 import { mergePatches } from './draft';
+import { matchProvider } from '../domain/subscriptions';
 import { fold } from './text';
 import { emptyDraft, type Draft, type Patch } from './types';
 
@@ -19,12 +20,14 @@ export interface DomainWrites {
   cards: Array<Record<string, unknown>>;
   balance: Record<string, unknown> | null;
   settings: Record<string, unknown> | null;
+  /** Monthly savings goal (planning_settings.savings_goal_minor), only when the person gave an amount. */
+  savingsGoal: Record<string, unknown> | null;
   /** What stays "Por confirmar" in the draft (not writable yet). */
   deferred: string[];
 }
 
 export function domainWrites(d: Draft, userId: string): DomainWrites {
-  const w: DomainWrites = { incomes: [], obligations: [], debts: [], accounts: [], cards: [], balance: null, settings: null, deferred: [] };
+  const w: DomainWrites = { incomes: [], obligations: [], debts: [], accounts: [], cards: [], balance: null, settings: null, savingsGoal: null, deferred: [] };
   for (const i of d.incomes) {
     if (i.day === null) { w.deferred.push(`${i.name}: falta el día`); continue; }
     const semi = i.frequency === 'semimonthly' && i.secondDay !== null;
@@ -37,6 +40,8 @@ export function domainWrites(d: Draft, userId: string): DomainWrites {
   for (const o of d.obligations) {
     w.obligations.push({
       user_id: userId, name: o.name.slice(0, 60), kind: o.kind, currency: o.currency, amount_minor: o.amountMinor, amount_status: o.amountMinor === null ? 'unknown' : o.amountStatus,
+      // A subscription keeps its catalogue service (logo in Mis suscripciones); unknown services stay custom.
+      ...(o.kind === 'subscription' ? { provider: matchProvider(o.name)?.slug ?? null } : {}),
       frequency: 'monthly', due_day: o.day, due_day_max: o.day !== null && o.dayMax && o.dayMax > o.day && o.dayMax - o.day <= 7 ? o.dayMax : null,
     });
   }
@@ -74,6 +79,7 @@ export function domainWrites(d: Draft, userId: string): DomainWrites {
   const known = d.variable.filter((v) => v.amountMinor !== null && v.currency === 'PEN');
   if (known.length) w.settings = { user_id: userId, currency: 'PEN', essentials_status: known.some((v) => v.amountStatus !== 'confirmed') ? 'estimated' : 'confirmed', essentials_monthly_minor: known.reduce((s, v) => s + v.amountMinor!, 0) };
   for (const v of d.variable) if (v.amountMinor === null) w.deferred.push(`${v.name}: falta el monto`);
+  if (d.savings?.amountMinor != null && d.savings.amountMinor > 0) w.savingsGoal = { user_id: userId, currency: d.savings.currency, savings_goal_minor: d.savings.amountMinor };
   return w;
 }
 

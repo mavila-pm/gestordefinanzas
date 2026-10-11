@@ -133,15 +133,16 @@ describe('dates in plain words', () => {
 
 describe('cards and loans, one question at a time', () => {
   it('"¿Tienes tarjeta de crédito?" → "sí, BCP" → owed → minimum → due day', () => {
-    const { draft, said } = chat(TODAY, ...START, 'no tengo más pagos', 'sí, BCP', '2400', '120', 'el 25');
-    expect(said[2]).toContain('¿Tienes tarjeta de crédito?');
-    expect(said[3]).toContain('¿Cuánto debes ahora en la tarjeta BCP?');
-    expect(said[4]).toContain('¿Cuál es el pago mínimo de la tarjeta BCP?');
-    expect(said[5]).toContain('¿Qué día vence el pago de la tarjeta BCP?');
+    const { draft, said } = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '120', 'el 25');
+    expect(said[2]).toContain('¿Pagas alguna suscripción');
+    expect(said[3]).toContain('¿Tienes tarjeta de crédito?');
+    expect(said[4]).toContain('¿Cuánto debes ahora en la tarjeta BCP?');
+    expect(said[5]).toContain('¿Cuál es el pago mínimo de la tarjeta BCP?');
+    expect(said[6]).toContain('¿Qué día vence el pago de la tarjeta BCP?');
     expect(draft.debts[0]).toMatchObject({ kind: 'card', institution: 'BCP', balanceMinor: 240000, minimumMinor: 12000, dueDay: 25 });
   });
   it('9: card purchase ≠ card payment ≠ a second expense: one debt + ONE planned payment (the minimum), no movement', () => {
-    const { draft } = chat(TODAY, ...START, 'no tengo más pagos', 'sí, BCP', '2400', '120', 'el 25');
+    const { draft } = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '120', 'el 25');
     const w = domainWrites(draft, 'u1');
     expect(w.debts).toHaveLength(1);
     expect(w.obligations.filter((o) => o.kind === 'card')).toEqual([expect.objectContaining({ amount_minor: 12000, due_day: 25 })]);
@@ -184,8 +185,8 @@ describe('cards and loans, one question at a time', () => {
 
 describe('card and loan answers: a short recap of only what was just said', () => {
   it('"S/" keeps its case and earlier facts are not repeated', () => {
-    const { said } = chat(TODAY, ...START, 'no tengo más pagos', 'sí, BCP', '2400', '450', 'el 25', 'tengo un préstamo', 'BCP', 'Personal', '12 mil', '850', 'el 10', '36, llevo 10');
-    expect(said.slice(3)).toEqual([
+    const { said } = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '450', 'el 25', 'tengo un préstamo', 'BCP', 'Personal', '12 mil', '850', 'el 10', '36, llevo 10');
+    expect(said.slice(4)).toEqual([
       'Anotado: tarjeta BCP. ¿Cuánto debes ahora en la tarjeta BCP?',
       'Listo, debes S/ 2,400. ¿Cuál es el pago mínimo de la tarjeta BCP?',
       'Listo, mínimo S/ 450. ¿Qué día vence el pago de la tarjeta BCP?',
@@ -232,7 +233,29 @@ describe('review fixes: loan currency, amount ceiling, stored readings', () => {
 
 describe('the end: what comes until the next income, from the person + the engine', () => {
   it('lists the next payments chronologically with today\'s balance', () => {
-    const { said } = chat('2026-10-09', 'me pagan 4500 el 30', 'tengo 5000', 'agua 120 el 15, internet 90 el 20', 'no tengo más pagos', 'sí, BCP', '2400', '450', 'el 25', 'no tengo', 'unos 800');
+    const { said } = chat('2026-10-09', 'me pagan 4500 el 30', 'tengo 5000', 'agua 120 el 15, internet 90 el 20', 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '450', 'el 25', 'no tengo', 'unos 800', 'después');
     expect(said.at(-1)).toBe('Ya lo tengo.\n\nHasta tu próximo ingreso vienen:\n• Agua · 15 oct · S/ 120\n• Internet · 20 oct · S/ 90\n• Tarjeta BCP · 25 oct · S/ 450\n\nY hoy tienes S/ 5,000 disponibles.');
+  });
+});
+
+describe('subscriptions and the savings goal in the same conversation', () => {
+  it('a subscription named in answer becomes a subscription obligation with its catalogue service; "no tengo" closes the group', () => {
+    const { draft, said } = chat(TODAY, ...START, 'no tengo más pagos', 'netflix 44.90 el 15');
+    expect(said[2]).toContain('¿Pagas alguna suscripción');
+    expect(draft.obligations.find((o) => o.name === 'Netflix')).toMatchObject({ kind: 'subscription', amountMinor: 4490, day: 15 });
+    const w = domainWrites(draft, 'u1');
+    expect(w.obligations.find((o) => o.name === 'Netflix')).toMatchObject({ kind: 'subscription', provider: 'netflix' });
+    expect(chat(TODAY, ...START, 'no tengo más pagos', 'no tengo').draft.done).toContain('subscriptions');
+  });
+  it('savings goal: an amount is stored as the monthly goal; "Después" leaves it unknown (never 0)', () => {
+    const base = [...START, 'no tengo más pagos', 'no tengo', 'no tengo', 'no tengo', 'unos 800'] as const;
+    const asked = chat(TODAY, ...base);
+    expect(asked.said.at(-1)).toContain('¿Cuánto te gustaría ahorrar cada mes?');
+    const yes = chat(TODAY, ...base, '500').draft;
+    expect(yes.savings).toMatchObject({ amountMinor: 50000, currency: 'PEN' });
+    expect(domainWrites(yes, 'u1').savingsGoal).toEqual({ user_id: 'u1', currency: 'PEN', savings_goal_minor: 50000 });
+    const later = chat(TODAY, ...base, 'no sé').draft;
+    expect(later.savings).toMatchObject({ amountMinor: null, status: 'unknown' });
+    expect(domainWrites(later, 'u1').savingsGoal).toBeNull();
   });
 });

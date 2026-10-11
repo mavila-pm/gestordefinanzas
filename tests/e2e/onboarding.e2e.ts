@@ -22,7 +22,8 @@ await runSuite('onboarding', async ({ page, check }) => {
   check('first access goes to the conversation, not to an empty dashboard', page.url().endsWith('/bienvenida'));
   await page.getByTestId('velsuno-msg').nth(1).waitFor();
   const opening = (await page.getByTestId('velsuno-msg').allTextContents()).join(' ');
-  check('opening is short and open ("Vamos a ordenar esto juntos"), no step counter', opening.includes('Vamos a ordenar esto juntos') && !/paso \d/i.test(opening), opening);
+  check('Vels greets first: who it is, what it will do, "con tus propias palabras", no step counter',
+    opening.includes('Soy Vels') && opening.includes('qué pagos vienen') && opening.includes('con tus propias palabras') && !/paso \d/i.test(opening), opening);
 
   // §5: many messy facts in one message → structured card + ONE important question.
   await send(page, 'Me pagan 5,700 el 5, uso BCP, pago el carro como el 10, debo en la tarjeta y también le debo plata a mi pareja.');
@@ -44,6 +45,11 @@ await runSuite('onboarding', async ({ page, check }) => {
   await send(page, 'no, el carro es 950');
   v = await lastVelsuno(page);
   check('corrections replace the value', v.includes('S/ 950'), v);
+  check('then subscriptions, one question', v.includes('¿Pagas alguna suscripción'), v);
+  await send(page, 'Netflix 44.90 el 15');
+  v = await lastVelsuno(page);
+  check('a subscription is understood with its amount and day', /netflix/i.test(v) && v.includes('44.90') && v.includes('15'), v);
+  if (v.includes('¿Pagas alguna') || v.includes('otra suscripción')) { await send(page, 'no tengo más'); v = await lastVelsuno(page); }
   check('then the card, one field at a time: what is owed now', v.includes('¿Cuánto debes ahora en la tarjeta BCP?'), v);
 
   // Something the rules cannot read → the (fixture) provider is called and usage is recorded on the onboarding allowance.
@@ -51,7 +57,7 @@ await runSuite('onboarding', async ({ page, check }) => {
   v = await lastVelsuno(page);
   const u1 = await usage();
   const onb = u1.find((r) => r.bucket === 'onboarding');
-  check('provider path: fact extracted and usage recorded on the separate onboarding allowance', v.includes('Gastos básicos') && onb?.requests === 1 && Number(onb.weighted_tokens) > 0, `${v} ${JSON.stringify(u1)}`);
+  check('provider path: fact extracted and usage recorded on the separate onboarding allowance', /gastos básicos/i.test(v) && onb?.requests === 1 && Number(onb.weighted_tokens) > 0, `${v} ${JSON.stringify(u1)}`);
 
   // Leave and come back: progress persists.
   const before = await page.getByTestId('user-msg').count();
@@ -85,9 +91,72 @@ await runSuite('onboarding', async ({ page, check }) => {
   const debts = (await api.from('debts').select('name,balance_minor')).data ?? [];
   check('onboarding feeds planning: income S/ 5,700 day 5', inc.length === 1 && inc[0]!.amount_minor === 570000 && inc[0]!.day_of_month === 5, JSON.stringify(inc));
   check('obligations written (carro S/ 950; card payment with minimum)', fx.some((o) => o.name === 'Carro' && o.amount_minor === 95000) && fx.some((o) => o.name === 'Tarjeta BCP' && o.amount_minor === 28430), JSON.stringify(fx));
+  check('subscription written once as a subscription with its provider', fx.filter((o) => o.name === 'Netflix').length === 1, JSON.stringify(fx));
   check('card debt written; personal debt with unknown balance is NOT invented', debts.length === 1 && debts[0]!.balance_minor === 243000, JSON.stringify(debts));
   await page.goto(`${BASE}/app`);
   check('after finishing, /app no longer redirects', page.url() === `${BASE}/app`);
+
+  // First-use tour: dimmed page, the REAL element highlighted, bubble beside it; Anterior/Siguiente/Terminar; saved once.
+  const bubble = page.getByTestId('tour-bubble');
+  await bubble.waitFor();
+  const stepId = () => page.getByTestId('tour').getAttribute('data-step');
+  const spotOver = async (sel: string) => { await page.waitForTimeout(300); return page.evaluate((q) => {
+    const spot = document.querySelector('.tour-spot')?.getBoundingClientRect();
+    const el = [...document.querySelectorAll(q)].find((e) => e.getBoundingClientRect().width > 0)?.getBoundingClientRect();
+    const ok = !!spot && !!el && spot.left <= el.left + 1 && spot.top <= el.top + 1 && spot.right >= el.right - 1 && spot.bottom >= el.bottom - 1;
+    return ok ? '' : JSON.stringify({ spot, el });
+  }, sel); };
+  check('tour starts after the conversation, on Resumen', (await stepId()) === 'summary' && (await bubble.textContent())!.includes('Aquí ves cómo va tu dinero.'));
+  await bubble.getByRole('button', { name: 'Siguiente' }).click();
+  await bubble.getByRole('button', { name: 'Siguiente' }).click();
+  const spotMov = await spotOver('.sidebar a[href="/app/movimientos?month=all"]');
+  check('Movimientos step highlights the real sidebar entry', (await stepId()) === 'movements' && !spotMov, spotMov);
+  const box = await bubble.boundingBox();
+  const link = await page.locator('.sidebar a[href="/app/movimientos?month=all"]').boundingBox();
+  check('desktop: the bubble sits beside the element, not over it', !!box && !!link && box.x >= link.x + link.width, JSON.stringify({ box, link }));
+  await bubble.getByRole('button', { name: 'Anterior' }).click();
+  check('Anterior goes back', (await stepId()) === 'available');
+  await page.goto(`${BASE}/app/analisis`);
+  await bubble.waitFor();
+  check('progress survives navigation between screens', (await stepId()) === 'available');
+  await page.keyboard.press('ArrowRight');
+  check('arrow keys move between steps', (await stepId()) === 'movements');
+  await bubble.getByRole('button', { name: 'Siguiente' }).click();
+  for (const id of ['upcoming', 'cards', 'analysis', 'savings']) {
+    check(`step ${id} points at a real element`, (await stepId()) === id && (await page.locator('.tour-spot').count()) === 1);
+    await bubble.getByRole('button', { name: 'Siguiente' }).click();
+  }
+  const velsText = (await bubble.textContent()) ?? '';
+  check('last step: Vels with examples of what to say', (await stepId()) === 'vels' && velsText.includes('Pago Netflix el día 15.') && velsText.includes('¿Me alcanza para comprar algo de S/ 300?') && !(await spotOver('[data-testid="vels-fab"]')), velsText);
+  await bubble.getByRole('button', { name: 'Terminar' }).click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="tour"]'));
+  await page.waitForTimeout(500);
+  check('Terminar saves it for the account', !!(await api.from('user_preferences').select('tour_completed_at').single()).data?.tour_completed_at);
+  await page.goto(`${BASE}/app`);
+  check('not shown again on the next visit', (await page.getByTestId('tour').count()) === 0);
+
+  // Ajustes → Ayuda restarts it; on a phone the bubble never covers the bottom navigation; Saltar closes it.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE}/app/ajustes/ayuda`);
+  await Promise.all([page.waitForURL(/\/app\?recorrido=1$/), page.getByTestId('tour-restart').click()]);
+  await bubble.waitFor();
+  check('restart from Ajustes → Ayuda begins at step 1', (await stepId()) === 'summary');
+  await bubble.getByRole('button', { name: 'Siguiente' }).click();
+  await bubble.getByRole('button', { name: 'Siguiente' }).click();
+  await bubble.getByRole('button', { name: 'Siguiente' }).click();
+  const navTop = (await page.locator('.bottom-nav').boundingBox())!.y;
+  const mb = (await bubble.boundingBox())!;
+  check('mobile: Próximos pagos points to Más, the bubble stays above the navigation and inside the screen',
+    (await stepId()) === 'upcoming' && !(await spotOver('.bottom-nav a[href="/app/mas"]')) && (await page.getByTestId('tour-via').textContent())!.includes('Más')
+    && mb.y + mb.height <= navTop && mb.x >= 0 && mb.x + mb.width <= 390, JSON.stringify({ mb, navTop }));
+  await page.locator('.bottom-nav a[href="/app/movimientos?month=all"]').click();
+  await page.waitForURL(/\/app\/movimientos/);
+  check('the page stays usable under the tour (never blocks)', page.url().includes('/app/movimientos'));
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('[data-testid="tour"]'));
+  await page.waitForTimeout(500);
+  check('Saltar / Escape closes it and saves it', !!(await api.from('user_preferences').select('tour_completed_at').single()).data?.tour_completed_at);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   // Preguntar: deterministic answers with engine numbers; zero AI usage for them.
   const month = () => usage().then((rows) => rows.find((r) => r.bucket.startsWith('m:'))?.requests ?? 0);
@@ -98,7 +167,7 @@ await runSuite('onboarding', async ({ page, check }) => {
   check('asks only for the missing balance, in plain words', v === 'Claro. ¿Cuánto tienes disponible hoy?', v);
   await send(page, '3,000');
   v = await lastVelsuno(page);
-  check('balance answer is saved and free money recalculated deterministically', v.startsWith('Listo: S/ 3,000 disponibles.') && /libres|Te faltan/.test(v), v);
+  check('balance answer is saved and free money recalculated deterministically', v.startsWith('Listo: S/ 3,000 disponibles.') && /disponibles hasta|libres|Te faltan/.test(v), v);
   await send(page, '¿Puedo gastar S/ 100?');
   v = await lastVelsuno(page);
   check('"¿puedo gastar?" answered by the planner', /^(Sí\.|Ahí no te alcanza)/.test(v), v);

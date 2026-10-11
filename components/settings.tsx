@@ -39,7 +39,7 @@ export function UsageMeter({ percent, resetLabel }: { percent: number | null; re
   );
 }
 
-/** Settings index entries (mobile list, desktop sidebar): the single source of the nine sections. */
+/** Settings index entries (mobile list, desktop sidebar): the single source of the sections. */
 export const SETTINGS_SECTIONS = [
   { slug: 'perfil', label: 'Perfil', icon: 'user' },
   { slug: 'plan', label: 'Plan y uso', icon: 'gauge' },
@@ -50,6 +50,7 @@ export const SETTINGS_SECTIONS = [
   { slug: 'accesibilidad', label: 'Accesibilidad', icon: 'text' },
   { slug: 'seguridad', label: 'Seguridad', icon: 'shield' },
   { slug: 'privacidad', label: 'Privacidad y datos', icon: 'doc' },
+  { slug: 'ayuda', label: 'Ayuda', icon: 'help' },
 ] as const;
 
 /** One Ajustes screen: back to the list on mobile, the title, then its sections. */

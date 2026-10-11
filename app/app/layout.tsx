@@ -7,6 +7,7 @@ import { Icon } from '../../components/ui/icon';
 import { Logo } from '../../components/ui/logo';
 import { VelsBubble } from '../../components/vels';
 import { Avatar } from '../../components/settings';
+import { Tour } from '../../components/tour';
 import { loadProfile } from '../../lib/queries';
 import { preferredName } from '../../src/domain/profile';
 
@@ -15,11 +16,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const supabase = await createSupabaseServerClient();
   const user = await authUser(supabase);
   if (!user) redirect('/login');
-  const [{ count }, onboarding, step, profile] = await Promise.all([
+  const [{ count }, onboarding, step, profile, tour] = await Promise.all([
     supabase.from('transactions').select('id', { count: 'exact', head: true }).in('status', ['review_required', 'possible_duplicate']),
     supabase.from('onboarding_states').select('status').maybeSingle(),
     registrationStep(supabase),
     loadProfile(supabase),
+    supabase.from('user_preferences').select('tour_completed_at').maybeSingle(),
   ]);
   const name = preferredName(profile);
   // A new account finishes registration (password, profile, consents) before anything else.
@@ -27,6 +29,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // First access goes to the conversation (ADR-0006); "Ahora no" (skipped) or finished never comes back here.
   if (!onboarding.error && (!onboarding.data || onboarding.data.status === 'active')) redirect('/bienvenida');
   const pending = count ?? 0;
+  // The tour follows the first conversation (finished or "Ahora no"), once per account; unreadable → not shown.
+  const showTour = !onboarding.error && !tour.error && !tour.data?.tour_completed_at;
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -50,6 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
       <BottomNav pending={pending} />
       <VelsBubble />
+      <Tour show={showTour} />
     </div>
   );
 }

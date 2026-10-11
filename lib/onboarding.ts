@@ -66,8 +66,8 @@ export async function startOnboarding(supabase: SupabaseClient, userId: string):
 export async function onboardingConversation(supabase: SupabaseClient): Promise<ChatMessage[]> {
   const [name, messages] = await Promise.all([loadProfile(supabase).then(preferredName), loadMessages(supabase, 'onboarding')]);
   return [
-    { id: 'greet-1', role: 'velsuno', body: `${name ? `Hola, ${name}. ` : 'Hola. '}Vamos a ordenar esto juntos.`, card: null },
-    { id: 'greet-2', role: 'velsuno', body: 'Cuéntame de tu dinero como te salga: cuánto recibes y cuándo, qué pagos tienes y si debes algo.',
+    { id: 'greet-1', role: 'velsuno', body: `¡Hola${name ? `, ${name}` : ''}! Soy Vels. Vamos a organizar tus finanzas para que sepas cuánto tienes, cuánto gastas y qué pagos vienen. Puedes contarme todo con tus propias palabras.`, card: null },
+    { id: 'greet-2', role: 'velsuno', body: 'Empecemos por tus ingresos: ¿cuánto recibes y qué día te pagan? Si prefieres, sáltala y seguimos.',
       card: messages.length ? null : { actions: [{ kind: 'camera', label: 'Mostrar una foto' }] } },
     ...messages,
   ];
@@ -269,6 +269,11 @@ export async function onboardingFinish(supabase: SupabaseClient, userId: string)
   };
   const ok = await insert('expected_incomes', w.incomes) && await insert('fixed_expenses', w.obligations) && await insert('debts', w.debts)
     && await insert('accounts', w.accounts) && await insert('cards', w.cards) && await insert('balance_snapshots', w.balance ? [w.balance] : []);
+  // The savings goal the person stated; an existing goal is never overwritten by onboarding.
+  if (ok && w.savingsGoal) {
+    const { data: cur } = await supabase.from('planning_settings').select('savings_goal_minor').eq('currency', w.savingsGoal.currency as string).maybeSingle();
+    if (!cur || cur.savings_goal_minor === null) await supabase.from('planning_settings').upsert({ ...w.savingsGoal, updated_at: new Date().toISOString() });
+  }
   if (ok && w.settings) {
     const { data: cur } = await supabase.from('planning_settings').select('essentials_monthly_minor').eq('currency', 'PEN').maybeSingle();
     if (!cur || cur.essentials_monthly_minor === null) await supabase.from('planning_settings').upsert(w.settings);
@@ -321,5 +326,7 @@ export async function resetDemoOnboarding(supabase: SupabaseClient, userId: stri
   await supabase.from('conversation_messages').delete().eq('thread', 'onboarding');
   await supabase.rpc('reset_demo_ai_onboarding');
   await supabase.from('onboarding_states').update({ status: 'active', is_demo: true, facts: emptyDraft(), applied: {}, summary: null, completed_at: null, started_at: new Date().toISOString() }).eq('user_id', userId);
+  // The first-use tour comes back after the conversation, like for a new account.
+  await supabase.from('user_preferences').update({ tour_completed_at: null }).eq('user_id', userId);
   return { ok: true };
 }

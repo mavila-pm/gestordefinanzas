@@ -47,7 +47,9 @@ export interface Draft {
   /** Question keys already asked once (never nag twice). */
   asked: string[];
   /** Groups the person said are complete ("no tengo más pagos", "no tengo tarjeta"). */
-  done: Array<'obligations' | 'debts' | 'cards' | 'loans'>;
+  done: Array<'obligations' | 'debts' | 'cards' | 'loans' | 'subscriptions'>;
+  /** Monthly savings goal the person stated (planning_settings.savings_goal_minor at "Empezar"); unknown ≠ 0. */
+  savings?: { currency: Currency; amountMinor: number | null; status: FactStatus } | null;
   /** Payments the person said do not apply ("no pago alquiler"): never asked about again. */
   declined?: string[];
   /** The question waiting for an answer: a bare "950" or "no sé" applies here. */
@@ -75,7 +77,7 @@ export type Patch =
   | { t: 'variable'; name: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean }
   | { t: 'balance'; amountMinor?: number; currency?: Currency; unknown?: boolean }
   | { t: 'remove'; name: string; declined?: boolean }
-  | { t: 'done'; group: 'obligations' | 'debts' | 'cards' | 'loans' };
+  | { t: 'done'; group: 'obligations' | 'debts' | 'cards' | 'loans' | 'subscriptions' };
 
 /** A value without a subject ("950", "el 10", "no sé"): it answers the pending question. */
 export interface Bare { amountMinor?: number; currency?: Currency; approx?: boolean; day?: number; dayMax?: number; unknown?: boolean; frequency?: 'monthly' | 'semimonthly';
