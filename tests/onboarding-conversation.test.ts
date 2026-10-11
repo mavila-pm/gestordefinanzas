@@ -561,3 +561,22 @@ describe('regression: the full real conversation of 2026-10-11 — every fact ex
     expect(g['Ahorro']).toEqual(['Meta de ahorro · S/ 10,000 al mes']);
   });
 });
+
+describe('regression: what was declared is saved even when the day is unknown (2026-10-11, prueba-bienvenida-5)', () => {
+  it('salary S/ 5,000 with "no sé" as its day is written with the day por confirmar; nothing empty is written', () => {
+    const { draft } = fromOpening('2026-10-11', 'Dependiente', '5000', 'no sé', 'Sí', 'omitir', 'no sé', 'no sé', 'Todos los meses', 'No',
+      'no sé', 'no tengo más pagos', 'No tengo', 'No tengo', 'No tengo', 'no sé', 'no sé');
+    const w = domainWrites(draft, 'u1');
+    expect(w.incomes).toHaveLength(1);
+    expect(w.incomes[0]).toMatchObject({ amount_minor: 500000, currency: 'PEN', frequency: 'monthly', day_of_month: null, amount_status: expect.not.stringMatching('unknown') });
+    expect(w.deferred.join()).toContain('falta el día');
+    expect(w.balance).toBeNull();
+  });
+  it('a known day is still written as before; a quincena without its second day keeps the amount with the days por confirmar', () => {
+    const w = domainWrites(chat(TODAY, ...START).draft, 'u1');
+    expect(w.incomes[0]).toMatchObject({ amount_minor: 450000, day_of_month: 30, frequency: 'monthly' });
+    const d = chat(TODAY, ...START).draft;
+    d.incomes[0] = { ...d.incomes[0]!, frequency: 'semimonthly', secondDay: null, day: 15 };
+    expect(domainWrites(d, 'u1').incomes[0]).toMatchObject({ amount_minor: 450000, frequency: 'semimonthly', day_of_month: null, second_day: null });
+  });
+});

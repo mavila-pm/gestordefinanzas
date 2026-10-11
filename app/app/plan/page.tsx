@@ -309,7 +309,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           {d.incomes.map((i) => (
             <div key={i.id} className="setting" data-testid="income-row">
               <span className="setting-text"><span>{i.name}</span>
-                <small className="muted">{lifecycleNote(i, d.today) ?? (i.amountMinor === null ? 'Monto por confirmar' : `${i.amountStatus === 'estimated' ? '≈ ' : ''}${formatMoney({ amountMinor: i.amountMinor, currency: i.currency })}`)}</small></span>
+                <small className="muted">{lifecycleNote(i, d.today) ?? (i.amountMinor === null ? 'Monto por confirmar' : `${i.amountStatus === 'estimated' ? '≈ ' : ''}${formatMoney({ amountMinor: i.amountMinor, currency: i.currency })}`)}{(i.frequency === 'monthly' || i.frequency === 'semimonthly') && i.dayOfMonth === null ? ' · día por confirmar' : ''}</small></span>
               <Sheet label={<Icon name="more" />} triggerClassName="icon" triggerLabel={`Opciones de ${i.name}`} title={i.name} subtitle="Cambia lo que planificamos desde hoy.">
                 <div className="sheet-body stack">
                   <Lifecycle kind="income" id={i.id} name={i.name} pausedUntil={i.pausedUntil ?? null} endedOn={i.endedOn ?? null} today={d.today} defaultUntil={addDays(d.today, 30)} />

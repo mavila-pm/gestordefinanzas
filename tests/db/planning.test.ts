@@ -25,6 +25,11 @@ describe.skipIf(!DATABASE_URL)('cash-flow planning tables (ADR-0005)', () => {
       expect(await errorCode(c, `insert into public.fixed_expenses (user_id, name, amount_minor, due_day, due_day_max) values ($1, 'X', 100, null, 10)`, [USER_A])).toBe('23514');
       expect(await errorCode(c, `insert into public.fixed_expenses (user_id, name, amount_minor, due_day, frequency) values ($1, 'X', 100, 1, 'yearly')`, [USER_A])).toBe('23514');
       expect(await errorCode(c, `insert into public.expected_incomes (user_id, name, frequency) values ($1, 'Sueldo', 'monthly')`, [USER_A])).toBe('23514');
+      // A declared income whose pay day is not known yet is kept (day "por confirmar"; the planner does not project it).
+      await c.query(`insert into public.expected_incomes (user_id, name, amount_minor, frequency) values ($1, 'Sueldo', 500000, 'monthly')`, [USER_A]);
+      expect(await errorCode(c, `insert into public.expected_incomes (user_id, name, amount_minor, frequency, day_of_month) values ($1, 'Sueldo', 500000, 'semimonthly', 15)`, [USER_A])).toBe('23514');
+      expect(await errorCode(c, `insert into public.expected_incomes (user_id, name, amount_minor, frequency, second_day) values ($1, 'Sueldo', 500000, 'semimonthly', 30)`, [USER_A])).toBe('23514');
+      expect(await errorCode(c, `insert into public.expected_incomes (user_id, name, amount_minor, frequency) values ($1, 'Sueldo', 500000, 'weekly')`, [USER_A])).toBe('23514');
     });
   });
 

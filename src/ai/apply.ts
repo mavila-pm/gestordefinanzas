@@ -30,16 +30,19 @@ export interface DomainWrites {
 export function domainWrites(d: Draft, userId: string): DomainWrites {
   const w: DomainWrites = { incomes: [], obligations: [], debts: [], accounts: [], cards: [], balance: null, settings: null, savingsGoal: null, deferred: [] };
   for (const i of d.incomes) {
-    if (i.day === null) { w.deferred.push(`${i.name}: falta el día`); continue; }
+    // Nothing declared (no amount, no day): there is nothing to save yet.
+    if (i.amountMinor === null && i.day === null) { w.deferred.push(`${i.name}: falta el monto y el día`); continue; }
     // One-off or irregular: never planned as a recurring income (it would invent future money).
     if (i.frequency === 'occasional') { w.deferred.push(`${i.name}: ingreso ocasional, no se proyecta`); continue; }
-    // An extra income whose frequency was not said, or a quincena without its second day, is not projected (never assumed).
-    if (i.frequency === null && (i !== d.incomes[0] || d.work === 'independent')) { w.deferred.push(`${i.name}: frecuencia por confirmar`); continue; }
-    if (i.frequency === 'semimonthly' && i.secondDay === null) { w.deferred.push(`${i.name}: falta el segundo día de pago`); continue; }
-    const semi = i.frequency === 'semimonthly' && i.secondDay !== null;
+    // What was declared is saved; what is missing stays "por confirmar" as a null day, which the planner never
+    // projects: an unknown day, an extra income whose frequency was not said, or a quincena without its second day.
+    const unsure = i.frequency === null && (i !== d.incomes[0] || d.work === 'independent');
+    const semi = i.frequency === 'semimonthly' && i.secondDay !== null && i.day !== null;
+    const day = unsure || (i.frequency === 'semimonthly' && !semi) ? null : i.day;
+    if (day === null) w.deferred.push(`${i.name}: ${unsure ? 'frecuencia por confirmar' : i.frequency === 'semimonthly' && i.day !== null ? 'falta el segundo día de pago' : 'falta el día'}`);
     w.incomes.push({
       user_id: userId, name: i.name.slice(0, 60), currency: i.currency, amount_minor: i.amountMinor, amount_status: i.amountMinor === null ? 'unknown' : i.amountStatus,
-      frequency: semi ? 'semimonthly' : 'monthly', day_of_month: i.day, day_max: !semi && i.dayMax && i.dayMax > i.day && i.dayMax - i.day <= 7 ? i.dayMax : null,
+      frequency: i.frequency === 'semimonthly' && (semi || day === null) ? 'semimonthly' : 'monthly', day_of_month: day, day_max: !semi && day !== null && i.dayMax && i.dayMax > day && i.dayMax - day <= 7 ? i.dayMax : null,
       second_day: semi ? i.secondDay : null,
     });
   }

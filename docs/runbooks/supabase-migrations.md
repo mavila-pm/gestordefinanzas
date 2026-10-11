@@ -61,6 +61,7 @@
 | 20261010000042_subscriptions.sql | fixed_expenses + provider (catalogue slug), card_id / account_id (composite FKs, at most one, set null on delete); subscriptions = obligations kind subscription | 2026-10-10 |
 | 20261010000043_tour.sql | tour (user_preferences.tour_completed_at: first-use tour finished/skipped; null = pending or restarted; own-row RLS/grants unchanged) | 2026-10-11 |
 | 20261011000044_balance_breakdown.sql | balance_snapshots + bank_minor / cash_minor (breakdown as said; parts ≥ 0; both present ⇒ sum = amount_minor); same RLS/grants | 2026-10-11 |
+| 20261011000045_income_day_pending.sql | expected_incomes: a declared income may have its pay day por confirmar (day_of_month null; never projected); semimonthly needs both days or neither | 2026-10-11 |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
