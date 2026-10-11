@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { startTransition, useActionState, useCallback, useEffect, useLayoutEffect, useOptimistic, useRef, useState } from 'react';
 import type { ChatMessage, ChatState, MessageCard } from '../src/ai/conversation';
 import { isNearBottom, onNewContent } from '../src/web/chat-scroll';
+import { formatVels } from '../src/web/chat-format';
 import { Icon } from './ui/icon';
 import { VelsAvatar } from './vels-identity';
 
@@ -93,19 +94,52 @@ function Card({ card, live, delay, onOp, onReply, onCamera, onCorrect }: {
 
 const reducedMotion = () => typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.motion === 'reduce';
 
-/** Reveal time for a message: ~45 ms a word, never more than 1.1 s (no long waits). */
-const revealMs = (text: string) => { const n = text.split(/\s+/).filter(Boolean).length; return Math.round(Math.min(45, 1100 / Math.max(1, n)) * n); };
+/** A message as lines: "\n" starts a line, an empty line (or "\n\n") starts a new paragraph (more space). */
+function linesOf(text: string): Array<{ text: string; gap: boolean }> {
+  const out: Array<{ text: string; gap: boolean }> = [];
+  let gap = false;
+  for (const raw of text.split('\n')) {
+    const t = raw.trim();
+    if (!t) { gap = out.length > 0; continue; }
+    out.push({ text: t, gap });
+    gap = false;
+  }
+  return out;
+}
+
+const LINE_PAUSE = 160;
+const wordStep = (n: number) => Math.min(45, 1100 / Math.max(1, n));
+/** Reveal time for a message: ~45 ms a word (never more than 1.1 s of words) plus a short pause at each new line. */
+const revealMs = (text: string) => {
+  const lines = linesOf(text);
+  const n = lines.reduce((s, l) => s + l.text.split(/\s+/).length, 0);
+  return Math.round(wordStep(n) * n + LINE_PAUSE * Math.max(0, lines.length - 1));
+};
 
 /**
- * A new Vels message "writes itself" word by word. The full text is in the DOM from the start (screen readers and
- * copy get it at once); only the opacity of each word is animated. Reduced motion: no animation (CSS).
+ * A Vels message, line by line: each line is its own block, a blank line opens a paragraph. New messages "write
+ * themselves" word by word, line after line (the full text is in the DOM from the start; only opacity is animated;
+ * reduced motion: no animation).
  */
-function Reveal({ text }: { text: string }) {
-  const parts = text.split(/(\s+)/);
-  const n = parts.filter((w) => w.trim()).length;
-  const step = Math.min(45, 1100 / Math.max(1, n));
-  let k = 0;
-  return <>{parts.map((w, i) => (w.trim() ? <span key={i} className="tw" style={{ animationDelay: `${Math.round(k++ * step)}ms` }}>{w}</span> : w))}</>;
+function MessageText({ text, animate }: { text: string; animate: boolean }) {
+  const lines = linesOf(text);
+  const n = lines.reduce((s, l) => s + l.text.split(/\s+/).length, 0);
+  const step = wordStep(n);
+  let at = 0;
+  return (
+    <p className="msg-text">
+      {lines.map((l, li) => {
+        if (li > 0) at += LINE_PAUSE;
+        const words = l.text.split(/(\s+)/);
+        return (
+          <span key={li} className={l.gap ? 'msg-line gap' : 'msg-line'}>
+            {animate ? words.map((w, i) => (w.trim() ? <span key={i} className="tw" style={{ animationDelay: `${Math.round((at += step) - step)}ms` }}>{w}</span> : w)) : l.text}
+            {li < lines.length - 1 ? '\n' : null}
+          </span>
+        );
+      })}
+    </p>
+  );
 }
 
 /** Example phrases typed and erased in the empty composer, once (never a loop); stops as soon as the person types. */
@@ -158,7 +192,7 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
     let at = 450;
     for (let i = 1; i <= introLen; i++) {
       timers.push(window.setTimeout(() => setStage(i), at));
-      at += revealMs(props.initial[i - 1]?.body ?? '') + 500;
+      at += revealMs(formatVels(props.initial[i - 1]?.body ?? '')) + 500;
     }
     return () => timers.forEach(clearTimeout);
   }, [props.intro, introLen, props.initial]);
@@ -241,9 +275,9 @@ export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolea
           return (
             <li key={m.id} className={`msg ${m.role}${m.role === 'velsuno' && shown[i - 1]?.role !== 'velsuno' ? ' first' : ''}${animate ? ' fresh' : ''}`} data-testid={m.role === 'velsuno' ? 'velsuno-msg' : 'user-msg'}>
               {m.role === 'velsuno' && shown[i - 1]?.role !== 'velsuno' && <span className="msg-avatar"><VelsAvatar size={28} /></span>}
-              <p>{animate ? <Reveal text={m.body} /> : m.body}</p>
+              <MessageText text={m.role === 'velsuno' ? formatVels(m.body) : m.body} animate={animate} />
               {m.card && <Card card={props.camera ? m.card : { ...m.card, actions: m.card.actions?.filter((a) => a.kind !== 'camera') }} live={m.id === lastVelsuno && !pending} onOp={sendOp} onReply={sendReply}
-                delay={animate ? revealMs(m.body) : undefined}
+                delay={animate ? revealMs(formatVels(m.body)) : undefined}
                 onCamera={() => file.current?.click()} onCorrect={() => { setHint('Dime qué cambio, por ejemplo: "el carro es 900"'); input.current?.focus(); }} />}
             </li>
           );

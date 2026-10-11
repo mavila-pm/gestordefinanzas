@@ -230,6 +230,20 @@ await runSuite('onboarding', async ({ page, check }) => {
   const gap = await page.locator('.chat-actions').last().evaluate((e) => parseFloat(getComputedStyle(e).columnGap));
   check('"¿Qué es dependiente o independiente?" → explanation, same question, two separated options',
     v.startsWith('Dependiente: trabajas para una empresa y recibes un sueldo.') && v.includes('¿Con cuál te identificas más?') && JSON.stringify(help) === '["Dependiente","Independiente"]' && gap >= 12, `${v} ${JSON.stringify(help)} ${gap}`);
+  // Line breaks are respected, while writing and after: three stacked lines, buttons apart (also on the phone).
+  const layout = async () => page.getByTestId('velsuno-msg').last().evaluate((li) => {
+    const lines = [...li.querySelectorAll('.msg-line')].map((l) => l.getBoundingClientRect());
+    const btns = [...li.querySelectorAll('.chat-actions button')].map((b) => b.getBoundingClientRect());
+    return { n: lines.length, stacked: lines.every((r, i) => i === 0 || r.top >= lines[i - 1]!.bottom - 1),
+      apart: btns.length === 2 && (btns[1]!.left >= btns[0]!.right + 11 || btns[1]!.top >= btns[0]!.bottom + 11), tall: btns.every((b) => b.height >= 44) };
+  });
+  const during = await layout();
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/help-writing.png` });
+  await page.waitForTimeout(2000);
+  const settled = await layout();
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/help-phone.png` });
+  check('the explanation is three separate lines while it writes itself and after; two separated 44 px buttons',
+    during.n === 3 && during.stacked && settled.n === 3 && settled.stacked && settled.apart && settled.tall, JSON.stringify({ during, settled }));
   check('nothing was chosen or written for the doubt', !((await api.from('onboarding_states').select('facts').single()).data!.facts as { work?: string }).work);
   await tap(page, 'Dependiente');
   check('dependiente → "Perfecto. ¿Cuánto recibes de sueldo al mes?"', (await lastVelsuno(page)).startsWith('Perfecto. ¿Cuánto recibes de sueldo al mes?'), await lastVelsuno(page));

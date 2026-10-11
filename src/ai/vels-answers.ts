@@ -174,7 +174,7 @@ export function answer(intent: Intent, v: View): Answer | null {
       else if (next) parts.push(`Lo siguiente es ${next.label}${next.date ? ` (${shortDate(next.date)})` : ''}.`);
       if (strategy?.avalanche.available && strategy.avalanche.order[0]) parts.push(`Con tus deudas, abona extra a ${strategy.avalanche.order[0]}: es la de mayor interés.`);
       else if (strategy?.snowball.order[0]) parts.push(`Si quieres ver avance rápido, termina primero ${strategy.snowball.order[0]}: es la más pequeña.`);
-      return parts.length ? { text: parts.join(' '), actions: [{ type: 'link', label: 'Ver próximos pagos', href: '/app/compromisos' }] } : { text: 'No tienes pagos pendientes ahora.' };
+      return parts.length ? { text: parts.join('\n'), actions: [{ type: 'link', label: 'Ver próximos pagos', href: '/app/compromisos' }] } : { text: 'No tienes pagos pendientes ahora.' };
     }
     case 'how': {
       const rows: Array<{ label: string; value: string }> = [];
@@ -248,7 +248,7 @@ export function answer(intent: Intent, v: View): Answer | null {
     case 'subs_pause': {
       const x = (v.subscriptions ?? []).find((s) => fold(s.name).includes(fold(intent.name)) || fold(intent.name).includes(fold(s.name)));
       if (!x) return { text: `No tengo ${intent.name} entre tus suscripciones.` };
-      return { text: `Puedo pausarla o dejar de seguirla en Velsuno; confírmalo en su ficha. Esto no cancela tu suscripción en ${intent.name}: eso se hace en su web o app.`,
+      return { text: `Puedo pausarla o dejar de seguirla en Velsuno; confírmalo en su ficha.\nEsto no cancela tu suscripción en ${intent.name}: eso se hace en su web o app.`,
         actions: [{ type: 'link', label: `Ir a ${x.name}`, href: `/app/compromisos/suscripciones?id=${x.id}` }] };
     }
     case 'changed':

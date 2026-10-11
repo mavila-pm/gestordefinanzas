@@ -154,7 +154,7 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   // The work question waits for a choice: something unreadable is not an answer (no provider call, no skip).
   if (state.draft.pending === 'work' && !state.draft.work && !read.patches.length) {
     await save(supabase, userId, state.draft);
-    await say(supabase, userId, 'onboarding', 'velsuno', `No te entendí. ${WORK_HELP}`, { replies: ['Dependiente', 'Independiente'] });
+    await say(supabase, userId, 'onboarding', 'velsuno', `No te entendí.\n${WORK_HELP}`, { replies: ['Dependiente', 'Independiente'] });
     return;
   }
   const partial = unreadNumbers(fold(text), read) > 0;
