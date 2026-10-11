@@ -182,10 +182,131 @@ export function balanceSplit(folded: string): { bankMinor?: number; cashMinor?: 
 }
 
 export function interpret(message: string): Interpretation {
+  const t = fold(message);
   // Money today with its breakdown (cuentas / efectivo) is read first and kept whole: never only the last amount.
-  const split = balanceSplit(fold(message));
+  const split = balanceSplit(t);
   if (split) return { patches: [{ t: 'balance', ...split }], bare: null };
+  // Several debts in one message (a bank loan and a person), several fixed payments, several subscriptions: each
+  // item keeps ITS amounts and dates (a list is never read as one item with the first number).
+  const debts = debtList(t);
+  if (debts) return { patches: debts, bare: null };
+  const payments = paymentList(t);
+  if (payments) return { patches: payments, bare: null };
   return interpretRest(message);
+}
+
+const MONTHLY_AFTER = /^\s*(soles\s+|dolares\s+)?(al mes|mensual(es)?|mesual(es)?|mesnaul(es)?|mensaul(es)?|mesnual(es)?|mensuale?s?|cada mes|por mes|x mes|mes a mes)\b/;
+
+/**
+ * "pago 100 de luz, 100 de agua, 1000 de alquiler; todo el 5" / "luz 100 agua 100 y 1000 de alquiler cada 5":
+ * each payment with the amount next to it ("100 de luz" or "luz 100"); one date said for all applies to all.
+ * null unless at least two payments each have their own amount (else the normal reading handles it).
+ */
+export function paymentList(t: string): Patch[] | null {
+  if (DEBT.test(t) || INCOME.test(t) || SPEND_START.test(t)) return null;
+  const hits: Array<{ index: number; end: number; kind: ObligationKind; name: string }> = [];
+  for (const [re, kind, name] of OBLIGATIONS) {
+    if (kind === 'car') continue; // "carro" in a payment list is ambiguous (loan, fuel): left to the normal reading
+    for (const m of t.matchAll(new RegExp(re.source, 'g'))) if (!hits.some((h) => h.name === name)) hits.push({ index: m.index!, end: m.index! + m[0].length, kind, name });
+  }
+  if (hits.length < 2) return null;
+  hits.sort((a, b) => a.index - b.index);
+  const days = findDays(t);
+  const amounts = findAmounts(t, days);
+  const used = new Set<number>();
+  const items: Array<{ hit: (typeof hits)[number]; amount: Amount | undefined }> = [];
+  for (const h of hits) {
+    // "100 de luz" (amount right before) or "luz 100" / "luz: S/ 100" (right after); each amount used once.
+    const before = amounts.findIndex((a, i) => !used.has(i) && a.end <= h.index && /^\s*(soles\s+)?(de|en|para|del)?\s*(la |el |mi |los |las )?$/.test(t.slice(a.end, h.index)));
+    const after = before < 0 ? amounts.findIndex((a, i) => !used.has(i) && a.index >= h.end && /^\s*(:|de|es|son|por|como|unos|unas|aprox\w*|mas o menos|cerca de|casi)?\s*(s\/\.?|us\$|\$)?\s*$/.test(t.slice(h.end, a.index))) : -1;
+    const i = before >= 0 ? before : after;
+    if (i >= 0) used.add(i);
+    items.push({ hit: h, amount: i >= 0 ? amounts[i]! : undefined });
+  }
+  // A list only when at least two payments carry their own amount; a payment named without one is kept (amount unknown).
+  if (items.filter((x) => x.amount).length < 2) return null;
+  // Dates: one said for all ("todo lo pago el 5", "… cada 5 de cada mes") goes to each; otherwise each payment takes
+  // the date said inside its own part ("luz 120 el 10, agua 80 e internet 99 el 20" → luz 10, agua —, internet 20).
+  const distinct = [...new Set(days.map((d) => d.day))];
+  const forAll = distinct.length === 1 && (/\b(todo|todos|todas|ambos|ambas|los tres|siempre)\b/.test(t) || /\bde cada mes\b/.test(t) && items.length >= 2 && days[0]!.index > Math.max(...items.map((x) => x.hit.end)));
+  const sorted = [...items].sort((a, b) => a.hit.index - b.hit.index);
+  return items.map(({ hit, amount }): Patch => {
+    const next = sorted.find((x) => x.hit.index > hit.index)?.hit.index ?? t.length;
+    const own = days.find((d) => d.index > Math.min(hit.index, amount?.index ?? hit.index) && d.index < next);
+    const day = forAll ? days[0]! : own ?? null;
+    return { t: 'obligation', kind: hit.kind, name: hit.name, ...amountFields(amount), ...(day ? { day: day.day, ...(day.dayMax ? { dayMax: day.dayMax } : {}), ...(day.approx ? { approxDay: true } : {}) } : {}) };
+  });
+}
+
+const PROPER_LENDER = /\b(?:de|a|con)\s+([a-z]{3,15})\s+(?:mi|un|una|el|la)\s+(amig[oa]|herman[oa]|prim[oa]|tio|tia|vecin[oa]|compadre|cunad[oa]|jefe|jefa)\b/;
+const PERSON_WORDS = /\b(amig[oa]|herman[oa]|prim[oa]|tio|tia|vecin[oa]|compadre|cunad[oa]|jefe|jefa|pareja|enamorad[oa]|espos[oa]|novi[oa]|mama|madre|papa|padre|suegr[oa])\b/;
+
+/**
+ * Debts said together: "pago mi préstamo del carro 250 mensuales cada 8 y también un préstamo de Roberto mi amigo,
+ * me prestó 100, le pago 10 al mes, voy pagándole 30, me faltan 70". Each part is its own record with its own
+ * numbers: a loan's installment is never its principal; a person's loan keeps lent / owed / installment apart.
+ * Nothing is computed (the balance is the one said). null unless at least one debt has a number.
+ */
+export function debtList(t: string): Patch[] | null {
+  if (!/\b(prestamo|prestamos|me presto|me prestaron|debo|deuda)\b/.test(t) || CARD.test(t)) return null;
+  const parts = t.split(/\b(?:y (?:pago )?tambien|tambien|ademas|y (?:otro|un) prestamo|y le debo|y debo)\b/).map((x) => x.trim()).filter((x) => /\d/.test(x) && /\b(prestamo|presto|prestaron|debo|deuda)\b/.test(x));
+  if (!parts.length) return null;
+  const out: Patch[] = [];
+  for (const part of parts) {
+    const proper = PROPER_LENDER.exec(part);
+    const person = proper || PERSON_WORDS.test(part) || /\b(me presto|le debo|le pago)\b/.test(part) && !bankIn(part).length;
+    if (person) {
+      const lenderKnown = LENDERS.find(([re]) => re.test(part));
+      const lender = proper ? proper[1]!.charAt(0).toUpperCase() + proper[1]!.slice(1) : lenderKnown?.[1] ?? 'una persona';
+      const f: { principal?: number; balance?: number; installment?: number; paid?: number } = {};
+      for (const a of findAmounts(part, findDays(part))) {
+        const before = part.slice(Math.max(0, a.index - 30), a.index);
+        const after = part.slice(a.end, a.end + 18);
+        if (f.installment === undefined && (/\b(le pago|pagare|pago|pagando|abono|devuelvo)\b[^\d]{0,12}$/.test(before) && MONTHLY_AFTER.test(after) || MONTHLY_AFTER.test(after) && !/\b(presto|prestaron)\b[^\d]*$/.test(before))) f.installment = a.minor;
+        else if (f.balance === undefined && /\b(faltan?|falta pagar|quedan?|debo|le debo|pendiente)\b[^\d]{0,12}$/.test(before)) f.balance = a.minor;
+        else if (f.paid === undefined && /\b(pagandole|pagado|pague|le he pagado|abonado|llevo)\b[^\d]{0,12}$/.test(before)) f.paid = a.minor;
+        else if (f.principal === undefined && /\b(presto|prestaron|prestamo de|me dio)\b[^\d]{0,12}$/.test(before)) f.principal = a.minor;
+      }
+      const day = findDays(part)[0];
+      // The balance is the one said ("me faltan 70"); with only "me prestó 100" nothing was paid back yet as far as we know.
+      const balance = f.balance ?? (f.paid === undefined ? f.principal : undefined);
+      out.push({ t: 'debt', kind: 'personal', name: `Deuda con ${lender}`, lender, ...(f.principal !== undefined ? { principalMinor: f.principal } : {}),
+        ...(balance !== undefined ? { balanceMinor: balance } : { unknownBalance: true }), ...(f.installment !== undefined ? { installmentMinor: f.installment } : {}), ...(day ? { dueDay: day.day } : {}) });
+    } else {
+      const f = readLoan(part);
+      // "pago mi préstamo … 250 soles mensuales": the installment (never the amount lent).
+      if (f.installmentMinor === undefined && f.principalMinor !== undefined) {
+        const a = findAmounts(part, findDays(part)).find((x) => x.minor === f.principalMinor);
+        if (a && (MONTHLY_AFTER.test(part.slice(a.end, a.end + 18)) || /\bpago\b/.test(part.slice(0, a.index)))) { f.installmentMinor = f.principalMinor; delete f.principalMinor; }
+      }
+      out.push({ t: 'debt', kind: 'loan', name: loanName(f.loanType, f.institution), ...(f.institution ? { institution: f.institution } : {}), ...(f.loanType ? { loanType: f.loanType } : {}),
+        ...(f.currency ? { currency: f.currency } : {}), ...(f.principalMinor !== undefined ? { principalMinor: f.principalMinor } : {}), ...(f.balanceMinor !== undefined ? { balanceMinor: f.balanceMinor } : {}),
+        ...(f.installmentMinor !== undefined ? { installmentMinor: f.installmentMinor } : {}), ...(f.installmentsTotal !== undefined ? { installmentsTotal: f.installmentsTotal } : {}),
+        ...(f.installmentsPaid !== undefined ? { installmentsPaid: f.installmentsPaid } : {}), ...(f.dueDay !== undefined ? { dueDay: f.dueDay } : {}) });
+    }
+  }
+  // A single plain loan sentence is left to the normal reading (it already handles one loan well).
+  return out.length >= 2 || out.some((p) => p.t === 'debt' && p.kind === 'personal' && p.installmentMinor !== undefined) ? out : null;
+}
+
+/**
+ * "notion 24 dólares mensual y faceit 5 dólares": subscriptions named with their price, each its own record, in its
+ * currency (PEN ≠ USD). Used while the subscriptions question is pending. Days are asked afterwards, never guessed.
+ */
+export function subscriptionList(t: string): Patch[] {
+  const clean = t.replace(/^(si|sí|claro|tengo|pago|uso)\b[, ]*/, '');
+  const out: Patch[] = [];
+  const re = /([a-z][a-z0-9+.]*(?:\s(?!de\b|y\b|a\b|por\b|mensual|al\b|cada\b)[a-z0-9+.]+)?)\s+(?:de\s+|a\s+|por\s+|en\s+)?(s\/\.?|us\$|\$|usd)?\s*(\d+(?:[.,]\d{1,2})?)\s*(dolares|dolar|usd|soles|sol)?/g;
+  for (const m of clean.matchAll(re)) {
+    const raw = m[1]!.replace(/^(y|e|tambien|pago|tengo|uso|el|la|mi)\s+/, '').trim();
+    if (!raw || /^(cada|el|dia|al|mensual|y|de|si|pago|unos|unas|como|aprox\w*|mas|menos|cerca|casi|alrededor|gasto|gastos|soles|dolares|tengo|son|es|total|en)$/.test(raw.split(' ')[0]!)) continue;
+    const usd = /^(us\$|\$|usd)$/.test(m[2] ?? '') || /^(dolares|dolar|usd)$/.test(m[4] ?? '');
+    const minor = Math.round(Number(m[3]!.replace(',', '.')) * 100);
+    if (!minor || minor > 1e9) continue;
+    const day = findDays(clean.slice(m.index! + m[0].length, m.index! + m[0].length + 20))[0];
+    out.push({ t: 'obligation', kind: 'subscription', name: raw.charAt(0).toUpperCase() + raw.slice(1), amountMinor: minor, currency: usd ? 'USD' : 'PEN', ...(day ? { day: day.day } : {}) });
+  }
+  return out;
 }
 
 function interpretRest(message: string): Interpretation {

@@ -30,6 +30,8 @@ export interface DebtFact {
   id: string; name: string; kind: DebtKind; lender: string | null; institution: string | null; last4: string | null; currency: Currency;
   balanceMinor: number | null; balanceStatus: FactStatus;
   minimumMinor: number | null; dueDay: number | null;
+  /** Credit card: what the person usually pays each month ("mi pago mensual es de 100") — never the minimum. */
+  usualPaymentMinor?: number | null;
   /** Credit card statement (cut-off) day → cards.statement_day when the card is registered (last 4 known). */
   cutDay?: number | null;
   /** Loans (debts table columns): what was lent, the monthly installment and how many installments. Never derived:
@@ -83,7 +85,7 @@ export type Patch =
   | { t: 'obligation'; endHint?: boolean; kind: ObligationKind; name: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean;
       day?: number; dayMax?: number; approxDay?: boolean; quincena?: boolean }
   | { t: 'debt'; kind: DebtKind; name: string; lender?: string; institution?: string; last4?: string; currency?: Currency;
-      balanceMinor?: number; approx?: boolean; unknownBalance?: boolean; minimumMinor?: number; dueDay?: number;
+      balanceMinor?: number; approx?: boolean; unknownBalance?: boolean; minimumMinor?: number; dueDay?: number; usualPaymentMinor?: number;
       /** Internal: the draft debt a pending question is about (never from Gemini). */
       id?: string;
       loanType?: string; principalMinor?: number; installmentMinor?: number; installmentsTotal?: number; installmentsPaid?: number; installmentsLeft?: number }

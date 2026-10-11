@@ -1,5 +1,6 @@
 import { mergePatches } from './draft';
 import { matchProvider } from '../domain/subscriptions';
+import { formatMoney } from '../domain/money';
 import { fold } from './text';
 import { emptyDraft, type Draft, type Patch } from './types';
 
@@ -59,16 +60,25 @@ export function domainWrites(d: Draft, userId: string): DomainWrites {
       w.debts.push({
         user_id: userId, name: x.name.slice(0, 60), lender: (x.lender ?? x.institution)?.slice(0, 60) ?? null, currency: x.currency,
         principal_minor: x.principalMinor ?? Math.max(x.balanceMinor, 1), balance_minor: x.balanceMinor, due_day: x.dueDay,
-        ...(x.kind === 'loan' && x.installmentMinor ? { installment_minor: x.installmentMinor } : {}),
+        // A loan's installment, or what is paid back to a person each month: the engine plans it while a balance remains.
+        ...((x.kind === 'loan' || x.kind === 'personal') && x.installmentMinor ? { installment_minor: x.installmentMinor } : {}),
         ...(x.kind === 'loan' && total && total <= 600 ? { installments_total: total } : {}),
         ...(x.kind === 'loan' && paid !== null && paid >= 0 && (total === null || paid <= total) ? { installments_paid: paid } : {}),
       });
-    } else w.deferred.push(`${x.name}: falta el saldo`);
+    } else {
+      w.deferred.push(`${x.name}: falta el saldo`);
+      // The balance is unknown but the monthly installment is known ("pago 250 cada 8"): that payment is still planned
+      // (a planned outflow), the debt itself waits for its balance — nothing is invented for it.
+      if (x.kind === 'loan' && x.installmentMinor) w.obligations.push({ user_id: userId, name: x.name.slice(0, 60), kind: 'loan', currency: x.currency, amount_minor: x.installmentMinor,
+        amount_status: 'confirmed', frequency: 'monthly', due_day: x.dueDay, due_day_max: null });
+    }
     // The card's monthly payment is an obligation (card payment is never an expense; it is a planned outflow).
-    if (x.kind === 'card' && (x.minimumMinor !== null || x.dueDay !== null) && !d.obligations.some((o) => o.kind === 'card')) {
+    if (x.kind === 'card' && (x.minimumMinor !== null || x.usualPaymentMinor != null || x.dueDay !== null) && !d.obligations.some((o) => o.kind === 'card')) {
       w.obligations.push({
-        user_id: userId, name: x.name.slice(0, 60), kind: 'card', currency: x.currency, amount_minor: x.minimumMinor,
-        amount_status: x.minimumMinor === null ? 'unknown' : 'estimated', frequency: 'monthly', due_day: x.dueDay, due_day_max: null,
+        // What the person usually pays is the planned payment; the minimum is kept apart (never one for the other).
+        user_id: userId, name: x.name.slice(0, 60), kind: 'card', currency: x.currency, amount_minor: x.usualPaymentMinor ?? x.minimumMinor,
+        amount_status: (x.usualPaymentMinor ?? x.minimumMinor) == null ? 'unknown' : 'estimated', frequency: 'monthly', due_day: x.dueDay, due_day_max: null,
+        ...(x.minimumMinor != null ? { notes: `Pago mínimo ${formatMoney({ amountMinor: x.minimumMinor, currency: x.currency })}` } : {}),
       });
     }
   }

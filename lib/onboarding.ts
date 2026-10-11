@@ -5,6 +5,7 @@ import { isReplay } from './idempotency';
 import type { ChatMessage, MessageCard } from '../src/ai/conversation';
 import { agendaLine, answerFromDraft, canStart, clarify, compactState, finalSummary, hasFacts, mergePatches, nextQuestion, pendingReply, setWork, shortReply, unreadNumbers, upcomingFromDraft, workIn, WORK_HELP, yesNoReply, type Changed } from '../src/ai/draft';
 import { limaToday, shortDate } from '../src/domain/dates';
+import { formatMoney } from '../src/domain/money';
 import { checkImage, IMAGE_ERROR_TEXT, imageReadKey, READ_REUSE_MINUTES } from '../src/ai/image';
 import { interpret, isSmallTalk } from '../src/ai/interpreter';
 import { fold } from '../src/ai/text';
@@ -76,6 +77,19 @@ export async function onboardingConversation(supabase: SupabaseClient): Promise<
   ];
 }
 
+/**
+ * A savings goal above the known monthly income (same currency): said kindly, once, when the goal is given. The goal
+ * is kept exactly as said (never changed by Vels); occasional incomes and other currencies are not counted.
+ */
+export function savingsWarning(d: Draft, changed: Changed[]): string | null {
+  if (!changed.some((c) => c.ref === 'savings') || !d.savings || d.savings.amountMinor == null) return null;
+  const cur = d.savings.currency;
+  const monthly = d.incomes.filter((i) => i.currency === cur && i.amountMinor != null && i.frequency !== 'occasional').reduce((s, i) => s + i.amountMinor!, 0);
+  if (!monthly || d.savings.amountMinor <= monthly) return null;
+  const m = (v: number) => formatMoney({ amountMinor: v, currency: cur }).replace(/\.00$/, '');
+  return `Ojo: tu meta de ${m(d.savings.amountMinor)} al mes supera tus ingresos conocidos (${m(monthly)} al mes). La guardo tal como me la dijiste; puedes ajustarla cuando quieras.`;
+}
+
 const closing = (name: string | null) => `Listo${name ? `, ${name}` : ''}. Este es el resumen de tus finanzas. Revísalo antes de continuar.`;
 const REVIEW_ACTIONS: MessageCard['actions'] = [{ kind: 'correct', label: 'Corregir información' }, { kind: 'start', label: 'Confirmar y continuar' }];
 
@@ -91,6 +105,8 @@ export function followUp(draft: Draft, changed: Changed[], today: string = limaT
   // The card only when several things changed at once (one item is already said in the sentence).
   if (facts.length >= 2) { card.title = 'Entendí esto'; card.rows = facts.map(({ label, value }) => ({ label, value })); }
   let lead = shortReply(draft, changed, answered);
+  const warning = savingsWarning(draft, changed);
+  if (warning) lead = `${lead ? `${lead}\n` : ''}${warning}`;
   // "Ya te dije que cobro el 5": acknowledged, and the fact is used (never asked a third time).
   if (/\b(ya te (lo )?(dije|conte|habia dicho)|te lo dije|ya lo dije)\b/.test(fold(said))) lead = `Tienes razón.${lead ? ` ${lead}` : ''}`;
   const paymentsReady = draft.obligations.length >= 2 && draft.obligations.every((o) => o.day !== null || draft.asked.includes(`obligation:${o.id}:day`));
@@ -112,7 +128,7 @@ export function followUp(draft: Draft, changed: Changed[], today: string = limaT
   // Enough to start: the person reviews everything (with its state) before anything is written.
   card.summary = finalSummary(draft, today);
   card.actions = REVIEW_ACTIONS;
-  return { body: closing(name), card, draft };
+  return { body: warning ? `${warning}\n\n${closing(name)}` : closing(name), card, draft };
 }
 
 export async function onboardingText(supabase: SupabaseClient, userId: string, raw: string): Promise<void> {

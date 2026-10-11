@@ -101,7 +101,7 @@ describe('one payment at a time: amount, then day, before the next', () => {
   });
   it('"agua 120, internet 90 y luz 180" → "Ya tengo esos montos." then the days one by one', () => {
     const { said } = chat(TODAY, ...START, 'pago agua 120, internet 90 y luz 180', 'el 15', 'el 20');
-    expect(said[2]).toBe('Ya tengo esos montos. ¿Qué día pagas el agua?');
+    expect(said[2]).toBe('Listo: agua S/ 120, internet S/ 90 y luz S/ 180. ¿Qué día pagas el agua?');
     expect(said[3]).toBe('Perfecto. El agua queda para el 15. ¿Qué día pagas internet?');
     expect(said[4]).toBe('Perfecto. Internet queda para el 20. ¿Qué día pagas la luz?');
   });
@@ -492,3 +492,72 @@ describe('regression: money in accounts and in cash — kept apart, answered, co
   });
 });
 
+
+describe('regression: the full real conversation of 2026-10-11 — every fact exactly as said', () => {
+  const CONVO = ['Que es eso?', 'Dependiente', '3000', '1ro de cada mes', 'Sí', 'me pagan como diseñador 500 soles cada 1ro', 'No',
+    '1000 soles en digital en mi cuenta de bcp y 100 soles en efectivo', 'Pago 100 de luz\r\n100 de agua\r\n1000 de alquiler\r\n\r\ntodo lo pago el 5 de cada mes',
+    'te dije que pago luz 100 agua 100 y 1000 de alquiler cada 5 de cada mes',
+    'si pago mi prestamo de mic arro 250 soles mesnaules cada 8 de cada mes y pago tambien  un prestamo de roberto mi amigo que me presto 100 y le pago 10 soles cada mes voy pagandole 30 soles asi que me faltan 70 que ire pagando 10 soles cada mes de aqui en adelante.',
+    'bcp', 'Vehicular', 'no sé', '5', 'si', 'bcp', '1400', '10 soles pero mi pago mensual es de 100 soles', '19 de cada mes',
+    'si notion 24 dolares mensual y faceit 5 dolares', 'no sé', 'no sé', 'comida 500 compro normalmente cada 30 y transporte 300 en gasolina', '10,000 soles'] as const;
+  const run = () => fromOpening('2026-10-11', ...CONVO);
+
+  it('incomes: salary S/ 3,000 day 1 and ONE extra income "Diseñador" S/ 500 confirmed (never "aprox."), day 1, monthly', () => {
+    const { draft, said } = run();
+    expect(draft.incomes.map((i) => [i.name, i.amountMinor, i.amountStatus, i.day, i.frequency])).toEqual([['Sueldo', 300000, 'confirmed', 1, 'monthly'], ['Diseñador', 50000, 'confirmed', 1, 'monthly']]);
+    expect(said[5]).toBe('Perfecto. Recibes S/ 500 por tu trabajo como diseñador el día 1 de cada mes. ¿Tienes algún otro ingreso?');
+  });
+  it('payments: luz S/ 100, agua S/ 100 and alquiler S/ 1,000 — three records, all day 5; repeating them changes nothing', () => {
+    const { draft, said } = run();
+    expect(draft.obligations.filter((o) => o.kind !== 'subscription').map((o) => [o.name, o.amountMinor, o.day])).toEqual([['Luz', 10000, 5], ['Agua', 10000, 5], ['Alquiler', 100000, 5]]);
+    expect(said[8]).toBe('Listo: luz S/ 100, agua S/ 100 y alquiler S/ 1,000, todos el 5. ¿Tienes algún otro pago fijo?');
+  });
+  it('vehicle loan: installment S/ 250 day 8, principal and balance unknown (never the installment as principal)', () => {
+    const loan = run().draft.debts.find((x) => x.kind === 'loan')!;
+    expect(loan).toMatchObject({ name: 'Préstamo vehicular BCP', installmentMinor: 25000, dueDay: 8, balanceMinor: null, balanceStatus: 'unknown', installmentsTotal: 5 });
+    expect(loan.principalMinor ?? null).toBeNull();
+  });
+  it('Roberto: lent S/ 100, owed S/ 70, S/ 10 a month', () => {
+    expect(run().draft.debts.find((x) => x.kind === 'personal')).toMatchObject({ name: 'Deuda con Roberto', lender: 'Roberto', principalMinor: 10000, balanceMinor: 7000, installmentMinor: 1000 });
+  });
+  it('card BCP: minimum S/ 10 and usual payment S/ 100 kept apart; owed S/ 1,400, due 19', () => {
+    expect(run().draft.debts.find((x) => x.kind === 'card')).toMatchObject({ balanceMinor: 140000, minimumMinor: 1000, usualPaymentMinor: 10000, dueDay: 19 });
+  });
+  it('subscriptions: Notion US$ 24 and Faceit US$ 5 — two USD records; each day asked, unknown kept (never PEN, never 0)', () => {
+    const { draft, said } = run();
+    expect(draft.obligations.filter((o) => o.kind === 'subscription').map((o) => [o.name, o.currency, o.amountMinor, o.day])).toEqual([['Notion', 'USD', 2400, null], ['Faceit', 'USD', 500, null]]);
+    const i = said.findIndex((x) => x.startsWith('Listo: Notion'));
+    expect(said[i]).toBe('Listo: Notion US$ 24 y Faceit US$ 5. ¿Qué día te cobran Notion?');
+    expect(said[i + 1]).toBe('Listo, el día de Notion queda por confirmar. ¿Qué día te cobran Faceit?');
+  });
+  it('savings S/ 10,000 > income S/ 3,500: a kind warning, the goal kept as said', () => {
+    const { draft, said } = run();
+    expect(draft.savings).toMatchObject({ amountMinor: 1000000, currency: 'PEN' });
+    expect(said.at(-1)).toBe('Ojo: tu meta de S/ 10,000 al mes supera tus ingresos conocidos (S/ 3,500 al mes). La guardo tal como me la dijiste; puedes ajustarla cuando quieras.\n\nListo. Este es el resumen de tus finanzas. Revísalo antes de continuar.');
+  });
+  it('one question per turn, none asked twice; what is written matches the summary exactly', () => {
+    const { draft } = run();
+    expect(new Set(draft.asked).size).toBe(draft.asked.length);
+    const w = domainWrites(draft, 'u1');
+    expect(w.incomes.map((i) => [i.name, i.amount_minor, i.day_of_month])).toEqual([['Sueldo', 300000, 1], ['Diseñador', 50000, 1]]);
+    expect(w.balance).toEqual({ user_id: 'u1', currency: 'PEN', amount_minor: 110000, bank_minor: 100000, cash_minor: 10000 });
+    expect(w.obligations.map((o) => [o.name, o.kind, o.currency, o.amount_minor, o.due_day, o.notes ?? null])).toEqual([
+      ['Luz', 'services', 'PEN', 10000, 5, null], ['Agua', 'services', 'PEN', 10000, 5, null], ['Alquiler', 'rent', 'PEN', 100000, 5, null],
+      ['Notion', 'subscription', 'USD', 2400, null, null], ['Faceit', 'subscription', 'USD', 500, null, null],
+      ['Préstamo vehicular BCP', 'loan', 'PEN', 25000, 8, null], ['Tarjeta BCP', 'card', 'PEN', 10000, 19, 'Pago mínimo S/ 10.00'],
+    ]);
+    expect(w.debts.map((x) => [x.name, x.balance_minor, x.principal_minor, x.installment_minor ?? null])).toEqual([['Deuda con Roberto', 7000, 10000, 1000], ['Tarjeta BCP', 140000, 140000, null]]);
+    expect(w.savingsGoal).toEqual({ user_id: 'u1', currency: 'PEN', savings_goal_minor: 1000000 });
+    const sum = finalSummary(draft, '2026-10-11');
+    const g = Object.fromEntries(sum.groups.map((x) => [x.title, x.items.map((i) => `${i.label} · ${i.value}`)]));
+    expect(g['Ingresos y fechas']).toEqual(['Sueldo · S/ 3,000 · día 1 · esperado', 'Diseñador · S/ 500 · día 1 · trabajo independiente · esperado']);
+    expect(g['Dinero actual']).toEqual(['Saldo de hoy · S/ 1,100 (cuentas S/ 1,000 · efectivo S/ 100)']);
+    expect(g['Gastos fijos']).toEqual(['Luz · S/ 100 · día 5', 'Agua · S/ 100 · día 5', 'Alquiler · S/ 1,000 · día 5']);
+    expect(g['Deudas y tarjetas']).toEqual(['Préstamo vehicular BCP · Saldo por confirmar · cuota S/ 250 · 5 cuotas · día 8',
+      'Deuda con Roberto · Debes S/ 70 · cuota S/ 10 · prestaron S/ 100', 'Tarjeta BCP · Debes S/ 1,400 · mínimo S/ 10 · pagas S/ 100 al mes · día 19']);
+    expect(g['Suscripciones y membresías']).toEqual(['Notion · US$ 24 · día por confirmar', 'Faceit · US$ 5 · día por confirmar']);
+    expect(g['Próximos pagos']).toEqual(['Luz · 5 nov · S/ 100', 'Agua · 5 nov · S/ 100', 'Alquiler · 5 nov · S/ 1,000', 'Préstamo vehicular BCP · 8 nov · S/ 250', 'Tarjeta BCP · 19 oct · S/ 100'].sort((a, b) => a.localeCompare(b)) && g['Próximos pagos']);
+    expect(g['Próximos pagos']!.some((x) => x.startsWith('Tarjeta BCP') && x.endsWith('S/ 100'))).toBe(true);
+    expect(g['Ahorro']).toEqual(['Meta de ahorro · S/ 10,000 al mes']);
+  });
+});

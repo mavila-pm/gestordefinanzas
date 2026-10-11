@@ -3,8 +3,8 @@ import { matchProvider } from '../domain/subscriptions';
 import { formatMoney } from '../domain/money';
 import { incomeOccurrencesBetween, occurrencesBetween, type ExpectedIncome, type Obligation } from '../engine/planning';
 import { addDays, shortDate } from '../domain/dates';
-import { BANK_LABEL, bankIn, loanName, readLoan } from './interpreter';
-import { fold, UNKNOWN } from './text';
+import { BANK_LABEL, bankIn, loanName, readLoan, subscriptionList } from './interpreter';
+import { findAmounts, findDays, fold, UNKNOWN } from './text';
 import type { Bare, DebtFact, Draft, FactStatus, Patch } from './types';
 
 /**
@@ -104,6 +104,7 @@ export function mergePatches(draft0: Draft, patches0: readonly Patch[], bare: Ba
         if (sameMoney && p.balanceMinor !== undefined) { d.balanceMinor = p.balanceMinor; d.balanceStatus = status(true, p.approx); }
         else if (p.unknownBalance) { d.balanceMinor = null; d.balanceStatus = 'unknown'; }
         if (sameMoney && p.minimumMinor !== undefined) d.minimumMinor = p.minimumMinor;
+        if (sameMoney && p.usualPaymentMinor !== undefined) d.usualPaymentMinor = p.usualPaymentMinor;
         if (p.dueDay !== undefined) d.dueDay = p.dueDay;
         touched.add(`debt:${d.id}`);
         break;
@@ -307,8 +308,12 @@ function describe(d: Draft, touched: Set<string>): Changed[] {
 function debtValue(x: DebtFact): string {
   const parts: string[] = [x.balanceMinor === null ? 'Saldo por confirmar' : `Debes ${money(x.balanceMinor, x.currency)}${x.balanceStatus === 'estimated' ? ' aprox.' : ''}`];
   if (x.minimumMinor) parts.push(`mínimo ${money(x.minimumMinor, x.currency)}`);
+  if (x.usualPaymentMinor) parts.push(`pagas ${money(x.usualPaymentMinor, x.currency)} al mes`);
   if (x.installmentMinor) parts.push(`cuota ${money(x.installmentMinor, x.currency)}`);
-  if (x.installmentsTotal) parts.push(`${x.installmentsPaid ?? (x.installmentsLeft != null ? x.installmentsTotal - x.installmentsLeft : '?')} de ${x.installmentsTotal} cuotas`);
+  if (x.installmentsTotal) {
+    const paid = x.installmentsPaid ?? (x.installmentsLeft != null ? x.installmentsTotal - x.installmentsLeft : null);
+    parts.push(paid === null ? `${x.installmentsTotal} cuotas` : `${paid} de ${x.installmentsTotal} cuotas`);
+  }
   else if (x.installmentsLeft != null) parts.push(`faltan ${x.installmentsLeft} cuotas`);
   if (x.principalMinor) parts.push(`prestaron ${money(x.principalMinor, x.currency)}`);
   if (x.dueDay) parts.push(`día ${x.dueDay}`);
@@ -460,6 +465,12 @@ export function nextQuestion(d: Draft): Question | null {
  */
 export function incomeSource(said: string): { name: string; source: 'independent' | 'rental' | 'other' } | null {
   const f = fold(said);
+  // "me pagan como diseñador 500", "trabajo como fotógrafo": the role is the source ("como" here is not "about").
+  const role = /\b(?:trabajo|me pagan|cobro|gano|soy|hago trabajos)\s+(?:como|de)\s+([\p{L} ]{3,40}?)(?=\s+(?:s\/|us\$|\d|y\s|por\s|cada\s|al\s|en\s)|\s*[,.]|\s*$)/u.exec(said.toLowerCase());
+  if (role && !/\b(que|eso|esto)\b/.test(role[1]!)) {
+    const r = role[1]!.trim();
+    return { name: r.charAt(0).toUpperCase() + r.slice(1), source: 'independent' };
+  }
   let s = said.split(/\s*(?:\b(?:y )?(?:recibo|cobro|gano|me pagan|me dan|me deja|me depositan|saco)\b|\bs\/|\bus\$|\$|\d|,|\.|\bcada\b|\bal mes\b|\btodos los\b)/i)[0] ?? '';
   s = s.replace(/^\s*(?:s[ií],?\s*)?(?:(?:yo|tambien|también)\s+)*(?:hago|doy|vendo|ofrezco|tengo|trabajo(?:\s+(?:como|en|haciendo|de))?|alquilo|recibo(?:\s+(?:ingresos|plata|dinero))?(?:\s+(?:de|por))?|viene(?:n)?\s+de|de|por)\s+/i, '')
     .replace(/^(?:un|una|unos|unas|mis|mi|los|las|el|la)\s+/i, '').replace(/[^\p{L}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
@@ -724,6 +735,11 @@ export function pendingReply(d: Draft, text: string): MergeResult | null {
     if (/\bultimo dia\b|^el ultimo$/.test(t)) { setDay(31); return done(); }
     return null;
   }
+  // "notion 24 dólares mensual y faceit 5 dólares": every subscription named, each with its own price and currency.
+  if (pending === 'group:subscriptions' && /\d/.test(t)) {
+    const subs = subscriptionList(fold(text));
+    if (subs.length) return mergePatches({ ...d, pending: 'group:subscriptions' }, subs, null);
+  }
   const ob = /^obligation:([^:]+):(day|end|dayexact)$/.exec(pending);
   if (ob) {
     const draft = structuredClone(d);
@@ -755,6 +771,16 @@ export function pendingReply(d: Draft, text: string): MergeResult | null {
     return null;
   }
   const debt = d.debts.find((x) => x.id === id);
+  // Card minimum vs what the person usually pays ("10 soles pero mi pago mensual es de 100"): two different facts.
+  if (kind === 'debt' && debt?.kind === 'card' && field === 'minimum' && /\d/.test(t)) {
+    const amounts = findAmounts(t, findDays(t));
+    if (!amounts.length) return null;
+    const usualIdx = amounts.findIndex((a) => /\b(pago (mensual|habitual|normal|de siempre)|normalmente pago|siempre pago|suelo pagar|yo pago|pago al mes|pago cada mes)\b[^\d]{0,12}$/.test(t.slice(Math.max(0, a.index - 40), a.index)) || /^\s*(soles\s+)?(al mes|cada mes|mensual)/.test(t.slice(a.end, a.end + 16)) && amounts.length > 1);
+    const usual = usualIdx >= 0 ? amounts[usualIdx] : undefined;
+    const min = amounts.find((_, i) => i !== usualIdx);
+    if (!min && !usual) return null;
+    return mergePatches({ ...d, pending: null }, [{ t: 'debt', kind: 'card', id, name: debt.name, ...(min ? { minimumMinor: min.minor } : {}), ...(usual ? { usualPaymentMinor: usual.minor } : {}) }], null);
+  }
   if (kind !== 'debt' || !debt || debt.kind !== 'loan') return null;
   if (unknown && t.split(' ').length <= 4) { const draft = structuredClone(d); draft.pending = null; return { draft, changed: [] }; }
   const loanPatch = (f: Partial<Extract<Patch, { t: 'debt' }>>): MergeResult => mergePatches({ ...d, pending: null }, [{ t: 'debt', kind: 'loan', id, name: debt.name, ...f }], null);
@@ -928,11 +954,18 @@ export function shortReply(d: Draft, changed: readonly Changed[], answered: stri
     // What was just answered decides the sentence: the day ("queda para el 15") or the amount ("S/ 120 de agua").
     const justDay = !!answered && answered.startsWith(`obligation:${o.id}:`) && /:(day|quincena)$/.test(answered);
     const justAmount = !!answered && answered === `obligation:${o.id}:amount`;
-    if (o.day !== null && (justDay || (!amount && !justAmount))) out.push(`Perfecto. ${cap(theName(o.name))} queda para ${dayPhrase(o.day, o.dayMax)}.`);
+    if (justDay && o.day === null) out.push(`Listo, el día de ${o.kind === 'subscription' ? o.name : theName(o.name)} queda por confirmar.`);
+    else if (o.day !== null && (justDay || (!amount && !justAmount))) out.push(`Perfecto. ${cap(theName(o.name))} queda para ${dayPhrase(o.day, o.dayMax)}.`);
     else if (amount && o.day !== null && !justAmount) out.push(`Listo: ${o.name.toLowerCase()}, ${amount} ${dayPhrase(o.day, o.dayMax)}.`);
     else if (amount) out.push(`Listo, ${amount} de ${o.name.toLowerCase()}.`);
   } else if (obligations.length > 1) {
-    out.push(obligations.every((o) => o.amountMinor !== null) && obligations.every((o) => o.day === null) ? 'Ya tengo esos montos.' : 'Ya tengo esos pagos.');
+    // Each payment said back with its own amount, so a mix-up is visible at once ("luz S/ 100, agua S/ 100 y alquiler S/ 1,000").
+    if (obligations.every((o) => o.amountMinor === null)) { out.push('Ya tengo esos pagos.'); return [...out].join(' '); }
+    const items = obligations.map((o) => `${o.kind === 'subscription' ? o.name : o.name.toLowerCase()} ${o.amountMinor === null ? '(monto por confirmar)' : money(o.amountMinor, o.currency)}`);
+    const list = items.length > 1 ? `${items.slice(0, -1).join(', ')} y ${items.at(-1)}` : items[0];
+    const days = [...new Set(obligations.map((o) => o.day))];
+    const when = days.length === 1 && days[0] !== null ? `, ${obligations.length === 2 ? 'ambos' : 'todos'} ${dayPhrase(days[0]!, null)}` : '';
+    out.push(`Listo: ${list}${when}.`);
   }
   if (others.length === 1) {
     const c = others[0]!;
@@ -941,7 +974,12 @@ export function shortReply(d: Draft, changed: readonly Changed[], answered: stri
     else if (c.ref?.startsWith('debt:')) out.push(debtRecap(d, c, answered));
     else if (c.ref?.startsWith('variable:')) out.push(`Listo, ${c.value.toLowerCase()} en ${c.label.toLowerCase()}.`);
     else out.push('Anotado.');
-  } else if (others.length > 1) out.push('Ya lo tengo.');
+  } else if (others.length > 1) {
+    // Several facts of one kind are said back one by one (no "ya lo tengo" that hides a mix-up).
+    if (others.every((c) => c.ref?.startsWith('debt:'))) out.push(`Anotado: ${others.map((c) => `${c.label.replace(/^Préstamo/, 'préstamo').replace(/^Deuda/, 'deuda')} (${c.value.charAt(0).toLowerCase()}${c.value.slice(1)})`).join('; ')}.`);
+    else if (others.every((c) => c.ref?.startsWith('variable:'))) out.push(`Listo: ${others.map((c) => `${c.label.toLowerCase()} ${c.value.replace(/ al mes/, '')}`).join(' y ')} al mes.`);
+    else out.push('Ya lo tengo.');
+  }
   return out.join(' ').replace(/, \./g, '.').replace(/\s+/g, ' ').trim();
 }
 
@@ -969,7 +1007,9 @@ function incomeAck(d: Draft, c: Changed): string {
 /** An extra income in one natural line, with only what is known: "Perfecto. Recibes S/ 300 por diseños de arte digital el día 5 de cada mes." */
 function extraAck(i: Draft['incomes'][number]): string {
   const generic = GENERIC_INCOME.has(i.name);
-  const by = generic ? '' : ` por ${i.name.charAt(0).toLowerCase()}${i.name.slice(1)}`;
+  const lower = `${i.name.charAt(0).toLowerCase()}${i.name.slice(1)}`;
+  // A role ("Diseñador") reads as "por tu trabajo como diseñador"; a thing ("Diseños de arte digital") as "por …".
+  const by = generic ? '' : i.source === 'independent' && !/\s/.test(i.name) ? ` por tu trabajo como ${lower}` : ` por ${lower}`;
   const amount = i.amountMinor === null ? null : `${i.amountStatus === 'estimated' ? 'unos ' : ''}${money(i.amountMinor, i.currency)}`;
   const when = i.frequency === 'occasional' ? ' de forma ocasional'
     : i.day !== null && i.secondDay ? ` los días ${i.day} y ${i.secondDay === 31 ? 'último' : i.secondDay} de cada mes`
@@ -987,7 +1027,7 @@ function debtRecap(d: Draft, c: Changed, answered: string | null): string {
   const named = c.label.replace(/^Tarjeta/, 'tarjeta').replace(/^Préstamo/, 'préstamo');
   const field = x && answered?.startsWith(`debt:${x.id}:`) ? answered.slice(`debt:${x.id}:`.length) : null;
   if (x && field === 'balance' && x.balanceMinor !== null) return `Listo, debes ${x.balanceStatus === 'estimated' ? 'unos ' : ''}${money(x.balanceMinor, x.currency)}.`;
-  if (x && field === 'minimum' && x.minimumMinor) return `Listo, mínimo ${money(x.minimumMinor, x.currency)}.`;
+  if (x && field === 'minimum' && x.minimumMinor) return x.usualPaymentMinor ? `Listo: el mínimo es ${money(x.minimumMinor, x.currency)} y sueles pagar ${money(x.usualPaymentMinor, x.currency)} al mes.` : `Listo, mínimo ${money(x.minimumMinor, x.currency)}.`;
   if (x && field === 'installment' && x.installmentMinor) return `Listo, cuota de ${money(x.installmentMinor, x.currency)}.`;
   if (x && field === 'cut' && x.cutDay) return `Perfecto. El corte es el ${x.cutDay}.`;
   if (x && field === 'day' && x.dueDay) return x.kind === 'card' ? `Perfecto. Vence el ${x.dueDay}.` : `Perfecto. La cuota queda para el ${x.dueDay}.`;
@@ -1017,8 +1057,9 @@ export function upcomingFromDraft(d: Draft, today: string): { until: string | nu
   const plans: Obligation[] = [
     ...d.obligations.filter((o) => o.day !== null).map((o): Obligation => ({ id: o.id, source: 'obligation', name: o.name, kind: o.kind, currency: o.currency, amountMinor: o.amountMinor,
       amountStatus: o.amountStatus, frequency: 'monthly', anchorMonth: null, dueDay: o.day, dueDayMax: o.dayMax, targetDay: null, since: today })),
-    ...d.debts.filter((x) => x.dueDay !== null && (x.kind === 'card' ? x.minimumMinor !== null : !!x.installmentMinor)).map((x): Obligation => ({ id: x.id, source: 'debt', name: x.name,
-      kind: x.kind === 'card' ? 'card' : 'loan', currency: x.currency, amountMinor: x.kind === 'card' ? x.minimumMinor : x.installmentMinor ?? null, amountStatus: 'confirmed',
+    ...d.debts.filter((x) => x.dueDay !== null && (x.kind === 'card' ? (x.usualPaymentMinor ?? x.minimumMinor) != null : !!x.installmentMinor)).map((x): Obligation => ({ id: x.id, source: 'debt', name: x.name,
+      // The card's planned payment is what the person usually pays (the minimum when that is all we know) — as written.
+      kind: x.kind === 'card' ? 'card' : 'loan', currency: x.currency, amountMinor: x.kind === 'card' ? x.usualPaymentMinor ?? x.minimumMinor : x.installmentMinor ?? null, amountStatus: 'confirmed',
       frequency: 'monthly', anchorMonth: null, dueDay: x.dueDay, dueDayMax: null, targetDay: null, since: today })),
   ];
   const items = plans.flatMap((o) => {

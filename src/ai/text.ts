@@ -3,6 +3,8 @@ import type { Currency } from '../domain/money';
 /** Lowercase, accents removed, spaces collapsed: for keyword matching only (amounts are read from the same string). */
 export const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
+/** Approximation words right before an amount: "como 500", "unos S/ 500", "aprox. 500", "más o menos 500". */
+export const APPROX_NEAR = /\b(como|aprox\w*|mas o menos|unos|unas|alrededor de|cerca de|casi|por ahi)\.?\s*(de\s+)?(s\/\.?|us\$|\$)?\s*$/;
 export const APPROX = /\b(como|aprox\w*|mas o menos|unos|unas|alrededor|cerca de|casi|entre|por ahi)\b/;
 export const UNKNOWN = /\b(omitir|no se|nose|ni idea|aun no|todavia no|despues|luego|no me acuerdo|no recuerdo|mas tarde|no estoy segur[oa]|no lo se|ahorita no)\b/;
 
@@ -22,6 +24,12 @@ export function findDays(t: string): Day[] {
     if (a < 1 || a > 31 || (b !== null && (b < 1 || b > 31 || b <= a))) continue;
     const window = b !== null && b - a <= 7;
     out.push({ day: a, dayMax: window ? b : null, second: b !== null && !window ? b : null, approx: !!m[1] || window, index: m.index!, end: m.index! + m[0].length });
+  }
+  // "1ro de cada mes", "19 de cada mes", "5 de cada mes": a number + "de cada mes" (or an ordinal) is a day, not money.
+  for (const m of t.matchAll(/(?<![\d.,/$])\b(\d{1,2})(ro|ero|do|to|vo|no|mo|°|º)?\s+de\s+(cada|todos los)\s+mes(es)?\b|(?<![\d.,/$])\b(\d{1,2})(ro|ero|°|º)\b/g)) {
+    const d = Number(m[1] ?? m[5]);
+    if (d < 1 || d > 31 || out.some((x) => x.index <= m.index! && m.index! < x.end)) continue;
+    out.push({ day: d, dayMax: null, second: null, approx: false, index: m.index!, end: m.index! + m[0].length });
   }
   const first = /\b(el|cada|los) primero(s)?(?! dias)( de (cada |del? )?mes)?\b/.exec(t);
   if (first && !out.some((d) => d.index <= first.index && first.index < d.end)) {
@@ -74,8 +82,9 @@ export function findAmounts(t: string, skip: Array<{ index: number; end: number 
       ? 'USD' : marker || word === 'soles' || word === 'sol' || word === 'pen' ? 'PEN' : null;
     if (!Number.isSafeInteger(minor) || minor <= 0 || minor > 1e11) continue; // above the DB ceiling: never an amount
     if (!marker && !unit && minor < 1000) continue; // "2 tarjetas", "3 veces"
+    // "como 500" / "unos 500" is approximate; "como diseñador … 500" is not (the word must sit right before the number).
     const before20 = t.slice(Math.max(0, start - 20), start);
-    out.push({ minor, currency, approx: APPROX.test(before20), index: start, end });
+    out.push({ minor, currency, approx: APPROX_NEAR.test(before20), index: start, end });
   }
   return out;
 }
