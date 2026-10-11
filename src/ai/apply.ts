@@ -32,6 +32,9 @@ export function domainWrites(d: Draft, userId: string): DomainWrites {
     if (i.day === null) { w.deferred.push(`${i.name}: falta el día`); continue; }
     // One-off or irregular: never planned as a recurring income (it would invent future money).
     if (i.frequency === 'occasional') { w.deferred.push(`${i.name}: ingreso ocasional, no se proyecta`); continue; }
+    // An extra income whose frequency was not said, or a quincena without its second day, is not projected (never assumed).
+    if (i.frequency === null && (i !== d.incomes[0] || d.work === 'independent')) { w.deferred.push(`${i.name}: frecuencia por confirmar`); continue; }
+    if (i.frequency === 'semimonthly' && i.secondDay === null) { w.deferred.push(`${i.name}: falta el segundo día de pago`); continue; }
     const semi = i.frequency === 'semimonthly' && i.secondDay !== null;
     w.incomes.push({
       user_id: userId, name: i.name.slice(0, 60), currency: i.currency, amount_minor: i.amountMinor, amount_status: i.amountMinor === null ? 'unknown' : i.amountStatus,

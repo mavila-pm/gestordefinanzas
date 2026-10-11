@@ -46,7 +46,11 @@ describe('onboarding: the real Peruvian example', () => {
     expect(yes.d.balance).toBeNull();
     t = turn(t.d, '300'); // pending: other income
     expect(t.d.pending).toBe('income:other');
-    expect(turn(t.d, 'sí').reask).toContain('de dónde viene');
+    // "Sí": a new extra income is opened and its source asked first (one question), nothing invented.
+    const yes2 = turn(t.d, 'sí');
+    expect(yes2.next?.text).toBe('¿De dónde viene ese ingreso adicional?');
+    expect(yes2.d.incomes).toHaveLength(2);
+    expect(yes2.d.incomes[1]).toMatchObject({ amountMinor: null, day: null, frequency: null });
     t = turn(t.d, 'No'); // pending: other fixed payments
     expect(t.d.done).toContain('incomes');
     expect(t.d.pending).toBe('group:obligations:more'); // "¿Tienes algún otro pago fijo?"

@@ -30,9 +30,9 @@ function converse(today: string, opening: boolean, messages: string[]): { draft:
       const yn = yesNoReply(draft, m);
       if (yn?.reask) { said.push(yn.reask); continue; }
       if (yn?.patches.length) merged = mergePatches(draft, yn.patches, null);
-      else { const r = interpret(m); merged = mergePatches(draft, r.patches, r.bare); }
+      else { const r = interpret(m); merged = mergePatches(draft, r.patches, r.bare, m); }
     }
-    const next = followUp(merged.draft, merged.changed, today, answered);
+    const next = followUp(merged.draft, merged.changed, today, answered, null, m);
     draft = next.draft;
     said.push(next.body);
   }
@@ -277,17 +277,19 @@ describe('subscriptions and the savings goal in the same conversation', () => {
 });
 
 describe('opening: dependiente / independiente, one question at a time', () => {
-  it('dependiente: sueldo → fechas → otro ingreso (cuánto, cada cuánto, cuándo) → dinero hoy → pagos …', () => {
-    const { draft, said } = fromOpening(TODAY, 'Dependiente', '3,500', '15 y 30', 'sí', 'clases particulares 400', 'Cada mes', 'el 20', '2,000');
+  it('dependiente: sueldo → fechas → otro ingreso (de dónde, cuánto, qué día, cada cuánto) → ¿otro? → dinero hoy → pagos', () => {
+    const { draft, said } = fromOpening(TODAY, 'Dependiente', '3,500', '15 y 30', 'sí', 'clases particulares 400', 'el 20', 'todos los meses', 'no', '2,000');
     expect(said[0]).toBe('Perfecto. ¿Cuánto recibes de sueldo al mes?');
     expect(said[1]).toBe('Entiendo. ¿En qué fechas te pagan?');
     expect(said[2]).toMatch(/días 15 y 30\. ¿Tienes algún otro ingreso aparte de tu sueldo\?$/);
-    expect(said[3]).toContain('de dónde viene');
-    expect(said[5]).toContain('¿Qué día lo cobras?');
-    expect(said[6]).toContain('¿Cuánto dinero tienes hoy entre tus cuentas y efectivo?');
-    expect(said[7]).toContain('¿Qué pagos fijos tienes cada mes?');
+    expect(said[3]).toBe('¿De dónde viene ese ingreso adicional?');
+    expect(said[4]).toBe('Perfecto. Recibes S/ 400 por clases particulares. ¿Qué día lo cobras?');
+    expect(said[5]).toBe('Perfecto. Recibes S/ 400 por clases particulares el día 20. ¿Lo recibes todos los meses o con otra frecuencia?');
+    expect(said[6]).toBe('Perfecto. Recibes S/ 400 por clases particulares el día 20 de cada mes. ¿Tienes algún otro ingreso?');
+    expect(said[7]).toContain('¿Cuánto dinero tienes hoy entre tus cuentas y efectivo?');
+    expect(said[8]).toContain('¿Qué pagos fijos tienes cada mes?');
     expect(draft.incomes[0]).toMatchObject({ name: 'Sueldo', amountMinor: 350000, day: 15, secondDay: 30, frequency: 'semimonthly' });
-    expect(draft.incomes[1]).toMatchObject({ amountMinor: 40000, frequency: 'monthly', day: 20 });
+    expect(draft.incomes[1]).toMatchObject({ name: 'Clases particulares', amountMinor: 40000, frequency: 'monthly', day: 20 });
     expect(draft.balance).toMatchObject({ amountMinor: 200000 });
     const w = domainWrites(draft, 'u1');
     expect(w.incomes.map((i) => [i.frequency, i.day_of_month, i.second_day])).toEqual([['semimonthly', 15, 30], ['monthly', 20, null]]);
@@ -378,3 +380,75 @@ describe('regression: a doubt is never an answer (the work question stays pendin
     expect(q.replies).toEqual(['No sé']);
   });
 });
+
+describe('regression: the real conversation — one extra income, exact dates, nothing duplicated', () => {
+  const OPEN = ['Dependiente', '5000', 'cada 1 de cada mes'] as const;
+  const DESIGN = 'Hago diseños de arte digital y recibo S/ 300 cada 5 de cada mes.';
+  const expectOne = (d: Draft) => {
+    expect(d.incomes).toHaveLength(2);
+    expect(d.incomes[0]).toMatchObject({ name: 'Sueldo', amountMinor: 500000, day: 1, frequency: 'monthly' });
+    expect(d.incomes[1]).toMatchObject({ name: 'Diseños de arte digital', source: 'independent', amountMinor: 30000, day: 5, frequency: 'monthly' });
+    const w = domainWrites(d, 'u1');
+    expect(w.incomes.map((i) => [i.name, i.amount_minor, i.frequency, i.day_of_month])).toEqual([['Sueldo', 500000, 'monthly', 1], ['Diseños de arte digital', 30000, 'monthly', 5]]);
+  };
+  it('"sí" → "¿De dónde viene…?" → all the facts at once: one income, nothing asked again', () => {
+    const { draft, said } = fromOpening(TODAY, ...OPEN, 'sí', DESIGN);
+    expect(said[2]).toMatch(/S\/ 5,000, día 1\. ¿Tienes algún otro ingreso aparte de tu sueldo\?$/);
+    expect(said[3]).toBe('¿De dónde viene ese ingreso adicional?');
+    expect(said[4]).toBe('Perfecto. Recibes S/ 300 por diseños de arte digital el día 5 de cada mes. ¿Tienes algún otro ingreso?');
+    expectOne(draft);
+    expect(draft.asked.filter((k) => k.startsWith(`income:${draft.incomes[1]!.id}:`))).toEqual([`income:${draft.incomes[1]!.id}:source`]);
+  });
+  it('the facts given straight to "¿Tienes algún otro ingreso?": the same single income and reply', () => {
+    const { draft, said } = fromOpening(TODAY, ...OPEN, DESIGN);
+    expect(said[3]).toBe('Perfecto. Recibes S/ 300 por diseños de arte digital el día 5 de cada mes. ¿Tienes algún otro ingreso?');
+    expectOne(draft);
+  });
+  it('step by step, "no sé", and "ya te dije que cobro el 5" update the same income (no second one)', () => {
+    const { draft, said } = fromOpening(TODAY, ...OPEN, 'sí', 'diseños de arte digital', '300', 'no sé', 'ya te dije que cobro el 5', 'no');
+    expect(said[4]).toBe('Entiendo, ingresos por diseños de arte digital. ¿Cuánto recibes?');
+    expect(said[5]).toBe('Perfecto. Recibes S/ 300 por diseños de arte digital. ¿Qué día lo cobras?');
+    // "No sé" leaves the day unknown (no new income); "ya te dije…" is acknowledged and fills the SAME income.
+    expect(said[7]).toBe('Tienes razón. Perfecto. Recibes S/ 300 por diseños de arte digital el día 5 de cada mes. ¿Tienes algún otro ingreso?');
+    expect(said.at(-1)).toContain('¿Cuánto dinero tienes hoy entre tus cuentas y efectivo?');
+    expectOne(draft);
+  });
+  it('pieces of the same income read apart (amount in one, date in another) become ONE record', () => {
+    const base = fromOpening(TODAY, ...OPEN).draft;
+    expect(base.pending).toBe('income:other');
+    const r = mergePatches(base, [{ t: 'income', isNew: true, name: 'Otro ingreso', amountMinor: 30000 }, { t: 'income', isNew: true, name: 'Otro ingreso', day: 5, frequency: 'monthly' }], null, DESIGN);
+    expectOne(r.draft);
+  });
+  it('a correction changes that same record; the salary is never touched by the extra income', () => {
+    const { draft } = fromOpening(TODAY, ...OPEN, DESIGN, 'sí', 'clases de inglés', '400', 'el 10', 'todos los meses', 'no');
+    expect(draft.incomes.map((i) => [i.name, i.amountMinor, i.day])).toEqual([['Sueldo', 500000, 1], ['Diseños de arte digital', 30000, 5], ['Clases de inglés', 40000, 10]]);
+  });
+});
+
+describe('exact dates: "cada 1/5 de cada mes", quincenal, fin de mes', () => {
+  it('"cada 5 de cada mes" is day 5, monthly; the next date follows the calendar', () => {
+    const { draft } = fromOpening('2026-10-11', 'Dependiente', '5000', 'cada 5 de cada mes');
+    expect(draft.incomes[0]).toMatchObject({ day: 5, frequency: 'monthly' });
+    expect(upcomingFromDraft(draft, '2026-10-11').until).toBe('2026-11-05');
+  });
+  it('"Quincenal" asks the exact days and keeps them', () => {
+    const { draft, said } = fromOpening(TODAY, 'Dependiente', '5000', 'quincenal', '15 y último');
+    expect(said[2]).toContain('¿Qué días exactos cobras? Por ejemplo, 15 y 30.');
+    expect(draft.incomes[0]).toMatchObject({ day: 15, secondDay: 31, frequency: 'semimonthly' });
+  });
+  it('"a fin de mes" asks whether it is the last day; no day is stored before', () => {
+    const asked = fromOpening(TODAY, 'Dependiente', '5000', 'a fin de mes');
+    expect(asked.said[2]).toBe('¿Te refieres al último día de cada mes?');
+    expect(asked.draft.incomes[0]!.day).toBeNull();
+    expect(fromOpening(TODAY, 'Dependiente', '5000', 'a fin de mes', 'sí, el último día').draft.incomes[0]).toMatchObject({ day: 31 });
+    const other = fromOpening(TODAY, 'Dependiente', '5000', 'a fin de mes', 'no', 'el 28');
+    expect(other.said[3]).toBe('¿Qué día exactamente?');
+    expect(other.draft.incomes[0]).toMatchObject({ day: 28 });
+  });
+  it('payments too: "luz a fin de mes" is asked, never stored as 30', () => {
+    const { draft, said } = chat(TODAY, ...START, 'pago luz 120', 'a fin de mes', 'el último día');
+    expect(said[3]).toBe('¿Te refieres al último día de cada mes?');
+    expect(draft.obligations[0]).toMatchObject({ name: 'Luz', amountMinor: 12000, day: 31 });
+  });
+});
+

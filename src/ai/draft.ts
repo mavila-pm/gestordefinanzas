@@ -13,6 +13,8 @@ import type { Bare, DebtFact, Draft, FactStatus, Patch } from './types';
  */
 
 let seq = 0;
+/** Placeholder names of an income whose source is not known yet (the source answer renames it). */
+export const GENERIC_INCOME = new Set(['Otro ingreso', 'Ingreso adicional', 'Ingresos']);
 const newId = (p: string) => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`;
 const status = (known: boolean, approx?: boolean): FactStatus => (!known ? 'unknown' : approx ? 'estimated' : 'confirmed');
 const same = (a: string, b: string) => fold(a) === fold(b);
@@ -24,26 +26,36 @@ export const money = (minor: number | null, currency: Currency) => (minor === nu
 const dayText = (day: number | null, dayMax: number | null, second?: number | null, st?: FactStatus) =>
   day === null ? 'día por confirmar' : second ? `días ${day} y ${second}` : dayMax ? `${day}–${dayMax} aprox.` : `día ${day}${st === 'estimated' ? ' aprox.' : ''}`;
 
-export function mergePatches(draft0: Draft, patches0: readonly Patch[], bare: Bare | null): MergeResult {
+export function mergePatches(draft0: Draft, patches0: readonly Patch[], bare: Bare | null, said?: string): MergeResult {
   const draft: Draft = structuredClone(draft0);
   draft.declined ??= [];
   const touched = new Set<string>();
-  const patches = adaptToPending(draft, patches0);
+  const patches = adaptToPending(draft, patches0, said);
 
   for (const p of patches) {
     switch (p.t) {
       case 'income': {
-        let inc = p.isNew ? undefined : draft.incomes[0];
+        // The income this fact belongs to: the one a pending question is about (id), the one with the same name, or
+        // — for an unnamed fact — the first one. A new name, or isNew, is a separate income. Never two records for one.
+        let inc = p.id ? draft.incomes.find((x) => x.id === p.id)
+          : p.isNew ? undefined
+          : p.name ? draft.incomes.find((x) => same(x.name, p.name!)) ?? (draft.incomes.length === 1 && draft.incomes[0]!.name === 'Sueldo' && p.name === 'Sueldo' ? draft.incomes[0] : undefined)
+          : draft.incomes[0];
         if (!inc) {
           inc = { id: newId('i'), name: p.name ?? 'Sueldo', currency: p.currency ?? 'PEN', amountMinor: null, amountStatus: 'unknown', frequency: null, day: null, dayMax: null, secondDay: null, dayStatus: 'unknown' };
           draft.incomes.push(inc);
         }
+        const first = inc === draft.incomes[0];
+        if (p.name && p.id && GENERIC_INCOME.has(inc.name)) inc.name = p.name;
+        if (p.source) inc.source = p.source;
         if (p.currency) inc.currency = p.currency;
         if (p.amountMinor !== undefined) { inc.amountMinor = p.amountMinor; inc.amountStatus = status(true, p.approx); }
         else if (p.unknownAmount) { inc.amountMinor = null; inc.amountStatus = 'unknown'; }
-        if (p.day !== undefined) { inc.day = p.day; inc.dayMax = p.dayMax ?? null; inc.secondDay = p.secondDay ?? null; inc.dayStatus = status(true, p.approxDay); }
+        if (p.day !== undefined) { inc.day = p.day; inc.dayMax = p.dayMax ?? null; inc.secondDay = p.secondDay ?? null; inc.dayStatus = status(true, p.approxDay); inc.dayHint = null; }
+        else if (p.endHint && inc.day === null) inc.dayHint = 'end';
         if (p.frequency) inc.frequency = p.frequency;
-        else if (inc.day !== null && !inc.frequency) inc.frequency = inc.secondDay ? 'semimonthly' : 'monthly';
+        // A pay day says "monthly" only for the main income (a salary); an extra income is asked, never assumed.
+        else if (inc.day !== null && !inc.frequency && (first || inc.secondDay)) inc.frequency = inc.secondDay ? 'semimonthly' : 'monthly';
         touched.add(`income:${inc.id}`);
         break;
       }
@@ -166,7 +178,7 @@ function applyBare(d: Draft, key: string, b: Bare, touched: Set<string>) {
   if (kind === 'income' && id === 'other') {
     // "400" to "¿Tienes algún otro ingreso?": a second income, its source asked by name later if needed.
     if (b.amountMinor === undefined) return;
-    const inc = { id: newId('i'), name: 'Otro ingreso', currency: b.currency ?? 'PEN', amountMinor: b.amountMinor, amountStatus: status(true, b.approx), frequency: null,
+    const inc = { id: newId('i'), name: 'Otro ingreso', currency: b.currency ?? 'PEN', amountMinor: b.amountMinor, amountStatus: status(true, b.approx), frequency: b.frequency ?? null,
       day: b.day ?? null, dayMax: b.dayMax ?? null, secondDay: null, dayStatus: status(b.day !== undefined) } as Draft['incomes'][number];
     d.incomes.push(inc);
     touched.add(`income:${inc.id}`);
@@ -202,8 +214,10 @@ function applyBare(d: Draft, key: string, b: Bare, touched: Set<string>) {
     const statusKey = field === 'balance' ? 'balanceStatus' : 'amountStatus';
     if (b.amountMinor !== undefined) { item[amountKey] = b.amountMinor; item[statusKey] = b.approx ? 'estimated' : 'confirmed'; if (b.currency) item.currency = b.currency; }
     else if (markUnknown) { item[amountKey] = null; item[statusKey] = 'unknown'; }
-    if (b.day !== undefined && kind === 'obligation') { item.day = b.day; item.dayMax = b.dayMax ?? null; item.dayStatus = 'confirmed'; }
-  } else if (field === 'day') {
+    // Everything said in the answer belongs to this item: "300 el 5 de cada mes" fills amount, day and frequency.
+    if (b.day !== undefined && (kind === 'obligation' || kind === 'income')) { item.day = b.day; item.dayMax = b.dayMax ?? null; item.dayStatus = 'confirmed'; }
+    if (kind === 'income' && b.frequency) item.frequency = b.frequency;
+  } else if (field === 'day' || field === 'days' || field === 'dayexact') {
     // A whole number 1–31 without currency, when a day was asked, is that day ("30"), never S/ 30.
     if (b.day === undefined && b.amountMinor !== undefined && !b.currency && !b.approx && b.amountMinor % 100 === 0 && b.amountMinor >= 100 && b.amountMinor <= 3100) {
       b = { ...b, day: b.amountMinor / 100, amountMinor: undefined };
@@ -215,7 +229,13 @@ function applyBare(d: Draft, key: string, b: Bare, touched: Set<string>) {
     // An amount while the day was asked corrects the amount ("no, es 3,800"); it is never read as a day.
     if (b.amountMinor !== undefined && (kind === 'obligation' || kind === 'income')) { item.amountMinor = b.amountMinor; item.amountStatus = b.approx ? 'estimated' : 'confirmed'; }
     if (kind === 'income' && b.frequency) item.frequency = b.frequency;
-    if (kind === 'income' && item.day !== null && !item.frequency) item.frequency = 'monthly';
+    // Monthly is assumed only for the main income (a salary); an extra income's frequency is asked.
+    if (kind === 'income' && item.day !== null && !item.frequency && d.incomes[0]?.id === id) item.frequency = 'monthly';
+  } else if (field === 'source' && kind === 'income') {
+    // "¿De dónde viene?" answered with numbers ("clases particulares 400"): the numbers are this income's.
+    if (b.amountMinor !== undefined) { item.amountMinor = b.amountMinor; item.amountStatus = b.approx ? 'estimated' : 'confirmed'; if (b.currency) item.currency = b.currency; }
+    if (b.day !== undefined) { item.day = b.day; item.dayMax = b.dayMax ?? null; item.dayStatus = 'confirmed'; }
+    if (b.frequency) item.frequency = b.frequency;
   } else if (field === 'frequency' && b.frequency) item.frequency = b.frequency;
   else if (field === 'cut' && kind === 'debt') { if (b.day !== undefined) item.cutDay = b.day; else return; }
   touched.add(`${kind}:${id}`);
@@ -286,11 +306,28 @@ export function nextQuestion(d: Draft): Question | null {
   const named = (i: { name: string }) => (i.name.toLowerCase() === 'sueldo' ? 'el sueldo' : i.name.toLowerCase());
   // Extra incomes ("aparte de tu sueldo"): how much, how often, when; occasional ones are never given a day.
   const business = (i: { name: string }) => i.name === 'Negocio o servicios';
-  const extraIncome = others.flatMap((i) => [
-    () => (i.amountMinor === null && i.amountStatus === 'unknown' ? ask(`income:${i.id}:amount`, business(i) ? 'Y por tu negocio o tus servicios, ¿cuánto esperas cobrar en tu próximo cobro?' : `¿Cuánto recibes de ${i.name.toLowerCase()}?`, ['No sé']) : null),
-    () => (i.frequency === null ? ask(`income:${i.id}:frequency`, business(i) ? '¿Lo recibes con frecuencia o es un ingreso ocasional?' : '¿Cada cuánto lo recibes?', ['Cada mes', 'Cada quincena', 'Ocasional']) : null),
-    () => (i.day === null && i.frequency !== 'occasional' ? ask(`income:${i.id}:day`, business(i) ? '¿Cuándo esperas recibirlo?' : '¿Qué día lo cobras?', ['No sé']) : null),
+  // Exact dates: "quincenal" asks the two days; "a fin de mes" asks whether it is the last day; never a guess.
+  const dateQs = (i: Draft['incomes'][number]) => [
+    () => (i.day === null && i.dayHint === 'end' ? ask(`income:${i.id}:end`, '¿Te refieres al último día de cada mes?', ['Sí, el último día', 'Otro día']) : null),
+    () => (i.day === null && i.dayHint === 'ask' ? ask(`income:${i.id}:dayexact`, '¿Qué día exactamente?', ['No sé']) : null),
+    () => (i.frequency === 'semimonthly' && (i.day === null || i.secondDay === null) ? ask(`income:${i.id}:days`, '¿Qué días exactos cobras? Por ejemplo, 15 y 30.', ['No sé']) : null),
+  ];
+  // Each extra income on its own, one question at a time, only what is still unknown: where it comes from, how
+  // much, which day, how often. Facts given together are kept and never asked again.
+  const extraIncome = others.flatMap((i) => business(i) ? [
+    () => (i.amountMinor === null && i.amountStatus === 'unknown' ? ask(`income:${i.id}:amount`, 'Y por tu negocio o tus servicios, ¿cuánto esperas cobrar en tu próximo cobro?', ['No sé']) : null),
+    () => (i.frequency === null ? ask(`income:${i.id}:frequency`, '¿Lo recibes con frecuencia o es un ingreso ocasional?', ['Cada mes', 'Cada quincena', 'Ocasional']) : null),
+    () => (i.day === null && i.frequency !== 'occasional' ? ask(`income:${i.id}:day`, '¿Cuándo esperas recibirlo?', ['No sé']) : null),
+    ...dateQs(i),
+  ] : [
+    () => (GENERIC_INCOME.has(i.name) ? ask(`income:${i.id}:source`, '¿De dónde viene ese ingreso adicional?', ['Omitir']) : null),
+    () => (i.amountMinor === null && i.amountStatus === 'unknown' ? ask(`income:${i.id}:amount`, '¿Cuánto recibes?', ['No sé']) : null),
+    () => (i.day === null && i.frequency !== 'occasional' && !i.dayHint ? ask(`income:${i.id}:day`, '¿Qué día lo cobras?', ['No sé']) : null),
+    ...dateQs(i),
+    () => (i.frequency === null ? ask(`income:${i.id}:frequency`, '¿Lo recibes todos los meses o con otra frecuencia?', ['Todos los meses', 'Cada quincena', 'Ocasional']) : null),
   ]);
+  // After each extra income is complete: "¿Tienes algún otro ingreso?" again (until "no").
+  const moreQ = () => (others.length && !d.done.includes('incomes') ? ask(`income:other:${others.length}`, '¿Tienes algún otro ingreso?', ['No', 'Sí']) : null);
   const salaried = work === 'employee' || work === 'both';
   const balanceQ = () => (d.balance === null ? ask('balance', work === 'independent' ? 'Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas?'
     : salaried ? '¿Cuánto dinero tienes hoy entre tus cuentas y efectivo?' : '¿Cuánto dinero tienes disponible hoy?', ['No sé']) : null);
@@ -302,17 +339,20 @@ export function nextQuestion(d: Draft): Question | null {
     ...(main ? [
       () => (main.amountMinor === null && main.amountStatus === 'unknown' ? ask(`income:${main.id}:amount`, '¿Cuál es tu próximo cobro?', ['No sé']) : null),
       () => (main.day === null ? ask(`income:${main.id}:day`, '¿Cuándo esperas recibirlo?', ['No sé']) : null),
+      ...dateQs(main),
       // A day alone does not say it repeats: asked once for an independent income (occasional → never projected).
       () => ask(`income:${main.id}:frequency`, '¿Lo recibes con frecuencia o es un ingreso ocasional?', ['Cada mes', 'Cada quincena', 'Ocasional']),
     ] : []),
     otherQ('¿Tienes algún otro ingreso que debamos considerar?'),
     ...extraIncome,
+    moreQ,
   ] : [
     () => (!main ? ask('income:new', work === 'employee' ? 'Perfecto. ¿Cuánto recibes de sueldo al mes?' : '¿Cuánto recibes y qué día te pagan?', ['Omitir']) : null),
     ...(main ? [
       () => (main.amountMinor === null && main.amountStatus === 'unknown' ? ask(`income:${main.id}:amount`, work === 'both' ? 'Perfecto, anotamos tus dos ingresos: sueldo y negocio. Empecemos por el sueldo: ¿cuánto recibes al mes?'
         : salaried && main.name === 'Sueldo' ? '¿Cuánto recibes de sueldo al mes?' : `¿Cuánto recibes de ${main.name.toLowerCase()}?`, ['Omitir']) : null),
       () => (main.day === null ? ask(`income:${main.id}:day`, salaried ? 'Entiendo. ¿En qué fechas te pagan?' : `¿Qué día te pagan ${named(main)}?`, ['Quincenal', 'No sé']) : null),
+      ...dateQs(main),
     ] : []),
     // Salary and business: the business income right after the salary (its amount, frequency and date).
     ...(work === 'both' ? extraIncome : []),
@@ -320,6 +360,7 @@ export function nextQuestion(d: Draft): Question | null {
     ...(salaried ? [] : [balanceQ]),
     otherQ(work === 'both' ? '¿Tienes algún otro ingreso además de tu sueldo y tu negocio?' : work === 'employee' ? '¿Tienes algún otro ingreso aparte de tu sueldo?' : '¿Tienes algún otro ingreso?'),
     ...extraIncome,
+    ...(work === 'both' ? [] : [moreQ]),
     balanceQ,
   ];
   const candidates: Array<() => Question | null> = [
@@ -330,7 +371,9 @@ export function nextQuestion(d: Draft): Question | null {
     ...d.obligations.filter((o) => o.kind !== 'subscription').flatMap((o) => [
       () => (o.amountMinor === null && o.amountStatus === 'unknown' ? ask(`obligation:${o.id}:amount`, `¿Cuánto pagas de ${o.name.toLowerCase()}?`, ['No sé', 'Tomar foto']) : null),
       () => (o.day === null && o.dayHint === 'quincena' ? ask(`obligation:${o.id}:quincena`, '¿Te refieres al 15 de cada mes?', ['Sí, el 15', 'Otro día']) : null),
-      () => (o.day === null && o.dayStatus === 'unknown' ? ask(`obligation:${o.id}:day`, `¿Qué día pagas ${theName(o.name)}?`, ['No sé']) : null),
+      () => (o.day === null && o.dayStatus === 'unknown' && !o.dayHint ? ask(`obligation:${o.id}:day`, `¿Qué día pagas ${theName(o.name)}?`, ['No sé']) : null),
+      () => (o.day === null && o.dayHint === 'end' ? ask(`obligation:${o.id}:end`, '¿Te refieres al último día de cada mes?', ['Sí, el último día', 'Otro día']) : null),
+      () => (o.day === null && o.dayHint === 'ask' ? ask(`obligation:${o.id}:dayexact`, `¿Qué día exactamente pagas ${theName(o.name)}?`, ['No sé']) : null),
     ]),
     // "¿Qué pagos fijos tienes?" first; once there are payments, "¿Tienes algún otro?" is its own (once) question.
     () => (d.done.includes('obligations') ? null : d.obligations.some((o) => o.kind !== 'subscription') || d.variable.length
@@ -372,23 +415,77 @@ export function nextQuestion(d: Draft): Question | null {
 }
 
 /**
+ * Where an income comes from, in the person's words: "Hago diseños de arte digital y recibo S/ 300 cada 5" →
+ * "Diseños de arte digital" (own work). Only the words before the amount/date; null when nothing usable is left.
+ */
+export function incomeSource(said: string): { name: string; source: 'independent' | 'rental' | 'other' } | null {
+  const f = fold(said);
+  let s = said.split(/\s*(?:\b(?:y )?(?:recibo|cobro|gano|me pagan|me dan|me deja|me depositan|saco)\b|\bs\/|\bus\$|\$|\d|,|\.|\bcada\b|\bal mes\b|\btodos los\b)/i)[0] ?? '';
+  s = s.replace(/^\s*(?:s[ií],?\s*)?(?:(?:yo|tambien|también)\s+)*(?:hago|doy|vendo|ofrezco|tengo|trabajo(?:\s+(?:como|en|haciendo|de))?|alquilo|recibo(?:\s+(?:ingresos|plata|dinero))?(?:\s+(?:de|por))?|viene(?:n)?\s+de|de|por)\s+/i, '')
+    .replace(/^(?:un|una|unos|unas|mis|mi|los|las|el|la)\s+/i, '').replace(/[^\p{L}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (s.replace(/\s/g, '').length < 3 || UNKNOWN.test(fold(s)) || /\b(que|dije|conte|eso|esto|ya|si|no)\b/.test(fold(s))) return null;
+  const name = s.charAt(0).toUpperCase() + s.slice(1, 40);
+  const source = /alquil|renta|inquilin/.test(f) ? 'rental' : /\b(hago|doy|vendo|ofrezco|diseno|disenos|clases|servicios?|freelance|proyectos?|trabajos?|asesor|consult|venta|ventas|negocio|cliente)/.test(f) ? 'independent' : 'other';
+  return { name: source === 'rental' && !/alquiler/i.test(name) ? `Alquiler: ${name.toLowerCase()}` : name, source };
+}
+
+/**
  * Answers to group questions name a bank: "sí, BCP" to "¿Tienes tarjeta de crédito?" is a card at BCP; "BCP" to
  * "¿Con qué banco es el préstamo?" is that loan's entity. Turns the bank mention into the right fact.
  */
-function adaptToPending(d: Draft, patches0: readonly Patch[]): Patch[] {
+function adaptToPending(d: Draft, patches0: readonly Patch[], said?: string): Patch[] {
   const pending = d.pending ?? '';
+  // "A fin de mes" is not a day yet: the day the reader guessed (30/31) is dropped and the person is asked.
+  const endOfMonth = !!said && /\b(a )?(fin|fines|finales) de(l)? mes\b/.test(fold(said)) && !/\bultimo\b/.test(fold(said));
+  const unend = <T extends Patch>(p: T): T => (endOfMonth && (p.t === 'income' || p.t === 'obligation') && (p.day === 30 || p.day === 31) ? { ...p, day: undefined, dayMax: undefined, endHint: true } : p);
+  const named = said ? incomeSource(said) : null;
+  // A question about ONE income (its source, amount, day, frequency…): every income fact in the answer is that
+  // income's, however many were given at once ("diseños, S/ 300 cada 5 de cada mes" fills them all, once).
+  const target = /^income:([^:]+):(\w+)$/.exec(pending);
+  const targetId = target && target[1] !== 'other' && target[1] !== 'new' ? target[1] : null;
+  if (targetId) {
+    const inc = d.incomes.find((x) => x.id === targetId);
+    patches0 = patches0.map((p): Patch => {
+      // Only an income fact, or a payment the reader could not classify answering about an EXTRA income ("diseños
+      // 300"); "internet 90 el 20" stays a payment whatever was asked.
+      // While asking where an extra income comes from or how much it is, what the person names IS that income
+      // ("clases particulares 400"), whatever kind the reader guessed.
+      const aboutIncome = !!inc && inc !== d.incomes[0] && (p.t === 'obligation' || p.t === 'variable')
+        && (target![2] === 'source' || target![2] === 'amount' || (p.t === 'obligation' && p.kind === 'other'));
+      if (p.t === 'income' || aboutIncome) {
+        const rename = inc && GENERIC_INCOME.has(inc.name) && named ? { name: named.name, source: named.source } : {};
+        return unend({ t: 'income', id: targetId, ...rename, ...(p.amountMinor !== undefined ? { amountMinor: p.amountMinor, approx: p.approx } : {}), ...(p.currency ? { currency: p.currency } : {}),
+          ...(p.t !== 'variable' && p.day !== undefined ? { day: p.day, dayMax: p.dayMax } : {}), ...(p.t === 'income' && p.secondDay !== undefined ? { secondDay: p.secondDay } : {}), ...(p.t === 'income' && p.frequency ? { frequency: p.frequency } : {}) });
+      }
+      return p;
+    });
+    if (inc && GENERIC_INCOME.has(inc.name) && named && !patches0.some((p) => p.t === 'income')) patches0 = [...patches0, { t: 'income', id: targetId, name: named.name, source: named.source }];
+  }
+  patches0 = patches0.map((p) => unend(p));
   // A known service ("netflix 44.90 el 15") or any payment named in answer to the subscriptions question is a
   // subscription (same obligation engine, its own kind); a catalogue name is written as the service is called.
   const patches = patches0.map((p): Patch => {
-    if (p.t === 'income' && pending === 'income:other') return { ...p, isNew: true, name: p.name && p.name !== 'Sueldo' ? p.name : 'Otro ingreso' };
+    // "¿Tienes algún otro ingreso?" answered with the income itself: ONE new income with everything said, named
+    // after its source ("Diseños de arte digital"), never "Otro ingreso" + a second one for the date.
+    if (p.t === 'income' && pending.startsWith('income:other') && !p.id) return { ...p, isNew: true, name: named?.name ?? (p.name && p.name !== 'Sueldo' ? p.name : 'Otro ingreso'), ...(named ? { source: named.source } : {}) };
     if (p.t !== 'obligation') return p;
     // Answering "¿Tienes algún otro ingreso?" with "alquiler de un cuarto 400": an income, not a payment.
     // Only a payment the reader could not classify; "alquiler 1,200" or "luz 120" stay payments whatever was asked.
-    if ((pending === 'income:other' || pending === 'income:source') && p.kind === 'other') return { t: 'income', isNew: pending === 'income:other' || d.incomes.length > 0, name: p.name, ...(p.amountMinor !== undefined ? { amountMinor: p.amountMinor, approx: p.approx } : {}), ...(p.currency ? { currency: p.currency } : {}), ...(p.day !== undefined ? { day: p.day, dayMax: p.dayMax } : {}) };
+    if ((pending.startsWith('income:other') || pending === 'income:source') && p.kind === 'other') return { t: 'income', isNew: pending.startsWith('income:other') || d.incomes.length > 0, name: named?.name ?? p.name, ...(named ? { source: named.source } : {}), ...(p.amountMinor !== undefined ? { amountMinor: p.amountMinor, approx: p.approx } : {}), ...(p.currency ? { currency: p.currency } : {}), ...(p.day !== undefined ? { day: p.day, dayMax: p.dayMax } : {}) };
     const known = matchProvider(p.name);
     if (known) return { ...p, kind: 'subscription', name: known.name };
     return pending === 'group:subscriptions' && (p.kind === 'other' || p.kind === 'services') ? { ...p, kind: 'subscription' } : p;
   });
+  // One answer to "¿Tienes algún otro ingreso?" is ONE income: pieces read apart (amount in one, date in another —
+  // e.g. from the provider) are combined, never stored as two records.
+  if (pending.startsWith('income:other')) {
+    const pieces = patches.filter((p): p is Extract<Patch, { t: 'income' }> => p.t === 'income' && !!p.isNew);
+    if (pieces.length > 1) {
+      const one = pieces.reduce<Extract<Patch, { t: 'income' }>>((acc, p) => ({ ...p, ...Object.fromEntries(Object.entries(acc).filter(([, v]) => v !== undefined)) } as Extract<Patch, { t: 'income' }>), { t: 'income' });
+      const named = pieces.find((p) => p.name && !GENERIC_INCOME.has(p.name))?.name;
+      return [...patches.filter((p) => !pieces.includes(p as Extract<Patch, { t: 'income' }>)), { ...one, isNew: true, ...(named ? { name: named } : {}) }];
+    }
+  }
   const banks = patches.filter((p): p is Extract<Patch, { t: 'account' }> => p.t === 'account');
   if (!banks.length) return [...patches];
   const rest = patches.filter((p) => p.t !== 'account');
@@ -494,28 +591,69 @@ export function pendingReply(d: Draft, text: string): MergeResult | null {
     if (!name) return null;
     return mergePatches({ ...d, pending: null }, [{ t: 'income', name }], null);
   }
-  const inc = /^income:([^:]+):(day|frequency)$/.exec(pending);
-  if (inc) {
+  const END = /\b(a )?(fin|fines|finales) de(l)? mes\b/;
+  const LAST = /^(si|claro|exacto|correcto|asi es)?,? ?(el )?ultimo( dia)?( del mes| de cada mes)?$|^(si|claro|exacto|correcto|asi es)$/;
+  const dayIn = /\b(?:el|cada|los|dia)\s+(\d{1,2})\b/.exec(t) ?? /^(\d{1,2})$/.exec(t);
+  const inc = /^income:([^:]+):(day|days|dayexact|frequency|end|source)$/.exec(pending);
+  if (inc && inc[1] !== 'other' && inc[1] !== 'new') {
     const draft = structuredClone(d);
     const i = draft.incomes.find((x) => x.id === inc[1]);
     if (!i) return null;
-    if (inc[2] === 'frequency') {
+    const field = inc[2];
+    const done = (): MergeResult => { draft.pending = null; return { draft, changed: describe(draft, new Set([`income:${i.id}`])) }; };
+    const setDay = (n: number) => { if (n < 1 || n > 31) return false; Object.assign(i, { day: n, dayMax: null, dayStatus: 'confirmed', dayHint: null }); return true; };
+    if (field === 'source') {
+      if (/\d/.test(t)) return null; // amount or date too: the normal reading fills THIS income (adaptToPending)
+      if (UNKNOWN.test(t)) { draft.pending = null; return { draft, changed: [] }; }
+      const n = incomeSource(text) ?? (sourceName(text) ? { name: sourceName(text)!, source: 'other' as const } : null);
+      if (!n) return null;
+      i.name = n.name;
+      i.source = n.source;
+      return done();
+    }
+    if (field === 'frequency') {
       const f = /ocasional|a veces|de vez en cuando|depende|no (es )?fijo|irregular|una vez|variable/.test(t) ? 'occasional'
         : /quincen|cada 15|dos veces al mes/.test(t) ? 'semimonthly' : /mes|mensual|siempre|frecuen|fijo|regular/.test(t) ? 'monthly' : null;
       if (!f) return null;
       i.frequency = f;
-      draft.pending = null;
-      return { draft, changed: describe(draft, new Set([`income:${i.id}`])) };
+      // "Cada 5 de cada mes" answers the frequency AND the day: both are kept (never asked again).
+      if (dayIn && i.day === null && f !== 'occasional') setDay(Number(dayIn[1]));
+      return done();
     }
-    // "15 y 30", "el 15 y el último": two pay dates a month (quincena). One date goes through the normal reading.
+    if (field === 'end') {
+      if (LAST.test(t)) { setDay(31); return done(); }
+      if (dayIn && setDay(Number(dayIn[1]))) return done();
+      if (/^(no|otro|otro dia|no exactamente)$/.test(t)) { i.dayHint = 'ask'; draft.pending = null; return { draft, changed: [] }; }
+      return null;
+    }
+    // A date question (day / days / dayexact). "15 y 30", "el 15 y el último": two pay dates a month (quincena).
     const two = /^(?:los dias |el |los |cada )?(\d{1,2})\s*(?:y|,)\s*(?:el |los )?(\d{1,2}|ultimo( dia)?|fin de mes)\b/.exec(t.replace(/\bde cada mes\b/, '').trim());
-    if (!two) return null;
-    const a = Number(two[1]);
-    const b = /^\d/.test(two[2]!) ? Number(two[2]) : 31;
-    if (a < 1 || a > 31 || b < 1 || b > 31 || a >= b) return null;
-    Object.assign(i, { day: a, secondDay: b, dayMax: null, dayStatus: 'confirmed', frequency: 'semimonthly' });
-    draft.pending = null;
-    return { draft, changed: describe(draft, new Set([`income:${i.id}`])) };
+    if (two) {
+      const a = Number(two[1]);
+      const b = /^\d/.test(two[2]!) ? Number(two[2]) : 31;
+      if (a < 1 || a > 31 || b < 1 || b > 31 || a >= b) return null;
+      Object.assign(i, { day: a, secondDay: b, dayMax: null, dayStatus: 'confirmed', frequency: 'semimonthly', dayHint: null });
+      return done();
+    }
+    // "A fin de mes": asked ("¿el último día de cada mes?") before any day is stored; "el último día" is day 31.
+    if (END.test(t) && !/ultimo/.test(t)) { i.dayHint = 'end'; draft.pending = null; return { draft, changed: [] }; }
+    if (/\bultimo dia\b|^el ultimo$/.test(t)) { setDay(31); return done(); }
+    return null;
+  }
+  const ob = /^obligation:([^:]+):(day|end|dayexact)$/.exec(pending);
+  if (ob) {
+    const draft = structuredClone(d);
+    const o = draft.obligations.find((x) => x.id === ob[1]);
+    if (!o) return null;
+    const setDay = (n: number) => { if (n < 1 || n > 31) return false; Object.assign(o, { day: n, dayMax: null, dayStatus: 'confirmed', dayHint: null }); return true; };
+    const done = (): MergeResult => { draft.pending = null; return { draft, changed: describe(draft, new Set([`obligation:${o.id}`])) }; };
+    if (ob[2] === 'end') {
+      if (LAST.test(t)) { setDay(31); return done(); }
+      if (dayIn && setDay(Number(dayIn[1]))) return done();
+      if (/^(no|otro|otro dia|no exactamente)$/.test(t)) { o.dayHint = 'ask'; draft.pending = null; return { draft, changed: [] }; }
+      return null;
+    }
+    if (END.test(t) && !/ultimo/.test(t) && !/\d/.test(t)) { o.dayHint = 'end'; draft.pending = null; return { draft, changed: [] }; }
   }
   const m = /^(obligation|debt):([^:]+):(\w+)$/.exec(pending);
   if (!m) return null;
@@ -632,7 +770,11 @@ export function finalSummary(d: Draft, today: string): Summary {
   const fixed = d.obligations.filter((o) => o.kind !== 'subscription');
   const up = upcomingFromDraft(d, today);
   const groups: Summary['groups'] = [
-    { title: 'Ingresos y fechas', items: rows(d.incomes.map((i) => `income:${i.id}`)).map((r) => ({ ...r, value: `${r.value}${r.value.includes('ocasional') ? '' : ' · esperado'}` })) },
+    { title: 'Ingresos y fechas', items: rows(d.incomes.map((i) => `income:${i.id}`)).map((r) => {
+      const i = d.incomes.find((x) => `income:${x.id}` === r.ref);
+      const type = i?.source === 'independent' ? ' · trabajo independiente' : i?.source === 'rental' ? ' · alquiler' : '';
+      return { ...r, value: `${r.value}${type}${r.value.includes('ocasional') ? '' : ' · esperado'}` };
+    }) },
     { title: 'Dinero actual', items: rows(d.balance ? ['balance'] : []) },
     { title: 'Gastos fijos', items: rows(fixed.map((o) => `obligation:${o.id}`)) },
     { title: 'Gastos variables', items: rows(d.variable.map((v) => `variable:${v.id}`)) },
@@ -663,7 +805,8 @@ export function yesNoReply(d: Draft, text: string): { patches: Patch[]; reask: s
   if (d.pending === 'group:obligations' || d.pending === 'group:obligations:more') {
     return no ? { patches: [{ t: 'done', group: 'obligations' }], reask: null } : { patches: [], reask: '¿Cuál es? Dime el nombre y cuánto pagas, por ejemplo "internet 90".' };
   }
-  if (d.pending === 'income:other') return no ? { patches: [{ t: 'done', group: 'incomes' }], reask: null } : { patches: [], reask: '¿Cuánto recibes, de dónde viene y cada cuánto? Por ejemplo: "clases particulares, 400 cada mes".' };
+  // "Sí": a new extra income is opened and its data asked one question at a time (source first).
+  if (d.pending?.startsWith('income:other')) return no ? { patches: [{ t: 'done', group: 'incomes' }], reask: null } : { patches: [{ t: 'income', isNew: true, name: 'Ingreso adicional' }], reask: null };
   if (d.pending === 'group:subscriptions') return no ? { patches: [{ t: 'done', group: 'subscriptions' }], reask: null } : { patches: [], reask: '¿Cuál? Dime el servicio, cuánto pagas y qué día, por ejemplo "Netflix 44.90 el 15".' };
   if (d.pending === 'group:cards') return no ? { patches: [{ t: 'done', group: 'cards' }], reask: null } : { patches: [], reask: '¿De qué banco es?' };
   if (d.pending === 'group:loans') return no ? { patches: [{ t: 'done', group: 'loans' }, { t: 'done', group: 'debts' }], reask: null } : { patches: [], reask: '¿Con quién es? Dime el banco o la persona y cuánto debes.' };
@@ -723,10 +866,26 @@ function incomeAck(d: Draft, c: Changed): string {
   const i = d.incomes.find((x) => `income:${x.id}` === c.ref);
   if (!i) return 'Anotado.';
   const name = i.name.toLowerCase();
+  if (i !== d.incomes[0]) return extraAck(i);
   const amount = i.amountMinor === null ? null : `${i.amountStatus === 'estimated' ? 'unos ' : ''}${money(i.amountMinor, i.currency)}`;
   const occasional = i.frequency === 'occasional' ? ', ocasional' : '';
   if (i.day === null) return amount ? `Anotado: ${name} de ${amount}${occasional}.` : `Entiendo, ${name === 'ingresos' ? 'lo vemos con calma' : `ingresos de ${name}`}${occasional}.`;
   return `Anotado: ${name}, ${amount ?? 'monto por confirmar'}, ${dayText(i.day, i.dayMax, i.secondDay, i.dayStatus)}${occasional}.`;
+}
+
+/** An extra income in one natural line, with only what is known: "Perfecto. Recibes S/ 300 por diseños de arte digital el día 5 de cada mes." */
+function extraAck(i: Draft['incomes'][number]): string {
+  const generic = GENERIC_INCOME.has(i.name);
+  const by = generic ? '' : ` por ${i.name.charAt(0).toLowerCase()}${i.name.slice(1)}`;
+  const amount = i.amountMinor === null ? null : `${i.amountStatus === 'estimated' ? 'unos ' : ''}${money(i.amountMinor, i.currency)}`;
+  const when = i.frequency === 'occasional' ? ' de forma ocasional'
+    : i.day !== null && i.secondDay ? ` los días ${i.day} y ${i.secondDay === 31 ? 'último' : i.secondDay} de cada mes`
+    : i.day !== null && i.frequency === 'monthly' ? ` el día ${i.day === 31 ? 'último' : i.day} de cada mes`
+    : i.day !== null ? ` el día ${i.day}` : '';
+  if (amount && (when || by)) return `Perfecto. Recibes ${amount}${by}${when}.`;
+  if (amount) return `Anotado: ${amount}.`;
+  if (when) return `Anotado: lo cobras${when}.`;
+  return generic ? '' : `Entiendo, ingresos${by}.`;
 }
 
 /** A card or loan answer: only the fact just given ("Listo, mínimo S/ 450."); a first mention names it with what came. */

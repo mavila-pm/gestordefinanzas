@@ -252,6 +252,15 @@ await runSuite('onboarding', async ({ page, check }) => {
   await send(page, '15 y 30');
   v = await lastVelsuno(page);
   check('two pay dates understood → other income asked', v.includes('días 15 y 30') && v.includes('¿Tienes algún otro ingreso aparte de tu sueldo?'), v);
+  // The real conversation: "sí" → source → everything at once → ONE extra income, nothing asked again.
+  await tap(page, 'Sí');
+  check('"Sí" → "¿De dónde viene ese ingreso adicional?"', (await lastVelsuno(page)).startsWith('¿De dónde viene ese ingreso adicional?'), await lastVelsuno(page));
+  await send(page, 'Hago diseños de arte digital y recibo S/ 300 cada 5 de cada mes.');
+  v = await lastVelsuno(page);
+  check('one sentence back with all of it, then "¿Tienes algún otro ingreso?"', v.includes('Perfecto. Recibes S/ 300 por diseños de arte digital el día 5 de cada mes.') && v.includes('¿Tienes algún otro ingreso?'), v);
+  const incs = ((await api.from('onboarding_states').select('facts').single()).data!.facts as { incomes: Array<{ name: string; amountMinor: number | null; day: number | null; frequency: string | null }> }).incomes;
+  check('saved: the salary and ONE extra income (S/ 300, day 5, monthly), no duplicate',
+    incs.length === 2 && incs[1]!.name === 'Diseños de arte digital' && incs[1]!.amountMinor === 30000 && incs[1]!.day === 5 && incs[1]!.frequency === 'monthly', JSON.stringify(incs));
   check('phone: no empty boxes, nothing wider than the screen', (await emptyBoxes()) === 0
     && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/onb-phone.png` });

@@ -13,13 +13,17 @@ export interface IncomeFact {
   /** 'occasional': a one-off or irregular income. Shown, never projected as a recurring expected income. */
   frequency: 'monthly' | 'semimonthly' | 'occasional' | null;
   day: number | null; dayMax: number | null; secondDay: number | null; dayStatus: FactStatus;
+  /** What the income is (shown in the summary): salary, own work (services, sales), rent, or other. */
+  source?: 'salary' | 'independent' | 'rental' | 'other' | null;
+  /** "A fin de mes": ambiguous until confirmed ('end' → asked "¿el último día?"; 'ask' → "¿qué día exactamente?"). */
+  dayHint?: 'end' | 'ask' | null;
 }
 export interface ObligationFact {
   id: string; name: string; kind: ObligationKind; currency: Currency;
   amountMinor: number | null; amountStatus: FactStatus;
   day: number | null; dayMax: number | null; dayStatus: FactStatus;
   /** "Lo pago en quincena": for a MONTHLY payment this is ambiguous, so Vels asks "¿el 15?" before storing a day. */
-  dayHint?: 'quincena' | null;
+  dayHint?: 'quincena' | 'end' | 'ask' | null;
 }
 export type DebtKind = 'card' | 'personal' | 'loan';
 export interface DebtFact {
@@ -71,9 +75,10 @@ export const emptyDraft = (): Draft => ({
 
 /** One change the interpreter (local rules, Gemini, or a vision read) proposes. Always validated before merge. */
 export type Patch =
-  | { t: 'income'; name?: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean;
+  | { t: 'income'; /** Internal: the income a pending question is about (never from Gemini). */ id?: string; source?: 'salary' | 'independent' | 'rental' | 'other';
+      /** Internal: "a fin de mes" said instead of a day (asked before storing any day). */ endHint?: boolean; name?: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean;
       day?: number; dayMax?: number; secondDay?: number; frequency?: 'monthly' | 'semimonthly' | 'occasional'; approxDay?: boolean; isNew?: boolean }
-  | { t: 'obligation'; kind: ObligationKind; name: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean;
+  | { t: 'obligation'; endHint?: boolean; kind: ObligationKind; name: string; amountMinor?: number; currency?: Currency; approx?: boolean; unknownAmount?: boolean;
       day?: number; dayMax?: number; approxDay?: boolean; quincena?: boolean }
   | { t: 'debt'; kind: DebtKind; name: string; lender?: string; institution?: string; last4?: string; currency?: Currency;
       balanceMinor?: number; approx?: boolean; unknownBalance?: boolean; minimumMinor?: number; dueDay?: number;

@@ -84,13 +84,15 @@ const REVIEW_ACTIONS: MessageCard['actions'] = [{ kind: 'correct', label: 'Corre
  * complete, the next ones in calendar order (planning engine, Lima date). At the end, what comes until the next
  * income and today's balance — all from the person's facts and the engine, never from a model.
  */
-export function followUp(draft: Draft, changed: Changed[], today: string = limaToday(), answered: string | null = null, name: string | null = null): { body: string; card: MessageCard; draft: Draft } {
+export function followUp(draft: Draft, changed: Changed[], today: string = limaToday(), answered: string | null = null, name: string | null = null, said = ''): { body: string; card: MessageCard; draft: Draft } {
   const q = nextQuestion(draft);
   const card: MessageCard = {};
   const facts = changed.filter((c) => c.ref !== 'removed');
   // The card only when several things changed at once (one item is already said in the sentence).
   if (facts.length >= 2) { card.title = 'Entendí esto'; card.rows = facts.map(({ label, value }) => ({ label, value })); }
   let lead = shortReply(draft, changed, answered);
+  // "Ya te dije que cobro el 5": acknowledged, and the fact is used (never asked a third time).
+  if (/\b(ya te (lo )?(dije|conte|habia dicho)|te lo dije|ya lo dije)\b/.test(fold(said))) lead = `Tienes razón.${lead ? ` ${lead}` : ''}`;
   const paymentsReady = draft.obligations.length >= 2 && draft.obligations.every((o) => o.day !== null || draft.asked.includes(`obligation:${o.id}:day`));
   if (changed.some((c) => c.ref?.startsWith('obligation:')) && paymentsReady && !q?.key.startsWith('obligation:')) {
     const ids = new Set(draft.obligations.map((o) => o.name));
@@ -133,7 +135,7 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   // Replies only the pending question can place ("sí, el 15", a loan's entity or "36, llevo 10").
   const placed = pendingReply(state.draft, text);
   if (placed) {
-    const next = followUp(placed.draft, placed.changed, limaToday(), state.draft.pending, name);
+    const next = followUp(placed.draft, placed.changed, limaToday(), state.draft.pending, name, text);
     await save(supabase, userId, next.draft);
     await say(supabase, userId, 'onboarding', 'velsuno', next.body, next.card);
     return;
@@ -181,8 +183,8 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
       { actions: hasFacts(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] });
     return;
   }
-  const merged = mergePatches(state.draft, read.patches, read.bare);
-  const next = followUp(merged.draft, merged.changed, limaToday(), state.draft.pending, name);
+  const merged = mergePatches(state.draft, read.patches, read.bare, text);
+  const next = followUp(merged.draft, merged.changed, limaToday(), state.draft.pending, name, text);
   await save(supabase, userId, next.draft);
   await say(supabase, userId, 'onboarding', 'velsuno', next.body, next.card);
 }
