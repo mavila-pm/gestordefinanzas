@@ -62,7 +62,10 @@ export default async function PlanSettings() {
             </ActionForm>
             <small className="muted">Sin tarjeta. Al terminar sigues en Free con todos tus datos.</small>
           </div>
-        ) : <SettingsRow label="Cambiar a Plus" hint="La suscripción estará disponible pronto." />)}
+        ) : null)}
+        {(!plus || e.source === 'trial') && (
+          <div className="settings-row"><a href="/app/planes" className="button secondary" data-testid="see-plans">Ver planes: Mensual, Anual y Vitalicio</a></div>
+        )}
       </SettingsSection>
 
       <SettingsSection title="Uso" testId="ai-usage">

@@ -930,3 +930,30 @@ html[data-theme="dark"] .card-visual[data-tone="account"], html[data-theme="dark
 .chat-card.bare > .chat-actions { padding-top: 0; }
 @media (prefers-reduced-motion: reduce) { .tw, .msg.fresh > .chat-card { animation: none; } }
 html[data-motion="reduce"] .tw, html[data-motion="reduce"] .msg.fresh > .chat-card { animation: none; }
+
+/* ── Planes, pago y gracias ───────────────────────────────────────────────────────────────────────────── */
+.plan-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-16); }
+@media (min-width: 768px) { .plan-grid { grid-template-columns: repeat(3, 1fr); align-items: stretch; } }
+.plan-card { display: flex; flex-direction: column; gap: var(--space-12); box-shadow: inset 0 0 0 1px var(--border-subtle); }
+.plan-card.featured { box-shadow: inset 0 0 0 2px var(--text-primary); }
+.plan-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); flex-wrap: wrap; }
+.plan-card h2 { font-size: 18px; margin: 0; }
+.plan-card > .button { margin-top: auto; width: 100%; justify-content: center; white-space: nowrap; }
+.plan-card > .tag { margin-top: auto; align-self: flex-start; }
+.plan-card p { margin: 0; }
+.plans-page { max-width: 1000px; }
+.plan-price { white-space: nowrap; }
+.plan-price strong { font-size: 30px; letter-spacing: -0.02em; }
+.plan-card svg, .check-list svg { vertical-align: -3px; color: var(--semantic-success); }
+.check-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-8); }
+.summary-list { margin: 0; display: grid; gap: var(--space-8); }
+.summary-list > div { display: flex; justify-content: space-between; gap: var(--space-16); }
+.summary-list dt { color: var(--text-secondary); }
+.summary-list dd { margin: 0; text-align: right; font-weight: 600; }
+.summary-list > .total { padding-top: var(--space-8); border-top: 1px solid var(--border-subtle); font-size: 18px; }
+.summary-list > .total dt { color: var(--text-primary); font-weight: 600; }
+.check-row { display: flex; gap: var(--space-12); align-items: flex-start; min-height: 44px; cursor: pointer; }
+.check-row input { width: 22px; height: 22px; margin-top: 1px; flex: none; accent-color: var(--action-bg); }
+.thanks-mark { width: 64px; height: 64px; border-radius: var(--radius-pill); display: grid; place-items: center; background: var(--plus-bg); color: var(--semantic-success); animation: thanks-in var(--dur-3) var(--ease-out) both; }
+@keyframes thanks-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { @keyframes thanks-in { from { opacity: 0; } to { opacity: 1; } } }
