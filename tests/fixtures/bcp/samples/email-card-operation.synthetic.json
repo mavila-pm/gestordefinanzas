@@ -1,0 +1,20 @@
+{
+  "fixtureStatus": "SYNTHETIC_FIXTURE",
+  "evidence": "Structure proposed by the Product Owner; exact sender local part, subject and wording NOT observed.",
+  "raw": {
+    "channel": "email",
+    "externalEventId": "<card-operation-synthetic-1@mail.test>",
+    "sender": "Notificaciones BCP <notificaciones@notificacionesbcp.com.pe>",
+    "subject": "Notificación de operación con tu tarjeta",
+    "body": "Hola, CLIENTE:\nSe realizó una operación con tu tarjeta terminada en ****1234.\nOperación: Consumo\nEstablecimiento: TAMBO LARCO\nMonto: S/ 12.50\nFecha: 20/09/2026\nHora: 13:05",
+    "receivedAt": "2026-09-20T18:06:00Z"
+  },
+  "expected": {
+    "outcome": "created",
+    "transaction": {
+      "type": "credit_card_purchase", "direction": "outflow", "amountMinor": 1250, "currency": "PEN",
+      "occurredAt": "2026-09-20T13:05:00-05:00", "cardLast4": "1234", "merchantNormalized": "TAMBO LARCO",
+      "category": "Alimentación", "status": "confirmed"
+    }
+  }
+}
