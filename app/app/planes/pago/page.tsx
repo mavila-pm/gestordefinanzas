@@ -50,14 +50,15 @@ export default async function Checkout({ searchParams }: { searchParams: Promise
 
       <ActionForm action={checkoutAction} label="Confirmar compra" className="stack">
         <input type="hidden" name="plan" value={plan} />
+        <input type="hidden" name="amount" value={prices[plan]} />
         <label className="check-row">
           <input type="checkbox" name="terms" required data-testid="terms" />
           <span>{info.recurring
             ? `Acepto los Términos y que se cobre ${price} ${info.period}${trialEnd ? ` desde el ${trialEnd}` : ''} hasta que cancele. Puedo cancelar cuando quiera.`
             : `Acepto los Términos y el pago único de ${price}.`} <Link href="/terminos">Ver Términos</Link></span>
         </label>
-        <button type="submit" data-testid="pay" disabled={mode === 'disabled'}>{trialDays ? `Empezar ${trialDays} días gratis` : `Pagar ${price}`}</button>
-        <p className="muted small">Pago seguro con Culqi. Velsuno no ve ni guarda los datos de tu tarjeta.</p>
+        <button type="submit" data-testid="pay" disabled={mode === 'disabled'}>{mode === 'demo' ? (trialDays ? `Simular ${trialDays} días gratis` : `Simular pago de ${price}`) : trialDays ? `Empezar ${trialDays} días gratis` : `Pagar ${price}`}</button>
+        {mode === 'culqi' && <p className="muted small">Pago seguro con Culqi. Velsuno no ve ni guarda los datos de tu tarjeta.</p>}
       </ActionForm>
     </main>
   );

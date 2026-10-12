@@ -9,7 +9,7 @@ async function orderFor(pool: pg.Pool, user: string, plan: string): Promise<stri
     await c.query('begin');
     await c.query('set local role authenticated');
     await c.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: user, role: 'authenticated' })]);
-    const id = (await c.query('select public.billing_create_order($1) as id', [plan])).rows[0].id as string;
+    const id = (await c.query('select public.billing_create_order($1, public.billing_price($1)) as id', [plan])).rows[0].id as string;
     await c.query('commit');
     return id;
   } finally { c.release(); }
@@ -34,16 +34,19 @@ describe.skipIf(!DATABASE_URL)('billing: plans, orders, demo purchase, server-on
 
   it('an order is priced and trialed by the server; clients cannot write orders or their plan', async () => {
     await asRole(pool, 'authenticated', USER_A, async (c) => {
-      const id = (await c.query(`select public.billing_create_order('monthly') as id`)).rows[0].id as string;
+      const id = (await c.query(`select public.billing_create_order('monthly', public.billing_price('monthly')) as id`)).rows[0].id as string;
       const o = (await c.query('select plan_code, currency, amount_minor, trial_days, status from public.billing_orders where id = $1', [id])).rows[0];
       expect(o).toEqual({ plan_code: 'monthly', currency: 'USD', amount_minor: expect.anything(), trial_days: 14, status: 'pending' });
       expect([400, 900]).toContain(Number(o.amount_minor));
-      const life = (await c.query(`select public.billing_create_order('lifetime') as id`)).rows[0].id as string;
+      const life = (await c.query(`select public.billing_create_order('lifetime', public.billing_price('lifetime')) as id`)).rows[0].id as string;
       expect((await c.query('select trial_days from public.billing_orders where id = $1', [life])).rows[0].trial_days).toBe(0);
-      expect(await errorMessage(c, `select public.billing_create_order('weekly')`)).toBe('bad_plan');
+      expect(await errorMessage(c, `select public.billing_create_order('weekly', 400)`)).toBe('bad_plan');
       expect(await errorCode(c, `insert into public.billing_orders (user_id, plan_code, amount_minor, terms_accepted_at) values ($1, 'lifetime', 1, now())`, [USER_A])).toBe('42501');
       expect(await errorCode(c, `update public.billing_orders set status = 'paid' where id = $1`, [id])).toBe('42501');
-      expect(await errorCode(c, `select public.billing_activate($1, 'culqi', 'chr_x')`, [id])).toBe('42501');
+      expect(await errorCode(c, `select public.billing_activate($1, 'culqi', 'chr_x', 400, 'USD')`, [id])).toBe('42501');
+      expect(await errorMessage(c, `select public.billing_create_order('lifetime', 100)`)).toBe('price_changed');
+      // The first version (no expected price) can no longer be called.
+      expect(await errorCode(c, `select public.billing_create_order('lifetime'::text)`)).toBe('42501');
     });
   });
 
@@ -54,7 +57,7 @@ describe.skipIf(!DATABASE_URL)('billing: plans, orders, demo purchase, server-on
     });
     await asRole(pool, 'anon', null, async (c) => {
       expect(await errorCode(c, 'select * from public.billing_orders')).toBe('42501');
-      expect(await errorCode(c, `select public.billing_create_order('monthly')`)).toBe('42501');
+      expect(await errorCode(c, `select public.billing_create_order('monthly', public.billing_price('monthly'))`)).toBe('42501');
     });
   });
 
@@ -77,21 +80,53 @@ describe.skipIf(!DATABASE_URL)('billing: plans, orders, demo purchase, server-on
 
   it('server activation: paid Vitalicio = Plus without end; trial order = trialing; idempotent per reference', async () => {
     const life = await orderFor(pool, USER_A, 'lifetime');
-    expect((await pool.query(`select public.billing_activate($1, 'culqi', 'chr_1') as s`, [life])).rows[0].s).toBe('paid');
-    expect((await pool.query(`select public.billing_activate($1, 'culqi', 'chr_1') as s`, [life])).rows[0].s).toBe('paid');
+    expect((await pool.query(`select public.billing_activate($1, 'culqi', 'chr_1', (select amount_minor from public.billing_orders where id = $1), 'USD') as s`, [life])).rows[0].s).toBe('paid');
+    expect((await pool.query(`select public.billing_activate($1, 'culqi', 'chr_1', (select amount_minor from public.billing_orders where id = $1), 'USD') as s`, [life])).rows[0].s).toBe('paid');
     expect((await pool.query('select plan, status, billing_plan, current_period_end from public.subscriptions where user_id = $1', [USER_A])).rows[0])
       .toEqual({ plan: 'plus', status: 'active', billing_plan: 'lifetime', current_period_end: null });
     await asRole(pool, 'authenticated', USER_A, async (c) => {
-      expect(await errorMessage(c, `select public.billing_create_order('monthly')`)).toBe('already_lifetime');
+      expect(await errorMessage(c, `select public.billing_create_order('monthly', public.billing_price('monthly'))`)).toBe('already_lifetime');
     });
     const monthly = await orderFor(pool, USER_B, 'monthly');
-    expect((await pool.query(`select public.billing_activate($1, 'culqi', 'sub_1') as s`, [monthly])).rows[0].s).toBe('trialing');
+    expect((await pool.query(`select public.billing_activate($1, 'culqi', 'sub_1', (select amount_minor from public.billing_orders where id = $1), 'USD') as s`, [monthly])).rows[0].s).toBe('trialing');
     const sub = (await pool.query('select status, billing_plan, trial_ends_at, current_period_end from public.subscriptions where user_id = $1', [USER_B])).rows[0];
     expect(sub.status).toBe('trialing');
     expect(Math.round((sub.trial_ends_at.getTime() - Date.now()) / 86_400_000)).toBe(14);
     // A second trial is never given: a new order for the same person has no trial days.
     await asRole(pool, 'authenticated', USER_B, async (c) => {
-      expect(await errorMessage(c, `select public.billing_create_order('annual')`)).toBe('already_plus');
+      expect(await errorMessage(c, `select public.billing_create_order('annual', public.billing_price('annual'))`)).toBe('already_plus');
     });
+  });
+
+  it('one purchase at a time: a new order closes the pending one; a paid plan is never overwritten', async () => {
+    const life = await orderFor(pool, USER_A, 'lifetime');
+    const monthly = await orderFor(pool, USER_A, 'monthly');
+    expect((await pool.query('select status, failure from public.billing_orders where id = $1', [life])).rows[0]).toEqual({ status: 'failed', failure: 'superseded' });
+    const act = (id: string, ref: string, amount = '(select amount_minor from public.billing_orders where id = $1)', cur = "'USD'") =>
+      pool.query(`select public.billing_activate($1, 'culqi', '${ref}', ${amount}, ${cur}) as s`, [id]);
+    await expect(act(life, 'c1')).rejects.toThrow('order_not_pending');
+    expect((await act(monthly, 'c2')).rows[0].s).toBe('trialing');
+    // With a paid plan in place, nothing else can be bought or activated over it.
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      expect(await errorMessage(c, `select public.billing_create_order('lifetime', public.billing_price('lifetime'))`)).toBe('already_plus');
+    });
+  });
+
+  it('activation checks what the provider charged, needs a reference, expires, and re-checks the trial', async () => {
+    const o = await orderFor(pool, USER_A, 'annual');
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'r1', 100, 'USD')`, [o])).rejects.toThrow('amount_mismatch');
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'r1', 5900, 'PEN')`, [o])).rejects.toThrow('amount_mismatch');
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', null, 5900, 'USD')`, [o])).rejects.toThrow('bad_reference');
+    // A card-less trial started between ordering and paying: the order's trial is no longer available.
+    await asRole(pool, 'authenticated', USER_A, async (c) => { await c.query('select public.start_plus_trial()'); await c.query('commit'); await c.query('begin'); });
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'r1', 5900, 'USD')`, [o])).rejects.toThrow('trial_no_longer_available');
+    const stale = await orderFor(pool, USER_B, 'lifetime');
+    await pool.query(`update public.billing_orders set created_at = now() - interval '2 hours' where id = $1`, [stale]);
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'r2', 19800, 'USD')`, [stale])).rejects.toThrow('order_expired');
+  });
+
+  it('parallel order creation for the same person is serialised (no two pending orders)', async () => {
+    await Promise.all(['monthly', 'annual', 'lifetime', 'monthly'].map((p) => orderFor(pool, USER_A, p)));
+    expect(Number((await pool.query(`select count(*) as n from public.billing_orders where user_id = $1 and status = 'pending'`, [USER_A])).rows[0].n)).toBe(1);
   });
 });

@@ -54,7 +54,7 @@ export default async function Plans() {
         <ul className="check-list">{PLUS_FEATURES.map((f) => <li key={f}><Icon name="check" size={16} /> {f}</li>)}</ul>
       </section>
 
-      <p className="muted small">Precios en dólares (US$). Pago seguro con Culqi: Velsuno no guarda los datos de tu tarjeta. Puedes cancelar cuando quieras; si cancelas, conservas Plus hasta el final del periodo pagado y nunca pierdes tus datos. <Link href="/terminos">Términos</Link>.</p>
+      <p className="muted small">Precios en dólares (US$). Los pagos se procesarán con Culqi: Velsuno no verá ni guardará los datos de tu tarjeta. Puedes cancelar cuando quieras; si cancelas, conservas Plus hasta el final del periodo pagado y nunca pierdes tus datos. <Link href="/terminos">Términos</Link>.</p>
       <Link href="/app/ajustes/plan" className="button secondary">Seguir con mi plan actual</Link>
     </main>
   );

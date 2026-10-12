@@ -11,6 +11,7 @@ const ERRORS: Record<string, string> = {
   already_plus: 'Ya tienes Plus. Puedes ver tu plan en Ajustes → Plan y uso.',
   too_many_orders: 'Hiciste varios intentos seguidos. Espera unos minutos y vuelve a intentarlo.',
   bad_plan: 'Elige un plan válido.',
+  price_changed: 'El precio de este plan cambió. Revisa el nuevo precio antes de continuar.',
 };
 
 /**
@@ -26,7 +27,10 @@ export async function checkoutAction(_prev: ActionState, form: FormData): Promis
   const mode = await billingMode(supabase);
   if (mode === 'disabled') return { error: 'Los pagos con tarjeta se habilitarán muy pronto. No se hizo ningún cargo.' };
   if (mode === 'culqi') return { error: 'El pago con Culqi aún no está activo en esta versión. No se hizo ningún cargo.' };
-  const { data: order, error } = await supabase.rpc('billing_create_order', { p_plan: plan });
+  // The price the person saw and accepted: if the server price differs now, nothing is created (price_changed).
+  const expected = Number(form.get('amount'));
+  if (!Number.isSafeInteger(expected) || expected <= 0) return { error: ERRORS.price_changed };
+  const { data: order, error } = await supabase.rpc('billing_create_order', { p_plan: plan, p_expected_minor: expected });
   if (error || typeof order !== 'string') return { error: ERRORS[error?.message ?? ''] ?? 'No pudimos iniciar tu compra. Inténtalo de nuevo.' };
   const { error: payError } = await supabase.rpc('billing_simulate_payment', { p_order: order });
   if (payError) return { error: 'No pudimos completar la compra de prueba. No se hizo ningún cargo.' };
