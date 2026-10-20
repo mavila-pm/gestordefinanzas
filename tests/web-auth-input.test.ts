@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { limaToday } from '../src/domain/dates';
-import { ageOn, birthProblem, limaMonth, limaMonthRange, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../src/web/auth-input';
+import { ageOn, birthProblem, EXISTING_ACCOUNT_NOTICE, limaMonth, limaMonthRange, normalizePhone, parseBirthDate, parseEmail, passwordProblem, registrationLanding, safeNextPath } from '../src/web/auth-input';
 
 describe('auth input validation', () => {
   it('emails', () => {
@@ -62,5 +62,16 @@ describe('auth input validation', () => {
     expect(limaMonthRange('2026-12')).toEqual({ from: '2026-12-01T05:00:00.000Z', to: '2027-01-01T05:00:00.000Z' });
     expect(limaMonthRange('2026-13')).toBeNull();
     expect(limaMonthRange("2026-09' or 1=1")).toBeNull();
+  });
+});
+
+describe('registrationLanding (where an email link continues at /crear-cuenta)', () => {
+  it('a new account goes to its step; an account that already existed goes to the app with the notice', () => {
+    expect(registrationLanding('password')).toBe('/crear-cuenta/contrasena');
+    expect(registrationLanding('profile')).toBe('/crear-cuenta/perfil');
+    expect(registrationLanding('done')).toBe('/app?cuenta=existente');
+  });
+  it('the notice tells the inbox owner they already had an account and how to enter next time', () => {
+    expect(EXISTING_ACCOUNT_NOTICE).toBe('Ya tenías una cuenta con este correo. Entraste con el enlace; también puedes entrar con tu contraseña.');
   });
 });

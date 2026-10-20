@@ -17,7 +17,7 @@ import { alertAllowed } from '../../../src/web/preferences';
 import { limaToday, shortDate } from '../../../src/domain/dates';
 import { monthCommitments, totalsByCurrency } from '../../../src/engine/commitments';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../../src/infrastructure/supabase/transaction-row';
-import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';
+import { EXISTING_ACCOUNT_NOTICE, limaMonth, limaMonthRange } from '../../../src/web/auth-input';
 import { TxRow } from '../../../components/tx-row';
 import { Icon } from '../../../components/ui/icon';
 import { ComingUp, FreeHero } from '../../../components/free-hero';
@@ -31,13 +31,14 @@ import { fold } from '../../../src/ai/text';
 import { loadSubscriptions } from '../../../lib/subscriptions';
 import { knownSum, nextCharge, subscriptionState, subscriptionTotals } from '../../../src/engine/subscriptions';
 import { SubLogo } from '../../../components/sub-logo';
+import { OnceNotice } from '../../../components/once-notice';
 
 /**
  * Resumen: the situation in a glance — available money, fixed payments, what comes next, savings — then what
  * happened (6-month trend, recent movements) and cards/loans. Depth lives in Análisis; questions and what-ifs in Vels.
  */
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ month?: string; deleted?: string }> }) {
-  const { month: requested, deleted } = await searchParams;
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ month?: string; deleted?: string; cuenta?: string }> }) {
+  const { month: requested, deleted, cuenta } = await searchParams;
   const supabase = await createSupabaseServerClient();
   const now = new Date();
   const currentMonth = limaMonth(now);
@@ -122,6 +123,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     .sort((a, b) => a.n!.date!.localeCompare(b.n!.date!)).slice(0, 3);
   const subsTotals = subsData ? subscriptionTotals(subsData.subs, subsData.settlements, today) : [];
 
+  // A returning owner who came in through an email link (app/crear-cuenta, registrationLanding): said once, on landing.
+  const existing = cuenta === 'existente' && <OnceNotice param="cuenta" testId="existing-account">{EXISTING_ACCOUNT_NOTICE}</OnceNotice>;
   const head = (
     <header className="home-head">
       <div>
@@ -135,6 +138,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (firstTime) {
     return (
       <main className="stack narrow-md" data-testid="welcome">
+        {existing}
         {head}
         <section className="card stack-sm">
           <h2>Empieza con tu primer movimiento</h2>
@@ -148,6 +152,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   return (
     <main className="dash">
       {deleted === '1' && <p role="status" className="notice positive">Movimiento eliminado.</p>}
+      {existing}
       {head}
       {!isCurrent && (
         <div className="row">

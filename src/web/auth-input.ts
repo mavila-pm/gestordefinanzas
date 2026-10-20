@@ -101,6 +101,17 @@ export function authCookieOptions(secure: boolean) {
   return { httpOnly: true, secure, sameSite: 'lax' as const, path: '/' };
 }
 
+/**
+ * Where an email link continues at /crear-cuenta: the step a new account is on, or, for an account that already
+ * existed (registration done), the app with a one-time notice. Only the inbox owner gets here (the link proves it),
+ * so telling them is not enumeration; the signup screen itself answers the same for new and registered emails.
+ */
+export function registrationLanding(step: 'password' | 'profile' | 'done'): '/crear-cuenta/contrasena' | '/crear-cuenta/perfil' | '/app?cuenta=existente' {
+  return step === 'password' ? '/crear-cuenta/contrasena' : step === 'profile' ? '/crear-cuenta/perfil' : '/app?cuenta=existente';
+}
+
+export const EXISTING_ACCOUNT_NOTICE = 'Ya tenías una cuenta con este correo. Entraste con el enlace; también puedes entrar con tu contraseña.';
+
 /** A `next` query param (token_hash email templates) wins; else the cookie; always same-origin, default /app. */
 export function resolveAuthNext(queryNext: unknown, cookieNext: unknown, type?: unknown): string {
   // A recovery link always ends on the password form, whatever next/cookie say (cross-device: no cookie there).

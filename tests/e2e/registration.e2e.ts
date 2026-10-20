@@ -147,4 +147,13 @@ await runSuite('registration', async ({ page, check }) => {
   // ── A completed account is never sent back to registration ─────────────────────────────────────────────
   await login(page, B);
   check('completed account goes to the app', page.url().startsWith(`${BASE}/app`), page.url());
+
+  // ── Returning owner through an email link (re-signup with a registered email): told once, after the link ──
+  await page.goto(`${BASE}/crear-cuenta`);
+  await page.getByTestId('existing-account').waitFor({ timeout: 10000 }).catch(() => undefined);
+  check('existing account via the link → app with "Ya tenías una cuenta" (shown after the link only)',
+    page.url().startsWith(`${BASE}/app`) && ((await page.getByTestId('existing-account').textContent().catch(() => '')) ?? '').includes('Ya tenías una cuenta'), page.url());
+  await page.waitForFunction(() => !location.search.includes('cuenta='), undefined, { timeout: 5000 }).catch(() => undefined);
+  await page.reload();
+  check('the notice is shown once (the address drops ?cuenta, a reload does not repeat it)', (await page.getByTestId('existing-account').count()) === 0, page.url());
 });
