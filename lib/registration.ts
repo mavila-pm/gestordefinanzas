@@ -6,7 +6,9 @@ export type RegistrationStep = 'password' | 'profile' | 'done';
 /**
  * Where a signed-in person is in registration (migration 029, decided in SQL): a new account must create its
  * password, then complete the profile (18+, consents). Accounts created before the cutoff are 'done'.
- * On a read error the app does not lock the person out ('done'); the steps are enforced again by the SQL functions.
+ * On a read error pages do not lock the person out ('done'): they can read their own data, while writes stay
+ * blocked because the proxy's registration gate fails closed (lib/supabase/proxy.ts). The SQL write functions do not
+ * check registration themselves.
  */
 export async function registrationStep(supabase: SupabaseClient): Promise<RegistrationStep> {
   const { data, error } = await supabase.rpc('my_registration');
