@@ -1,5 +1,5 @@
 import type { BankAdapter, ParseFailureReason, ParseResult } from './bank-adapter';
-import type { RawFinancialEvent } from '../domain/types';
+import type { InstitutionCode, RawFinancialEvent } from '../domain/types';
 import { bcpEmailV1 } from './adapters/bcp/bcp-email-v1';
 import { bcpSmsV1 } from './adapters/bcp/bcp-sms-v1';
 import { bbvaEmailV1 } from './adapters/bbva/bbva-email-v1';
@@ -85,3 +85,8 @@ export const interbankAdapters: readonly BankAdapter[] = [interbankEmailV1, inte
 export const registeredAdapters: readonly BankAdapter[] = [...bcpAdapters, ...bbvaAdapters, ...interbankAdapters];
 
 export const defaultAdapterRegistry = new AdapterRegistry(registeredAdapters);
+
+/** Banks whose messages are actually read (scaffolds excluded), in registry order. Copy is built from this list. */
+export function supportedInstitutions(adapters: readonly BankAdapter[] = registeredAdapters): InstitutionCode[] {
+  return [...new Set(adapters.filter((a) => !a.scaffold).map((a) => a.institution))];
+}

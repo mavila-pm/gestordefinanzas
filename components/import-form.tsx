@@ -10,7 +10,7 @@ export function ImportForm() {
     <form action={formAction} className="card stack" aria-label="Importar mensaje" aria-busy={pending}>
       <fieldset disabled={pending} className="bare">
         <label className="stack-sm"><span>Tipo de mensaje</span>
-          <select name="channel" defaultValue="sms"><option value="sms">SMS</option><option value="email">Correo</option></select>
+          <select name="channel" defaultValue="sms"><option value="sms">SMS o notificación de la app</option><option value="email">Correo</option></select>
         </label>
         <label className="stack-sm"><span>Asunto (solo correos, opcional)</span><input name="subject" maxLength={300} /></label>
         <label className="stack-sm"><span>Texto del mensaje</span>

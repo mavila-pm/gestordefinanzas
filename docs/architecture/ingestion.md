@@ -50,6 +50,10 @@ Every parser is `SYNTHETIC_UNVERIFIED`. BCP evidence: `docs/architecture/bcp-evi
 
 Replacing synthetic templates with real ones: `tests/fixtures/bcp/samples/README.md` (same for `bbva/samples/`).
 
+Copy naming the banks we read ("BCP y BBVA") comes from `supportedInstitutions()` (registry, scaffolds excluded) via
+`supportedBanksText()`; app notifications are pasted in the "SMS o notificación de la app" field and labelled
+"notificación de la app" (`sourceOriginLabel`, from the `_PUSH_` parser version).
+
 ## User import (TASK-006)
 `/app/importar`: the user pastes a bank SMS/email text. It runs through the SAME pipeline (adapter, dedupe, category,
 confidence) with `persistAs: 'import'`:

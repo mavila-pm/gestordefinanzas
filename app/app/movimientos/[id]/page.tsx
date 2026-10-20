@@ -14,9 +14,8 @@ import { Icon } from '../../../../components/ui/icon';
 import { Sheet } from '../../../../components/ui/sheet';
 import { SplitEditor } from '../../../../components/split-editor';
 import { isSplittable } from '../../../../src/domain/allocations';
-import { SOURCE_LABEL } from '../../../../src/web/labels';
+import { SOURCE_LABEL, sourceOriginLabel } from '../../../../src/web/labels';
 
-const CHANNEL_LABEL: Record<string, string> = { email: 'Notificación por email', sms: 'Notificación por SMS', import: 'Mensaje del banco importado por ti', manual: 'Registrado por ti' };
 const STATUS_LABEL: Record<string, string> = { confirmed: 'Confirmado', review_required: 'Por revisar', possible_duplicate: 'Posible duplicado', ignored: 'Ignorado' };
 const ACTION_LABEL: Record<string, string> = { manual_create: 'Registrado manualmente', confirm: 'Confirmado', ignore: 'Ignorado', correct: 'Corregido', rule_create: 'Regla de comercio creada', card_link: 'Tarjeta asociada', split: 'División actualizada' };
 const FIELD_LABEL: Record<string, string> = {
@@ -217,7 +216,7 @@ export default async function TransactionDetail({ params, searchParams }: { para
         <ul className="list">
           {t.sources.map((s, i) => (
             <li key={i}>
-              <span>{CHANNEL_LABEL[s.channel]}{(s.channel === 'import' ? ` (${s.parserVersion.includes('SMS') ? 'SMS' : 'email'})` : '')}{s.channel !== 'manual' && s.templateVerification !== 'VERIFIED' ? ' · formato del banco aún en validación' : ''}</span>
+              <span>{sourceOriginLabel(s.channel, s.parserVersion)}{s.channel !== 'manual' && s.templateVerification !== 'VERIFIED' ? ' · formato del banco aún en validación' : ''}</span>
               <span className="muted">recibido {formatLimaDateTime(s.receivedAt)}</span>
             </li>
           ))}
