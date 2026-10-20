@@ -112,4 +112,41 @@ describe('BCP_SMS_V1', () => {
     const raw = fx.bcpSms(fx.purchasePenSms().body, '+51999000000');
     expect(ok(raw).confidence).toBe('medium');
   });
+
+  it('debit card purchase SMS is an expense with a debit card', () => {
+    expect(ok(fx.purchaseDebitSms())).toMatchObject({
+      type: 'expense', direction: 'outflow', cardKind: 'debit', cardLast4: '5678', amountMinor: 2550, merchantRaw: 'BOTICA EL EJEMPLO',
+      occurredAt: '2026-09-14T18:16:00-05:00',
+    });
+  });
+
+  it('card payment SMS is credit_card_payment (not an expense), no merchant', () => {
+    expect(ok(fx.cardPaymentSms())).toMatchObject({ type: 'credit_card_payment', cardKind: 'credit', cardLast4: '4821', amountMinor: 10000, merchantRaw: null });
+  });
+
+  it('EXPECTED until real samples: an accented "Crédito" SMS is unknown_template (the synthetic pattern has no accent)', () => {
+    // Documented gap, not a bug to patch by guessing: the real BCP wording is unobserved. When a real anonymized SMS
+    // arrives, its exact spelling goes into a new parser version (BCP_SMS_V2) with a REAL_ANONYMIZED sample.
+    const raw = fx.bcpSms(fx.purchasePenSms().body.replace('Credito', 'Crédito'));
+    expect(parse(raw)).toMatchObject({ ok: false, reason: 'unknown_template', parserVersion: 'BCP_SMS_V1' });
+  });
+});
+
+describe('BCP_EMAIL_V1 debit', () => {
+  it('debit card purchase email is an expense with a debit card', () => {
+    expect(ok(fx.purchaseDebitEmail())).toMatchObject({
+      type: 'expense', direction: 'outflow', cardKind: 'debit', cardLast4: '5678', amountMinor: 2550,
+      merchantRaw: 'BOTICA EL EJEMPLO', occurredAt: '2026-09-14T18:15:00-05:00', bankOperationId: '000123', confidence: 'high',
+    });
+  });
+
+  it('debit email + debit SMS of the same purchase merge into one movement', async () => {
+    const { ingestRawEvent } = await import('../src/engine/ingest');
+    const { InMemoryTransactionRepository } = await import('../src/engine/repository');
+    const repo = new InMemoryTransactionRepository();
+    const ctx = { userId: 'u', ownAccountLast4: [], cards: [{ last4: '5678', kind: 'debit' as const }], merchantRules: [] };
+    await ingestRawEvent(fx.purchaseDebitEmail(), ctx, repo);
+    expect((await ingestRawEvent(fx.purchaseDebitSms(), ctx, repo)).outcome).toBe('merged_cross_source');
+    expect(await repo.listTransactions('u')).toEqual([expect.objectContaining({ type: 'expense', category: 'Salud', amountMinor: 2550 })]);
+  });
 });
