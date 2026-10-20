@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Currency } from '../src/domain/money';
 import { financialEffect } from '../src/domain/financial-effect';
-import { buildPlan, detectVariations, suggestMatches, type ExpectedIncome, type Obligation, type Plan, type PlanInput } from '../src/engine/planning';
+import { buildPlan, detectVariations, suggestMatches, type ExpectedIncome, type Obligation, type Plan, type PlanInput, type SettlementRow } from '../src/engine/planning';
 import { limaToday } from '../src/domain/dates';
 import {
   essentialSpendByMonth, essentialsSuggestion, isSuppressed, observedAmountsForUnknown, suggestIncomeMatches, timeline,
@@ -20,6 +20,8 @@ export interface PlanningData {
   obligationRows: Array<Obligation & { active: boolean; notes: string | null }>;
   incomes: ExpectedIncome[];
   settledObligations: Map<string, Set<string>>;
+  /** Every settlement row of a planned payment (paid / skipped), newest first: what really happened, per occurrence. */
+  settlements: Array<SettlementRow & { id: string; transactionId: string | null; createdAt: string }>;
   settledIncomes: Map<string, Set<string>>;
   balances: Partial<Record<Currency, { amountMinor: number; asOf: string; stale: boolean; bankMinor: number | null; cashMinor: number | null }>>;
   settings: Partial<Record<Currency, { essentialsMonthlyMinor: number | null; essentialsEstimated: boolean; cushionMinor: number; allowZeroForDebt: boolean; savingsGoalMinor: number | null }>>;
@@ -43,7 +45,8 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     supabase.from('fixed_expenses').select('id,name,kind,currency,amount_minor,amount_status,frequency,anchor_month,due_day,due_day_max,target_day,notes,active,created_at,paused_until,ended_on'),
     supabase.from('debts').select('id,name,currency,balance_minor,annual_rate_bp,installment_minor,installments_total,installments_paid,due_day,active,created_at,last_payment_on'),
     supabase.from('expected_incomes').select('id,name,currency,amount_minor,amount_status,frequency,day_of_month,day_max,second_day,anchor_date,paused_until,ended_on').eq('active', true),
-    supabase.from('plan_settlements').select('fixed_expense_id,expected_income_id,period,transaction_id,variance_ack,tx:transactions(amount_minor)').order('period', { ascending: false }).limit(500),
+    supabase.from('plan_settlements').select('id,fixed_expense_id,expected_income_id,period,status,transaction_id,variance_ack,created_at,tx:transactions(amount_minor)')
+      .order('period', { ascending: false }).order('created_at', { ascending: false }).limit(500),
     supabase.from('balance_snapshots').select('currency,amount_minor,bank_minor,cash_minor,as_of').order('as_of', { ascending: false }).limit(20),
     supabase.from('planning_settings').select('currency,essentials_monthly_minor,essentials_status,cushion_minor,allow_zero_for_debt,savings_goal_minor'),
     supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed').gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(1000),
@@ -69,12 +72,14 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
   const settledIncomes = new Map<string, Set<string>>();
   const paid: Array<{ obligationId: string; period: string; actualMinor: number; acknowledged: boolean }> = [];
   const linked = new Set<string>();
+  const settlements: PlanningData['settlements'] = [];
   const add = (m: Map<string, Set<string>>, k: string, v: string) => { if (!m.has(k)) m.set(k, new Set()); m.get(k)!.add(v); };
   for (const s of settle.data ?? []) {
     if (s.transaction_id) linked.add(s.transaction_id);
     if (s.fixed_expense_id) {
       add(settledObligations, s.fixed_expense_id, s.period);
       const amount = (s.tx as unknown as { amount_minor: number } | null)?.amount_minor;
+      settlements.push({ id: s.id, obligationId: s.fixed_expense_id, period: s.period, status: s.status, amountMinor: amount == null ? null : Number(amount), transactionId: s.transaction_id, createdAt: s.created_at });
       if (amount != null) paid.push({ obligationId: s.fixed_expense_id, period: s.period, actualMinor: Number(amount), acknowledged: s.variance_ack });
     }
     if (s.expected_income_id) add(settledIncomes, s.expected_income_id, s.period);
@@ -109,7 +114,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
   const obligations: Obligation[] = [...obligationRows.filter((o) => o.active), ...debtObligations];
 
   return {
-    today, obligations, obligationRows, incomes, settledObligations, settledIncomes, balances, settings,
+    today, obligations, obligationRows, incomes, settledObligations, settlements, settledIncomes, balances, settings,
     debts: debtRows.filter((d) => d.active).map((d) => ({ id: d.id, name: d.name, currency: d.currency, balanceMinor: Number(d.balance_minor), annualRateBp: d.annual_rate_bp })),
     recentIncome: top ? { transactionId: top.id, amountMinor: top.amountMinor, currency: top.currency, date: limaDate(top.occurredAt), merchant: top.merchantRaw } : null,
     suggestions: suggestMatches(obligationRows.filter((o) => o.active), outflows, settledObligations, linked),

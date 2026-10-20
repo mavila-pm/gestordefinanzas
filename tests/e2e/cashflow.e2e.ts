@@ -109,6 +109,11 @@ await runSuite('cashflow', async ({ browser, page, check }) => {
   const skipped = (await sb.from('plan_settlements').select('status,transaction_id,period')).data ?? [];
   check('skip: one "skipped" settlement without a movement; no transaction created', skipped.some((x) => x.status === 'skipped' && x.transaction_id === null)
     && (await sb.from('transactions').select('id', { count: 'exact', head: true })).count === tx0, JSON.stringify(skipped));
+  // The skipped occurrence is this month's or next month's Celular (due the 5th): both are within the 35-day list.
+  await page.reload();
+  const celRows = await page.getByTestId('commitment-list').locator('li', { hasText: 'Celular' }).allTextContents();
+  check('skip: Próximos says "Omitido" + "Deshacer", never "Pagado" (skipped ≠ paid)',
+    celRows.some((t) => t.includes('Omitido') && t.includes('Deshacer')) && !celRows.some((t) => t.includes('Pagado')), JSON.stringify(celRows));
 
   // Payoff comparison: one debt has no rate → no ranking, names the missing rate.
   await page.goto(`${BASE}/app/compromisos?cuota=800`);

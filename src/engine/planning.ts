@@ -128,6 +128,23 @@ export function nextOccurrence(o: Obligation, today: string, settledPeriods: Rea
     .find((x) => !settledPeriods.has(x.period) && x.period >= monthKey(o.since)) ?? null;
 }
 
+/**
+ * What really happened to one occurrence (ADR-0017), from its settlement rows. Skipped ≠ paid. A 'partial' row is a
+ * real payment smaller than the plan: the occurrence is 'paid' only when a row closes it (the person said "pago
+ * completo", or the server saw the real total reach the plan) or when the real amounts reach a known planned amount.
+ */
+export type OccurrenceState = 'paid' | 'skipped' | 'partial' | 'open';
+export interface SettlementRow { obligationId: string; period: string; status: 'paid' | 'partial' | 'skipped'; amountMinor: number | null }
+export function occurrenceState(rows: readonly SettlementRow[], obligationId: string, period: string, plannedMinor: number | null = null): OccurrenceState {
+  const mine = rows.filter((r) => r.obligationId === obligationId && r.period === period);
+  if (mine.some((r) => r.status === 'paid')) return 'paid';
+  if (mine.some((r) => r.status === 'skipped')) return 'skipped';
+  const partial = mine.filter((r) => r.status === 'partial');
+  if (!partial.length) return 'open';
+  const paid = partial.reduce((s, r) => s + (r.amountMinor ?? 0), 0);
+  return plannedMinor !== null && paid >= plannedMinor ? 'paid' : 'partial';
+}
+
 // ── Incomes ───────────────────────────────────────────────────────────────────────────────────────────────
 export function incomeOccurrencesBetween(i: ExpectedIncome, from: string, to: string): IncomeOccurrence[] {
   const out: IncomeOccurrence[] = [];
