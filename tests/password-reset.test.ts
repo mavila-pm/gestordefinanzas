@@ -34,13 +34,19 @@ describe('passwordResetOutcome (pure policy)', () => {
 // ── The real server action, with Next.js and Supabase stubbed ────────────────────────────────────────────────
 const resetPasswordForEmail = vi.fn();
 const signInWithOtp = vi.fn();
+const updateUser = vi.fn();
+const signOut = vi.fn();
+const authUser = vi.fn();
+const calls: string[] = [];
+const redirect = vi.fn((to: string) => { calls.push(`redirect:${to}`); });
 vi.mock('server-only', () => ({}));
 // Cap is covered in tests/cap.test.ts; here the person already passed it (the subject is anti-enumeration).
 vi.mock('../lib/cap', () => ({ capPassed: async () => true }));
 vi.mock('next/headers', () => ({ cookies: async () => ({ set: vi.fn(), get: vi.fn(), getAll: () => [] }) }));
-vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
+vi.mock('next/navigation', () => ({ redirect: (to: string) => redirect(to) }));
 vi.mock('../lib/supabase/server', () => ({
-  createSupabaseServerClient: async () => ({ auth: { resetPasswordForEmail, signInWithOtp } }),
+  createSupabaseServerClient: async () => ({ auth: { resetPasswordForEmail, signInWithOtp, updateUser, signOut } }),
+  authUser: (...a: unknown[]) => authUser(...a),
 }));
 
 const form = (email: string) => { const f = new FormData(); f.set('email', email); return f; };
@@ -120,5 +126,59 @@ describe('signup (email only): same answer for new and registered addresses; err
     expect(registrationError('under_age')).toBe('Velsuno es para personas mayores de 18 años.');
     expect(registrationError('phone_taken')).toBe('Ese número ya está registrado en otra cuenta. Usa otro número o entra con esa cuenta.');
     expect(registrationError('duplicate key value violates something internal')).toBe('No pudimos guardar tus datos. Intenta de nuevo.');
+  });
+});
+
+describe('updatePassword (recovery link → new password): other devices are signed out', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  const pw = (password: string) => { const f = new FormData(); f.set('password', password); return f; };
+  beforeEach(() => {
+    for (const m of [updateUser, signOut, authUser, redirect]) m.mockClear();
+    calls.length = 0;
+    authUser.mockResolvedValue({ id: 'u1', email: null });
+    updateUser.mockReset();
+    signOut.mockReset();
+    signOut.mockImplementation(async (o: unknown) => { calls.push(`signOut:${JSON.stringify(o)}`); return { error: null }; });
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => warn.mockRestore());
+
+  it('success → signOut({ scope: "others" }) exactly once, then redirect to /app', async () => {
+    const { updatePassword } = await import('../app/auth/actions');
+    updateUser.mockResolvedValueOnce({ data: {}, error: null });
+    await updatePassword({}, pw('ahorro2026lima'));
+    expect(updateUser).toHaveBeenCalledWith({ password: 'ahorro2026lima' });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith({ scope: 'others' });
+    expect(calls).toEqual(['signOut:{"scope":"others"}', 'redirect:/app']);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('updateUser error → plain message, no sign-out, no redirect', async () => {
+    const { updatePassword } = await import('../app/auth/actions');
+    updateUser.mockResolvedValueOnce({ data: null, error: { status: 422, code: 'weak_password' } });
+    expect(await updatePassword({}, pw('ahorro2026lima'))).toEqual({ error: 'Esa contraseña es fácil de adivinar. Prueba con otra.' });
+    expect(signOut).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it('a sign-out failure is logged as {event, status, code} without the password, and the person still continues', async () => {
+    const { updatePassword } = await import('../app/auth/actions');
+    updateUser.mockResolvedValueOnce({ data: {}, error: null });
+    signOut.mockResolvedValueOnce({ error: { status: 500, code: 'unexpected_failure', message: 'boom' } });
+    await updatePassword({}, pw('ahorro2026lima'));
+    expect(warn).toHaveBeenCalledTimes(1);
+    const logged = String(warn.mock.calls[0]![0]);
+    expect(JSON.parse(logged)).toEqual({ event: 'password_reset_signout_others_failed', status: 500, code: 'unexpected_failure' });
+    expect(logged).not.toContain('ahorro2026lima');
+    expect(redirect).toHaveBeenCalledWith('/app');
+  });
+
+  it('expired link (no session) → asks for a new link; nothing is changed', async () => {
+    const { updatePassword } = await import('../app/auth/actions');
+    authUser.mockResolvedValueOnce(null);
+    expect(await updatePassword({}, pw('ahorro2026lima'))).toEqual({ error: 'Tu enlace venció. Pide uno nuevo.' });
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(signOut).not.toHaveBeenCalled();
   });
 });

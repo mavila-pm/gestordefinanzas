@@ -138,3 +138,24 @@ describe('changePassword action', () => {
     expect(updateUser).not.toHaveBeenCalled();
   });
 });
+
+describe('logout action ("Cerrar sesión")', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { signOut.mockClear(); redirect.mockClear(); warn = vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+  afterEach(() => warn.mockRestore());
+
+  it('signs out this device only (scope local), then goes to /login', async () => {
+    const { logout } = await import('../app/auth/actions');
+    await expect(logout()).rejects.toThrow('redirect:/login');
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a revoke failure is logged (status/code only) and the person still lands on /login', async () => {
+    const { logout } = await import('../app/auth/actions');
+    signOut.mockResolvedValueOnce({ error: { status: 500, code: 'unexpected_failure' } } as never);
+    await expect(logout()).rejects.toThrow('redirect:/login');
+    expect(JSON.parse(String(warn.mock.calls[0]![0]))).toEqual({ event: 'logout_failed', status: 500, code: 'unexpected_failure' });
+  });
+});

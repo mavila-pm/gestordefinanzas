@@ -128,6 +128,9 @@ export async function updatePassword(_prev: FormState, form: FormData): Promise<
   if (!(await authUser(supabase))) return { error: 'Tu enlace venció. Pide uno nuevo.' };
   const { error } = await supabase.auth.updateUser({ password: password as string });
   if (error) return { error: newPasswordError(error) };
+  // Recovery usually follows a suspected leak: other devices sign out, this one stays (same as changePassword).
+  const { error: outError } = await supabase.auth.signOut({ scope: 'others' });
+  if (outError) console.warn(JSON.stringify({ event: 'password_reset_signout_others_failed', status: outError.status ?? null, code: outError.code ?? null }));
   redirect('/app');
 }
 
@@ -161,8 +164,11 @@ export async function changePassword(prev: ChangePasswordState, form: FormData):
   return reauthRequestOutcome(reauthError);
 }
 
+/** "Cerrar sesión": this device only ('Cerrar otras sesiones' in Ajustes → Seguridad covers the rest). */
 export async function logout(): Promise<void> {
   const supabase = await createSupabaseServerClient();
-  await supabase.auth.signOut();
+  // auth-js clears this device's session cookies even when the revoke call fails; the failure is only logged.
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
+  if (error) console.warn(JSON.stringify({ event: 'logout_failed', status: error.status ?? null, code: error.code ?? null }));
   redirect('/login');
 }
