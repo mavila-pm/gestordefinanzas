@@ -1,8 +1,9 @@
 import type { BankAdapter, ParseResult } from '../../bank-adapter';
 import type { CardKind, Direction, NormalizedFinancialEvent, RawFinancialEvent, TransactionType } from '../../../domain/types';
-import { limaIso, parseNumericDate, parseSpanishLongDate } from '../../lima-time';
+import { parseSpanishLongDate } from '../../lima-time';
+import { cleanMerchant, emailDomain, last4, parseDateAndTime, parseMoneyExpr, readLabels } from '../../parse-helpers';
 import { deriveExternalEventId } from '../../sanitize';
-import { BCP_EMAIL_SENDER_DOMAINS, cleanMerchant, last4, parseMoneyExpr } from './common';
+import { BCP_EMAIL_SENDER_DOMAINS } from './common';
 
 const VERSION = 'BCP_EMAIL_V1';
 
@@ -57,21 +58,9 @@ const LABELS = {
 
 type LabelKey = keyof typeof LABELS;
 
-/** Returns the label value, or 'ambiguous' when the label appears more than once. */
-function readLabel(text: string, key: LabelKey): string | undefined | 'ambiguous' {
-  const matches = [...text.matchAll(LABELS[key])];
-  if (matches.length > 1) return 'ambiguous';
-  return matches[0]?.[1]?.trim();
-}
-
 function readDate(v: Partial<Record<LabelKey, string>>): string | null {
   if (v.dateTime) return parseSpanishLongDate(v.dateTime);
-  if (v.date && v.time) {
-    const t = /^(\d{1,2}):(\d{2})$/.exec(v.time.trim());
-    const d = parseNumericDate(`${v.date.trim()} 00:00`);
-    if (!t || !d) return null;
-    return limaIso(Number(d.slice(0, 4)), Number(d.slice(5, 7)), Number(d.slice(8, 10)), Number(t[1]), Number(t[2]));
-  }
+  if (v.date && v.time) return parseDateAndTime(v.date, v.time);
   return null;
 }
 
@@ -86,7 +75,7 @@ export const bcpEmailV1: BankAdapter = {
   },
 
   verifySource(raw: RawFinancialEvent) {
-    const domain = /@([a-z0-9.-]+)>?\s*$/i.exec(raw.sender.trim())?.[1]?.toLowerCase();
+    const domain = emailDomain(raw.sender);
     return !!domain && BCP_EMAIL_SENDER_DOMAINS.includes(domain);
   },
 
@@ -97,12 +86,9 @@ export const bcpEmailV1: BankAdapter = {
     const nonTx = NON_TRANSACTIONAL.find((n) => n.test(raw));
     if (nonTx) return fail('non_transactional', nonTx.kind);
 
-    const values: Partial<Record<LabelKey, string>> = {};
-    for (const key of Object.keys(LABELS) as LabelKey[]) {
-      const v = readLabel(text, key);
-      if (v === 'ambiguous') return fail('malformed', `label "${key}" appears more than once`);
-      if (v !== undefined) values[key] = v;
-    }
+    const labels = readLabels(text, LABELS);
+    if (!labels.ok) return fail('malformed', `label "${labels.ambiguous}" appears more than once`);
+    const values = labels.values;
 
     const haystack = `${raw.subject ?? ''}\n${text}`;
     const tpl = TEMPLATES.find((t) => t.headline.test(haystack) && (!t.operation || t.operation.test(values.operationKind ?? '')));
