@@ -19,6 +19,7 @@ import { infer, STOP_TEXT } from './ai';
 import { logLearning } from './learning';
 import { isReplay } from './idempotency';
 import { applyPlan } from './plan-applications';
+import { settleIncome, settleObligation } from './settlements';
 import { loadCardViews } from './cards';
 import { loadMessages, readImages } from './onboarding';
 import { loadPlanningData, planFor, planInputFor, planTimeline } from './planning';
@@ -226,9 +227,10 @@ export async function velsAct(supabase: SupabaseClient, userId: string, act: str
     return error ? 'No pude actualizarlo.' : 'Listo, actualizado.';
   }
   if (act === 'mark_paid') {
-    if (![fields.obligationId, fields.transactionId].every((x) => /^[0-9a-f-]{36}$/.test(x ?? '')) || !/^\d{4}-\d{2}$/.test(fields.period ?? '')) return 'No pude marcarlo.';
-    const { error } = await supabase.from('plan_settlements').insert({ user_id: userId, fixed_expense_id: fields.obligationId, period: fields.period, transaction_id: fields.transactionId });
-    return error ? 'No pude marcarlo. Puede que ya esté enlazado.' : 'Listo, marcado como pagado.';
+    // Fields come from the button's JSON (client): the shared settle path re-checks everything (ADR-0017).
+    const r = await settleObligation(supabase, userId, { obligationId: fields.obligationId, transactionId: fields.transactionId, period: fields.period });
+    if (r.ok) return 'Listo, marcado como pagado.';
+    return r.error === 'not_payment' ? 'Ese movimiento no es un pago confirmado en la misma moneda.' : r.error === 'duplicate' ? 'Ya estaba enlazado.' : 'No pude marcarlo.';
   }
   if (act === 'create_debt') {
     // Confirmation required (ADR-0011 class D): a debt the person owes — pending, never marked paid.
@@ -278,11 +280,8 @@ export async function velsAct(supabase: SupabaseClient, userId: string, act: str
     return on ? 'Listo. Lo tendré en cuenta al sugerirte abonos.' : 'Listo. Mantengo tu colchón.';
   }
   if (act === 'link_income') {
-    if (![fields.incomeId, fields.transactionId].every((x) => /^[0-9a-f-]{36}$/.test(x ?? '')) || !/^\d{4}-(0[1-9]|1[0-2])(-\d{2})?$/.test(fields.period ?? '')) return 'No pude registrarlo.';
-    const { data: tx } = await supabase.from('transactions').select('type,status').eq('id', fields.transactionId!).maybeSingle();
-    if (!tx || tx.type !== 'income' || tx.status !== 'confirmed') return 'Ese movimiento no es un ingreso confirmado.';
-    const { error } = await supabase.from('plan_settlements').insert({ user_id: userId, expected_income_id: fields.incomeId, period: fields.period, transaction_id: fields.transactionId });
-    if (error) return error.code === '23505' ? 'Ese ingreso ya estaba registrado.' : 'No pude registrarlo.';
+    const r = await settleIncome(supabase, userId, { incomeId: fields.incomeId, transactionId: fields.transactionId, period: fields.period });
+    if (!r.ok) return r.error === 'duplicate' ? 'Ese ingreso ya estaba registrado.' : r.error === 'not_income' ? 'Ese movimiento no es un ingreso confirmado en la misma moneda.' : 'No pude registrarlo.';
     const a = answer({ k: 'free' }, await view(supabase));
     return `Listo, ingreso registrado.${a && !a.pending ? ` ${a.text}` : ''}`;
   }

@@ -13,10 +13,14 @@ import { addDays, limaToday } from '../../../src/domain/dates';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
 import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSavingsGoalForm, parseSettingsForm } from '../../../src/web/planning-input';
 import { isUuid } from '../../../src/web/transaction-input';
-import { financialEffect } from '../../../src/domain/financial-effect';
+import { settleIncome, settleObligation, type SettleError } from '../../../lib/settlements';
 import type { ActionState } from '../actions';
 
 const SAVE_ERROR = 'No se guardó. Intenta de nuevo.';
+const SETTLE_ERROR: Record<SettleError, string> = {
+  invalid: SAVE_ERROR, failed: SAVE_ERROR, duplicate: 'Ese pago ya estaba registrado.',
+  not_payment: 'Ese movimiento no es un pago confirmado en la misma moneda.', not_income: 'Ese movimiento no es un ingreso confirmado en la misma moneda.',
+};
 async function session() {
   const supabase = await createSupabaseServerClient();
   const user = await authUser(supabase);
@@ -148,43 +152,24 @@ export async function saveSettingsAction(_p: ActionState, form: FormData): Promi
   return done('Guardado.');
 }
 
-/** "Parece la cuota del carro" -> the person confirms: the real movement settles that month's payment. */
+/** "Parece la cuota del carro" -> the person confirms: the real movement settles that month's payment (lib/settlements.ts). */
 export async function markObligationPaidAction(_p: ActionState, form: FormData): Promise<ActionState> {
-  const obligationId = form.get('obligationId');
-  const transactionId = form.get('transactionId');
-  const period = form.get('period');
-  if (!isUuid(obligationId) || !isUuid(transactionId) || typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
-  // Only a confirmed outgoing movement in the payment's own currency can settle it (PEN ≠ USD; an income never pays a bill).
-  const [{ data: tx }, { data: ob }] = await Promise.all([
-    supabase.from('transactions').select('type,status,currency,direction').eq('id', transactionId).maybeSingle(),
-    supabase.from('fixed_expenses').select('currency').eq('id', obligationId).maybeSingle(),
-  ]);
-  if (!tx || !ob || tx.status !== 'confirmed' || tx.direction !== 'outflow' || tx.currency !== ob.currency || financialEffect(tx.type) === 'income') {
-    return { error: 'Ese movimiento no es un pago confirmado en la misma moneda.' };
-  }
-  const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, fixed_expense_id: obligationId, period, transaction_id: transactionId });
-  if (error) return { error: error.code === '23505' ? 'Ese pago ya estaba registrado.' : SAVE_ERROR };
+  const r = await settleObligation(supabase, user.id, { obligationId: form.get('obligationId'), transactionId: form.get('transactionId'), period: form.get('period') });
+  if (!r.ok) return { error: SETTLE_ERROR[r.error] };
   return done('Pago confirmado. El siguiente ya está en tus próximos pagos.');
 }
 
 /**
  * "Parece tu sueldo de octubre" -> the person confirms: the real deposit settles that expected income, so the plan
- * horizon moves to the next one. Only an income movement can settle an income (checked here; RLS checks ownership).
+ * horizon moves to the next one. Only a confirmed income in the same currency can settle it (lib/settlements.ts).
  */
 export async function linkIncomeAction(_p: ActionState, form: FormData): Promise<ActionState> {
-  const incomeId = form.get('incomeId');
-  const transactionId = form.get('transactionId');
-  const period = form.get('period');
-  if (!isUuid(incomeId) || !isUuid(transactionId) || typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])(-\d{2})?$/.test(period)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
-  const { data: tx } = await supabase.from('transactions').select('type,status').eq('id', transactionId).maybeSingle();
-  if (!tx || tx.type !== 'income' || tx.status !== 'confirmed') return { error: 'Ese movimiento no es un ingreso confirmado.' };
-  const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, expected_income_id: incomeId, period, transaction_id: transactionId });
-  if (error) return { error: error.code === '23505' ? 'Ese ingreso ya estaba registrado.' : SAVE_ERROR };
-  await logLearning(supabase, user.id, 'income', 'accepted', incomeId, { period, transactionId });
+  const r = await settleIncome(supabase, user.id, { incomeId: form.get('incomeId'), transactionId: form.get('transactionId'), period: form.get('period') });
+  if (!r.ok) return { error: r.error === 'duplicate' ? 'Ese ingreso ya estaba registrado.' : SETTLE_ERROR[r.error] };
   return done('Listo. Planificamos hasta el siguiente.');
 }
 

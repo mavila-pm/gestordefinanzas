@@ -71,6 +71,59 @@ describe.skipIf(!DATABASE_URL)('cash-flow planning tables (ADR-0005)', () => {
     });
   });
 
+  // ADR-0017 guard (migration 051): whatever the path (planning action, Vels button, direct API call), only a movement
+  // that can pay settles an item. Rejections are CHECK-class (23514); ownership stays with RLS / composite FKs.
+  const movement = async (user: string, type: string, direction: string, currency = 'PEN', status = 'confirmed') => (await pool.query(`insert into public.transactions
+    (user_id, occurred_at, type, direction, amount_minor, currency, merchant_raw, status, confidence, fingerprint)
+    values ($1, '2026-10-08 12:00-05', $2, $3, 95000, $4, 'X', $5, 'high', 'fp') returning id`, [user, type, direction, currency, status])).rows[0].id as string;
+  const settle = `insert into public.plan_settlements (user_id, fixed_expense_id, period, transaction_id) values ($1, $2, '2026-10', $3)`;
+  const settleIncome = `insert into public.plan_settlements (user_id, expected_income_id, period, transaction_id) values ($1, $2, '2026-10', $3)`;
+
+  it('guard: a pending, income, inflow or other-currency movement never settles a payment', async () => {
+    const car = await obligation(USER_A);
+    const pending = await movement(USER_A, 'expense', 'outflow', 'PEN', 'review_required');
+    const income = await movement(USER_A, 'income', 'inflow');
+    const deposit = await movement(USER_A, 'deposit', 'inflow');
+    const refund = await movement(USER_A, 'refund', 'inflow');
+    const usd = await movement(USER_A, 'expense', 'outflow', 'USD');
+    const ok = await movement(USER_A, 'credit_card_payment', 'outflow');
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      for (const t of [pending, income, deposit, refund, usd]) expect(await errorCode(c, settle, [USER_A, car, t])).toBe('23514');
+      expect(await errorCode(c, settle, [USER_A, car, ok])).toBeNull();
+      expect((await c.query('select count(*)::int as n from public.plan_settlements')).rows[0].n).toBe(1);
+    });
+  });
+
+  it('guard: an expected income is settled only by a confirmed income in its own currency', async () => {
+    const inc = (await pool.query(`insert into public.expected_incomes (user_id, name, currency, amount_minor, day_of_month) values ($1, 'Sueldo', 'PEN', 400000, 15) returning id`, [USER_A])).rows[0].id;
+    const expense = await movement(USER_A, 'expense', 'outflow');
+    const usd = await movement(USER_A, 'income', 'inflow', 'USD');
+    const pending = await movement(USER_A, 'income', 'inflow', 'PEN', 'possible_duplicate');
+    const ok = await movement(USER_A, 'income', 'inflow');
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      for (const t of [expense, usd, pending]) expect(await errorCode(c, settleIncome, [USER_A, inc, t])).toBe('23514');
+      expect(await errorCode(c, settleIncome, [USER_A, inc, ok])).toBeNull();
+    });
+  });
+
+  it('guard: re-checked when the link changes, not when the person acknowledges a variance', async () => {
+    const car = await obligation(USER_A);
+    const t = await movement(USER_A, 'expense', 'outflow');
+    const usd = await movement(USER_A, 'expense', 'outflow', 'USD');
+    const id = (await pool.query(`${settle} returning id`, [USER_A, car, t])).rows[0].id;
+    await pool.query(`update public.transactions set status = 'review_required' where id = $1`, [t]);
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      expect(await errorCode(c, `update public.plan_settlements set variance_ack = true where id = $1`, [id])).toBeNull();
+      expect(await errorCode(c, `update public.plan_settlements set transaction_id = $2 where id = $1`, [id, usd])).toBe('23514');
+    });
+    // Privileged paths (seed, service) get the same floor.
+    const c = await pool.connect();
+    try {
+      await c.query('begin');
+      expect(await errorCode(c, settle.replace("'2026-10'", "'2026-11'"), [USER_A, car, usd])).toBe('23514');
+    } finally { await c.query('rollback'); c.release(); }
+  });
+
   it('deleting the real movement removes its settlement (the occurrence becomes pending again, nothing invented)', async () => {
     const t = await tx(USER_A);
     const car = await obligation(USER_A);
