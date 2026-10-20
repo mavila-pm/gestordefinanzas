@@ -91,6 +91,16 @@ export function authNextCookieOptions(secure: boolean) {
   return { httpOnly: true, secure, sameSite: 'lax' as const, path: '/auth', maxAge: 60 * 60 };
 }
 
+/**
+ * Supabase session cookies (sb-<ref>-auth-token, set by @supabase/ssr). httpOnly: no browser Supabase client exists
+ * (every Auth/DB call runs on the server), so page scripts never need them and an injected script cannot read them.
+ * Secure on https (production builds; Chromium also accepts it on http://localhost). @supabase/ssr keeps its own
+ * maxAge; Supabase Auth decides how long the refresh token is valid.
+ */
+export function authCookieOptions(secure: boolean) {
+  return { httpOnly: true, secure, sameSite: 'lax' as const, path: '/' };
+}
+
 /** A `next` query param (token_hash email templates) wins; else the cookie; always same-origin, default /app. */
 export function resolveAuthNext(queryNext: unknown, cookieNext: unknown, type?: unknown): string {
   // A recovery link always ends on the password form, whatever next/cookie say (cross-device: no cookie there).

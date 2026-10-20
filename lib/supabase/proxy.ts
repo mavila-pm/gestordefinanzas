@@ -1,12 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { supabasePublicEnv } from '../env';
+import { authCookieOptions } from '../../src/web/auth-input';
 
 /** Refreshes the auth session cookie on every request and guards /app/*, the onboarding (/bienvenida) and /crear-cuenta/*. */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
   const { url, key } = supabasePublicEnv();
   const supabase = createServerClient(url, key, {
+    // Same flags as lib/supabase/server.ts: the refreshed session cookie stays httpOnly + Secure.
+    cookieOptions: authCookieOptions(process.env.NODE_ENV === 'production'),
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (toSet) => {
