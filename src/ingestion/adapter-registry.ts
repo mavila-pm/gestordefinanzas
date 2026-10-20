@@ -5,6 +5,7 @@ import { bcpSmsV1 } from './adapters/bcp/bcp-sms-v1';
 import { bbvaEmailV1 } from './adapters/bbva/bbva-email-v1';
 import { bbvaPushV1 } from './adapters/bbva/bbva-push-v1';
 import { bbvaSmsV1 } from './adapters/bbva/bbva-sms-v1';
+import { interbankEmailV1, interbankSmsV1 } from './adapters/interbank/interbank-scaffold';
 
 /**
  * What routing + parsing produced for one raw event. `ambiguous_institution`: adapters of two different banks read
@@ -77,4 +78,7 @@ export const bcpAdapters: readonly BankAdapter[] = [bcpEmailV1, bcpSmsV1];
 /** SYNTHETIC_UNVERIFIED templates and empty sender allowlists: every BBVA event goes to review. */
 export const bbvaAdapters: readonly BankAdapter[] = [bbvaEmailV1, bbvaSmsV1, bbvaPushV1];
 
-export const defaultAdapterRegistry = new AdapterRegistry([...bcpAdapters, ...bbvaAdapters]);
+/** Scaffold: claims messages naming Interbank (so they are never misread by another bank) and reads nothing yet. */
+export const interbankAdapters: readonly BankAdapter[] = [interbankEmailV1, interbankSmsV1];
+
+export const defaultAdapterRegistry = new AdapterRegistry([...bcpAdapters, ...bbvaAdapters, ...interbankAdapters]);

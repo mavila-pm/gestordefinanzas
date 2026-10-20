@@ -46,7 +46,7 @@ Every parser is `SYNTHETIC_UNVERIFIED`. BCP evidence: `docs/architecture/bcp-evi
 | BBVA_EMAIL_V1 | purchase credit/debit (PEN/USD); card payment; refund; reversal; transfer; ATM withdrawal (transfer_to_cash); deposit; non-tx security/OTP/statement/marketing-without-amount | IMPLEMENTED · SYNTHETIC (nothing observed) |
 | BBVA_SMS_V1 | `BBVA:` prefix: purchase credit/debit; card payment; transfer; ATM withdrawal; deposit; non-tx OTP/security/marketing | IMPLEMENTED · SYNTHETIC (nothing observed) |
 | BBVA_PUSH_V1 | app notification pasted as SMS (first line `BBVA`): purchase credit/debit; card payment; transfer; deposit | IMPLEMENTED · SYNTHETIC (nothing observed) |
-| Interbank | — | MISSING |
+| INTERBANK_EMAIL_V1 · INTERBANK_SMS_V1 | SCAFFOLD: zero templates; claims messages naming Interbank so they are never misread by another bank → unresolved | SCAFFOLD · not supported |
 
 Replacing synthetic templates with real ones: `tests/fixtures/bcp/samples/README.md` (same for `bbva/samples/`).
 
