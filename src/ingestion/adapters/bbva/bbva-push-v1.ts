@@ -23,7 +23,7 @@ const TEMPLATES: LineTemplate[] = [
     type: 'expense', direction: 'outflow', cardKind: 'debit', groups: { money: 1, merchant: 2, card: 3, date: 4, time: 5 },
   },
   {
-    re: new RegExp(String.raw`${TITLE}Pagaste ${MONEY} de tu tarjeta de cr[eé]dito \*(\d{4}) ${AT}`, 'i'),
+    re: new RegExp(String.raw`${TITLE}Pagaste ${MONEY} a tu tarjeta de cr[eé]dito \*(\d{4}) ${AT}`, 'i'),
     type: 'credit_card_payment', direction: 'outflow', cardKind: 'credit', groups: { money: 1, card: 2, date: 3, time: 4 },
   },
   {

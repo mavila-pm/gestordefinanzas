@@ -191,7 +191,9 @@ describe('BBVA_PUSH_V1 (app notification pasted as text)', () => {
       occurredAt: '2026-09-15T20:30:00-05:00', confidenceReasons: ['sender_not_verified'],
     });
     expect(push(fx.bbvaPush('Compraste US$ 9.99 en SPOTIFY con tu tarjeta de debito *5678 el 15/09/2026 a las 07:00.'))).toMatchObject({ type: 'expense', currency: 'USD' });
-    expect(push(fx.bbvaPush('Pagaste S/ 300.00 de tu tarjeta de crédito *1234 el 25/09/2026 a las 09:00.'))).toMatchObject({ type: 'credit_card_payment' });
+    expect(push(fx.bbvaPush('Pagaste S/ 300.00 a tu tarjeta de crédito *1234 el 25/09/2026 a las 09:00.'))).toMatchObject({ type: 'credit_card_payment' });
+    // Paying WITH the card is not a card payment: unknown wording stays unresolved, never read as one.
+    expect(parseWith(bbvaPushV1, fx.bbvaPush('Pagaste S/ 45.00 con tu tarjeta de crédito *1234 el 25/09/2026 a las 09:00.'))).toMatchObject({ ok: false, reason: 'unknown_template' });
     expect(push(fx.bbvaPush('Enviaste S/ 500.00 a la cuenta *9001 el 10/09/2026 a las 10:00.'))).toMatchObject({ type: 'unknown', isOutgoingTransfer: true });
     expect(push(fx.bbvaPush('Recibiste S/ 1,000.00 en tu cuenta el 01/09/2026 a las 09:00.'))).toMatchObject({ type: 'deposit' });
   });

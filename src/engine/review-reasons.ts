@@ -29,6 +29,7 @@ const FROM_INGESTION: Record<string, string> = {
   counterparty_missing: 'La notificación no indica la cuenta de destino.',
   sender_not_verified: 'No pudimos verificar que el mensaje venga de tu banco. Revisa que el movimiento sea real.',
   user_import: 'Importado por ti desde un mensaje pegado: confirma que monto, fecha y tipo sean correctos.',
+  possible_own_transfer: 'Puede ser dinero tuyo que llega de otro banco: salió una transferencia por el mismo monto a la misma hora. Si es así, corrígelo a "Transferencia entre mis cuentas".',
   template_unverified: 'Leímos un formato de aviso del banco que aún no validamos con mensajes reales: revisa monto, fecha y tipo.',
 };
 

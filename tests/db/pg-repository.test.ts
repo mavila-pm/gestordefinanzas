@@ -4,6 +4,7 @@ import { ingestRawEvent, type UserContext } from '../../src/engine/ingest';
 import { monthlySummary } from '../../src/engine/monthly-summary';
 import { PgTransactionRepository } from '../../src/infrastructure/postgres/pg-transaction-repository';
 import * as fx from '../fixtures/bcp';
+import * as bbva from '../fixtures/bbva';
 import { DATABASE_URL, makePool, USER_A, USER_B } from './helpers';
 
 const ctx = (userId: string): UserContext => ({ userId, ownAccountLast4: ['9001'], cards: [{ last4: '4821', kind: 'credit' }], merchantRules: [] });
@@ -90,5 +91,23 @@ describe.skipIf(!DATABASE_URL)('pipeline on PostgreSQL', () => {
     const { rows } = await pool.query('select outcome, parser_version from public.financial_events where user_id = $1', [USER_A]);
     expect(rows).toEqual([{ outcome: 'unresolved', parser_version: 'BCP_EMAIL_V1' }]);
     expect(await repo.listTransactions(USER_A)).toHaveLength(0);
+  });
+
+  it('possible own transfer across banks: BCP transfer + BBVA deposit (same amount, 5 min) -> deposit flagged, type kept; not for B', async () => {
+    // Two banks automated: trial (Free automates one institution only).
+    await pool.query(`insert into public.subscriptions (user_id, plan, status, trial_ends_at) values ($1, 'plus', 'trialing', now() + interval '7 days')`, [USER_A]);
+    await ingestRawEvent(fx.transferEmail('7777'), ctx(USER_A), repo);
+    const deposit = bbva.bbvaSms('BBVA: Abono recibido de S/ 500.00 en tu cuenta el 10/09/2026 10:05.');
+    const r = await ingestRawEvent(deposit, ctx(USER_A), repo);
+    expect(r.outcome).toBe('created');
+    expect(r.detail?.split(',')).toContain('possible_own_transfer');
+    const tx = (await repo.listTransactions(USER_A)).find((t) => t.institution === 'BBVA');
+    expect(tx).toMatchObject({ type: 'deposit', direction: 'inflow', status: 'review_required', amountMinor: 50000, currency: 'PEN' });
+    expect((await pool.query(`select detail from public.financial_events where user_id = $1 and parser_version = 'BBVA_SMS_V1'`, [USER_A])).rows[0].detail)
+      .toContain('possible_own_transfer');
+    // Another person's transfer is never used as evidence (every query filters by user_id).
+    await pool.query(`insert into public.subscriptions (user_id, plan, status, trial_ends_at) values ($1, 'plus', 'trialing', now() + interval '7 days')`, [USER_B]);
+    const rb = await ingestRawEvent(deposit, ctx(USER_B), repo);
+    expect(rb.detail?.split(',') ?? []).not.toContain('possible_own_transfer');
   });
 });

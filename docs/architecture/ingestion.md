@@ -19,6 +19,10 @@ RawFinancialEvent (untrusted)
   -> resolve with user context: transfers (own account -> internal_transfer, else review);
      card kind unknown -> registered credit card => credit_card_purchase, unregistered => review
   -> link refund/reversal to original purchase
+  -> deposit + outgoing/internal transfer of ANOTHER bank, same amount and currency, ±30 min -> 'possible_own_transfer'
+       (suggestion only: stays review_required, type never changed; existing findCandidates port, one query per other
+       bank, so in-memory, PostgreSQL and the Supabase import path all support it without an RPC). Only checked when the
+       deposit arrives after the transfer; a deposit already stored is not re-flagged when the transfer comes later.
   -> categorize (normalize merchant -> user rule -> global rule)   src/engine/categorizer.ts
   -> status: high -> confirmed, medium -> review_required; parse failure -> unresolved (no transaction)
   -> TransactionRepository.insert / addSource; every event traced via recordEvent

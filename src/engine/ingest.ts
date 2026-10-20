@@ -1,4 +1,4 @@
-import type { CardKind, Direction, NormalizedFinancialEvent, RawFinancialEvent, SourceChannel, Transaction, TransactionSource, TransactionStatus, TransactionType } from '../domain/types';
+import { INSTITUTION_CODES, type CardKind, type Direction, type NormalizedFinancialEvent, type RawFinancialEvent, type SourceChannel, type Transaction, type TransactionSource, type TransactionStatus, type TransactionType } from '../domain/types';
 import type { AdapterRegistry } from '../ingestion/adapter-registry';
 import { defaultAdapterRegistry } from '../ingestion/adapter-registry';
 import { deriveExternalEventId, isWithinSizeLimit, toPlainText } from '../ingestion/sanitize';
@@ -9,6 +9,8 @@ import { DuplicateSourceError, PlanLimitError, type EventOutcome, type Transacti
 /** Cross-source window: email and SMS of the same operation arrive with slightly different times. */
 export const STRONG_MATCH_WINDOW_MIN = 10;
 export const WEAK_MATCH_WINDOW_MIN = 30;
+/** A deposit this close (either side) to a transfer sent from another bank may be the person's own money. */
+export const OWN_TRANSFER_WINDOW_MIN = 30;
 
 export interface UserCard {
   last4: string;
@@ -80,6 +82,24 @@ function resolveWithUserContext(e: NormalizedFinancialEvent, ctx: UserContext): 
  */
 export function sourceKind(s: Pick<TransactionSource, 'channel' | 'parserVersion'>): string {
   return s.channel === 'import' ? `import:${s.parserVersion}` : s.channel;
+}
+
+/**
+ * Possible own transfer across banks (suggestion only): money that arrives at one bank while the same amount, in the
+ * same currency (PEN never matches USD), left another bank as an outgoing or internal transfer within
+ * ±OWN_TRANSFER_WINDOW_MIN. Uses only the existing findCandidates port (one query per other institution), so the
+ * in-memory, PostgreSQL and Supabase import repositories all support it. Never changes the type: the person decides.
+ */
+async function sentFromAnotherBank(userId: string, e: NormalizedFinancialEvent, repo: TransactionRepository): Promise<boolean> {
+  const from = shift(e.occurredAt, -minutes(OWN_TRANSFER_WINDOW_MIN));
+  const to = shift(e.occurredAt, minutes(OWN_TRANSFER_WINDOW_MIN));
+  for (const institution of INSTITUTION_CODES) {
+    if (institution === e.institution) continue;
+    const found = await repo.findCandidates({ userId, institution, amountMinor: e.amountMinor, currency: e.currency, from, to });
+    if (found.some((t) => t.institution === institution && t.currency === e.currency && t.status !== 'ignored'
+      && (t.type === 'internal_transfer' || (t.type === 'unknown' && t.direction === 'outflow')))) return true;
+  }
+  return false;
 }
 
 function isStrongMatch(kind: string, e: NormalizedFinancialEvent, type: TransactionType, merchant: string | null, t: Transaction): boolean {
@@ -204,6 +224,8 @@ async function persist(
     });
     originalTransactionId = original?.id ?? null;
   }
+
+  if (type === 'deposit' && direction === 'inflow' && await sentFromAnotherBank(ctx.userId, e, repo)) reasons.push('possible_own_transfer');
 
   // Uncertainty always goes to review; weak similarity is flagged, never dropped.
   const weakMatch = strong.length > 1 ? strong[0]! : sameKind[0];
