@@ -2,6 +2,9 @@ import type { BankAdapter, ParseFailureReason, ParseResult } from './bank-adapte
 import type { RawFinancialEvent } from '../domain/types';
 import { bcpEmailV1 } from './adapters/bcp/bcp-email-v1';
 import { bcpSmsV1 } from './adapters/bcp/bcp-sms-v1';
+import { bbvaEmailV1 } from './adapters/bbva/bbva-email-v1';
+import { bbvaPushV1 } from './adapters/bbva/bbva-push-v1';
+import { bbvaSmsV1 } from './adapters/bbva/bbva-sms-v1';
 
 /**
  * What routing + parsing produced for one raw event. `ambiguous_institution`: adapters of two different banks read
@@ -71,5 +74,7 @@ export class AdapterRegistry {
 }
 
 export const bcpAdapters: readonly BankAdapter[] = [bcpEmailV1, bcpSmsV1];
+/** SYNTHETIC_UNVERIFIED templates and empty sender allowlists: every BBVA event goes to review. */
+export const bbvaAdapters: readonly BankAdapter[] = [bbvaEmailV1, bbvaSmsV1, bbvaPushV1];
 
-export const defaultAdapterRegistry = new AdapterRegistry([...bcpAdapters]);
+export const defaultAdapterRegistry = new AdapterRegistry([...bcpAdapters, ...bbvaAdapters]);

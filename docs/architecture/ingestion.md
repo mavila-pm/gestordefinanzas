@@ -36,15 +36,19 @@ RawFinancialEvent (untrusted)
 - One bad event never aborts a batch.
 
 ## Parser coverage status
-All BCP parsers are `SYNTHETIC_UNVERIFIED`. Evidence: `docs/architecture/bcp-evidence.md`.
+Every parser is `SYNTHETIC_UNVERIFIED`. BCP evidence: `docs/architecture/bcp-evidence.md`. BBVA: nothing observed
+(invented wording, EMPTY sender allowlists → every BBVA event is `sender_not_verified` → review); never claim coverage.
 
 | Parser | Templates | Status |
 |---|---|---|
 | BCP_EMAIL_V1 | statement (non-tx, observed); purchase credit/debit; "operación con tu tarjeta" (PO structure); card payment; refund; reversal; transfer; withdrawal; deposit | IMPLEMENTED · UNVERIFIED |
 | BCP_SMS_V1 | security alert (non-tx, observed); purchase credit/debit; card payment | IMPLEMENTED · UNVERIFIED |
-| BBVA / Interbank | — | MISSING |
+| BBVA_EMAIL_V1 | purchase credit/debit (PEN/USD); card payment; refund; reversal; transfer; ATM withdrawal (transfer_to_cash); deposit; non-tx security/OTP/statement/marketing-without-amount | IMPLEMENTED · SYNTHETIC (nothing observed) |
+| BBVA_SMS_V1 | `BBVA:` prefix: purchase credit/debit; card payment; transfer; ATM withdrawal; deposit; non-tx OTP/security/marketing | IMPLEMENTED · SYNTHETIC (nothing observed) |
+| BBVA_PUSH_V1 | app notification pasted as SMS (first line `BBVA`): purchase credit/debit; card payment; transfer; deposit | IMPLEMENTED · SYNTHETIC (nothing observed) |
+| Interbank | — | MISSING |
 
-Replacing synthetic templates with real ones: `tests/fixtures/bcp/samples/README.md`.
+Replacing synthetic templates with real ones: `tests/fixtures/bcp/samples/README.md` (same for `bbva/samples/`).
 
 ## User import (TASK-006)
 `/app/importar`: the user pastes a bank SMS/email text. It runs through the SAME pipeline (adapter, dedupe, category,

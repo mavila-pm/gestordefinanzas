@@ -1,0 +1,16 @@
+{
+  "fixtureStatus": "SYNTHETIC_FIXTURE",
+  "evidence": "Invented wording and sender (reserved .example domain). No BBVA email has been observed.",
+  "raw": {
+    "channel": "email",
+    "externalEventId": "<bbva-sample-payment-1@bbva.test>",
+    "sender": "BBVA Notificaciones <avisos@bbva-sintetico.example>",
+    "subject": "Pago de tu Tarjeta de Crédito registrado - BBVA",
+    "body": "<html><body><p>Hola, CLIENTE DE PRUEBA</p><p>Pago de tu Tarjeta de Cr&eacute;dito registrado.</p><table><tr><td>Importe:</td><td>S/ 300.00</td></tr><tr><td>Tarjeta:</td><td>**** 1234</td></tr><tr><td>Fecha:</td><td>25/09/2026</td></tr><tr><td>Hora:</td><td>09:00</td></tr><tr><td>N&uacute;mero de operaci&oacute;n:</td><td>900002</td></tr></table><p>BBVA Per&uacute; (texto sint&eacute;tico de prueba)</p></body></html>",
+    "receivedAt": "2026-09-25T14:01:00Z"
+  },
+  "expected": {
+    "outcome": "created",
+    "transaction": { "institution": "BBVA", "type": "credit_card_payment", "amountMinor": 30000, "category": null, "status": "review_required" }
+  }
+}
