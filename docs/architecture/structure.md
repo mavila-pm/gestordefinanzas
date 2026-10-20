@@ -49,7 +49,7 @@ Swapping a synthetic template for a real one touches only `adapters/<bank>/` and
 |---|---|---|
 | Money, transaction model, `financialEffect()` | `src/domain/` | `money`, `financial-model` |
 | Plans / entitlements | `src/domain/entitlements.ts` | `entitlements`, `db/plans` |
-| Bank parsers (per bank/channel/version) | `src/ingestion/adapters/`, `adapter-registry.ts`, `parse-helpers.ts` | `bcp-adapters`, `bbva-adapters`, `bcp-samples`, `adapter-registry`, `parse-helpers`, `sanitize`, `sources` |
+| Bank parsers (per bank/channel/version) | `src/ingestion/adapters/`, `adapter-registry.ts`, `parse-helpers.ts` | `bcp-adapters`, `bbva-adapters`, `interbank-scaffold`, `bank-samples`, `adapter-registry`, `parse-helpers`, `sanitize`, `sources` |
 | Ingestion, dedupe L1/L1b/L2/L3, import | `src/engine/ingest.ts` | `ingest-pipeline`, `import-pipeline`, `db/import`, `db/pg-repository` |
 | Analysis, insights, alerts, data health, budgets, commitments | `src/engine/*.ts` | `analysis`, `insights`, `user-context` |
 | Form/input validation (server-side) | `src/web/` | `transaction-input`, `web-auth-input`, `password-reset`, `site-url` |

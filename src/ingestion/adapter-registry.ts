@@ -81,4 +81,7 @@ export const bbvaAdapters: readonly BankAdapter[] = [bbvaEmailV1, bbvaSmsV1, bbv
 /** Scaffold: claims messages naming Interbank (so they are never misread by another bank) and reads nothing yet. */
 export const interbankAdapters: readonly BankAdapter[] = [interbankEmailV1, interbankSmsV1];
 
-export const defaultAdapterRegistry = new AdapterRegistry([...bcpAdapters, ...bbvaAdapters, ...interbankAdapters]);
+/** Every adapter the app runs, in registry order. */
+export const registeredAdapters: readonly BankAdapter[] = [...bcpAdapters, ...bbvaAdapters, ...interbankAdapters];
+
+export const defaultAdapterRegistry = new AdapterRegistry(registeredAdapters);
