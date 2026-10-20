@@ -107,6 +107,56 @@ describe.skipIf(!DATABASE_URL)('TASK-009: Email Bridge webhook (generic HMAC pro
     expect((await pool.query(`select count(*)::int as n from public.inbound_deliveries where outcome = 'rate_limited'`)).rows[0].n).toBe(1);
   });
 
+  describe('Free plan limits (spec §81) on the Email Bridge write path', () => {
+    const purchase = (amount: string, op: string) => BCP_PURCHASE.replace('S/ 100.00', `S/ ${amount}`).replace('000111', op);
+    const eventsOf = async (user: string) => (await pool.query(
+      'select outcome, detail from public.financial_events where user_id = $1 order by created_at', [user])).rows;
+    const setLimit = (n: number) => pool.query(`update public.plan_config set value = $1 where key = 'free_auto_movements_per_month'`, [n]);
+    afterAll(async () => { await setLimit(50); });
+
+    it('past the monthly limit nothing is created (outcome plan_limit, traced as rejected); another person is unaffected', async () => {
+      await setLimit(1);
+      await handle(signed(email(addrA, { text: purchase('100.00', '000111') })));
+      await handle(signed(email(addrA, { text: purchase('55.00', '000999') })));
+      expect(await txsOf(USER_A)).toHaveLength(1);
+      expect(await eventsOf(USER_A)).toEqual([{ outcome: 'created', detail: 'template_unverified' }, { outcome: 'rejected', detail: 'plan_auto_limit' }]);
+      expect((await pool.query('select outcome from public.inbound_deliveries where user_id = $1', [USER_A])).rows.map((r) => r.outcome))
+        .toEqual(['processed', 'processed']);
+      await handle(signed(email(addrB)));
+      expect(await txsOf(USER_B)).toHaveLength(1);
+    });
+
+    it('a second bank is not automated on Free: plan_institution_limit, no transaction', async () => {
+      await setLimit(50);
+      const id = (await pool.query(`insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency,
+          institution_code, merchant_raw, merchant_normalized, status, confidence, fingerprint)
+        values ($1, '2026-09-10T10:00:00-05:00', 'expense', 'outflow', 2000, 'PEN', 'BBVA', 'TIENDA', 'TIENDA', 'review_required', 'medium', 'fp-bbva')
+        returning id`, [USER_A])).rows[0].id;
+      await pool.query(`insert into public.transaction_sources (user_id, transaction_id, channel, external_event_id, parser_version, template_verification, received_at)
+        values ($1, $2, 'email', 'seed-bbva', 'BBVA_EMAIL_V1', 'SYNTHETIC_UNVERIFIED', now())`, [USER_A, id]);
+      await handle(signed(email(addrA)));
+      expect((await pool.query('select count(*)::int n from public.transactions where user_id = $1 and institution_code = $2', [USER_A, 'BCP'])).rows[0].n).toBe(0);
+      expect(await eventsOf(USER_A)).toEqual([{ outcome: 'rejected', detail: 'plan_institution_limit' }]);
+    });
+
+    it('trial/Plus are not capped', async () => {
+      await setLimit(1);
+      await pool.query(`insert into public.subscriptions (user_id, plan, status, trial_ends_at) values ($1, 'plus', 'trialing', now() + interval '7 days')`, [USER_A]);
+      await handle(signed(email(addrA, { text: purchase('100.00', '000111') })));
+      await handle(signed(email(addrA, { text: purchase('55.00', '000999') })));
+      expect(await txsOf(USER_A)).toHaveLength(2);
+    });
+
+    it('parallel deliveries cannot both take the last free slot (check + insert serialized per person)', async () => {
+      await setLimit(1);
+      const amounts = ['11.00', '12.00', '13.00', '14.00', '15.00'];
+      const results = await Promise.all(amounts.map((a, i) => handle(signed(email(addrA, { text: purchase(a, `00012${i}`) })))));
+      expect(results.every((r) => r.status === 202)).toBe(true);
+      expect(await txsOf(USER_A)).toHaveLength(1);
+      expect((await eventsOf(USER_A)).filter((e) => e.detail === 'plan_auto_limit')).toHaveLength(4);
+    });
+  });
+
   it('clients: read own address only; deliveries ledger invisible; cannot choose an address', async () => {
     await asRole(pool, 'authenticated', USER_A, async (c) => {
       expect((await c.query('select address_local from public.email_connections')).rows.map((r) => r.address_local)).toEqual([addrA]);

@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { SourceChannel, Transaction, TransactionSource } from '../../domain/types';
 import { toLimaIso } from '../../ingestion/lima-time';
 import {
-  DuplicateSourceError, type CandidateQuery, type FinancialEventRecord, type TransactionRepository,
+  DuplicateSourceError, PlanLimitError, type CandidateQuery, type FinancialEventRecord, type TransactionRepository,
 } from '../../engine/repository';
 
 /**
@@ -40,6 +40,11 @@ function toTransaction(r: TxRow): Transaction {
 }
 
 const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === '23505';
+/** public.assert_auto_allowance raises these messages with errcode 53400 (migration 032). */
+const planLimitCode = (e: unknown): PlanLimitError['code'] | null => {
+  const { code, message } = (e ?? {}) as { code?: string; message?: string };
+  return code === '53400' && (message === 'plan_auto_limit' || message === 'plan_institution_limit') ? message : null;
+};
 
 async function insertSource(c: PoolClient, userId: string, transactionId: string, s: TransactionSource) {
   await c.query(
@@ -73,6 +78,8 @@ export class PgTransactionRepository implements TransactionRepository {
     } catch (e) {
       await c.query('rollback');
       if (isUniqueViolation(e)) throw new DuplicateSourceError();
+      const limit = planLimitCode(e);
+      if (limit) throw new PlanLimitError(limit);
       throw e;
     } finally {
       c.release();
@@ -109,6 +116,15 @@ export class PgTransactionRepository implements TransactionRepository {
 
   insert(t: Omit<Transaction, 'id'>, bankOperationId: string | null) {
     return this.inTx(async (c) => {
+      // Plan limits for automatic movements (spec §81), in the SAME transaction as the insert, like the import path
+      // (import_insert_transaction). The per-user advisory lock serializes concurrent deliveries so two of them cannot
+      // both take the last free slot; it is released at commit/rollback.
+      await c.query(`select pg_advisory_xact_lock(hashtextextended('auto_allowance:' || $1::text, 0))`, [t.userId]);
+      // assert_auto_allowance runs as app_writer, whose RLS is keyed on request_uid(): without the person's id it would
+      // see no rows (and no subscription) and never limit anything. Transaction-local (is_local = true): it ends with
+      // this transaction and names the same user every query here already filters by.
+      await c.query(`select set_config('request.jwt.claim.sub', $1, true)`, [t.userId]);
+      await c.query('select public.assert_auto_allowance($1, $2)', [t.userId, t.institution]);
       const { rows } = await c.query<{ id: string }>(
         `insert into public.transactions (user_id, occurred_at, type, direction, amount_minor, currency, institution_code,
            card_last4, card_id, merchant_raw, merchant_normalized, category_id, status, confidence, fingerprint, bank_operation_id,

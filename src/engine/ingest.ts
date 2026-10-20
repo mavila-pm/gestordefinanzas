@@ -4,7 +4,7 @@ import { defaultAdapterRegistry } from '../ingestion/adapter-registry';
 import { deriveExternalEventId, isWithinSizeLimit, toPlainText } from '../ingestion/sanitize';
 import { categorize, normalizeMerchant, type MerchantRule } from './categorizer';
 import { financialFingerprint } from './fingerprint';
-import { DuplicateSourceError, type EventOutcome, type TransactionRepository } from './repository';
+import { DuplicateSourceError, PlanLimitError, type EventOutcome, type TransactionRepository } from './repository';
 
 /** Cross-source window: email and SMS of the same operation arrive with slightly different times. */
 export const STRONG_MATCH_WINDOW_MIN = 10;
@@ -26,8 +26,14 @@ export interface UserContext {
   merchantRules: readonly MerchantRule[];
 }
 
+/**
+ * What happened to one raw event. `plan_limit`: read fine, but the plan allows no more automatic movements (or no
+ * other bank) this month; nothing was created and the trace is stored as 'rejected' with the limit code as detail.
+ */
+export type IngestOutcome = EventOutcome | 'plan_limit';
+
 export interface IngestResult {
-  outcome: EventOutcome;
+  outcome: IngestOutcome;
   transactionId: string | null;
   detail: string | null;
 }
@@ -129,6 +135,10 @@ export async function ingestRawEvent(
   try {
     return await persist(raw, e, externalEventId, channel, ctx, repo, done, opts);
   } catch (err) {
+    if (err instanceof PlanLimitError) {
+      await done('rejected', null, err.code, e.parserVersion);
+      return { outcome: 'plan_limit', transactionId: null, detail: err.code };
+    }
     // A concurrent delivery of the same event won the race: still exactly one transaction.
     if (!(err instanceof DuplicateSourceError)) throw err;
     const winner = await repo.findBySource(ctx.userId, channel, externalEventId);

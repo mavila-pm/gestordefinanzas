@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ingestRawEvent, type UserContext } from '../src/engine/ingest';
-import { InMemoryTransactionRepository } from '../src/engine/repository';
+import { InMemoryTransactionRepository, PlanLimitError } from '../src/engine/repository';
 import { monthlySummary } from '../src/engine/monthly-summary';
 import { parseIngestionCodes, reviewReasons } from '../src/engine/review-reasons';
 import { AdapterRegistry } from '../src/ingestion/adapter-registry';
@@ -209,6 +209,17 @@ describe('delivered channels never auto-confirm an unverified template', () => {
     const other = new InMemoryTransactionRepository();
     await ingestRawEvent(fx.purchasePenEmail(), USER_A, other);
     expect((await other.listTransactions('user-a'))[0]!.status).toBe('confirmed');
+  });
+
+  it('plan limit from the repository -> outcome plan_limit, nothing created, traced as rejected with the code', async () => {
+    class LimitedRepo extends InMemoryTransactionRepository {
+      override async insert(): Promise<never> { throw new PlanLimitError('plan_auto_limit'); }
+    }
+    const limited = new LimitedRepo();
+    const r = await ingestRawEvent(fx.purchasePenEmail(), USER_A, limited, undefined, { requireVerifiedTemplate: true });
+    expect(r).toEqual({ outcome: 'plan_limit', transactionId: null, detail: 'plan_auto_limit' });
+    expect(await limited.listTransactions('user-a')).toHaveLength(0);
+    expect(limited.events).toEqual([expect.objectContaining({ outcome: 'rejected', detail: 'plan_auto_limit', parserVersion: 'BCP_EMAIL_V1' })]);
   });
 
   it('a VERIFIED template from a verified sender can still be confirmed', async () => {

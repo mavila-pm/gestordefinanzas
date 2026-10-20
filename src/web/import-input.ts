@@ -1,5 +1,5 @@
 import type { RawFinancialEvent } from '../domain/types';
-import type { EventOutcome } from '../engine/repository';
+import type { IngestOutcome } from '../engine/ingest';
 import { MAX_BODY_BYTES } from '../ingestion/sanitize';
 import type { Get, Parsed } from './transaction-input';
 
@@ -21,7 +21,7 @@ export function parseImportForm(get: Get, now: Date = new Date()): Parsed<RawFin
   };
 }
 
-export function importOutcomeText(outcome: EventOutcome): { ok: boolean; text: string } {
+export function importOutcomeText(outcome: IngestOutcome): { ok: boolean; text: string } {
   switch (outcome) {
     case 'created': return { ok: true, text: 'Movimiento reconocido. Quedó en "Por revisar" para que lo confirmes.' };
     case 'possible_duplicate': return { ok: true, text: 'Se parece a un movimiento que ya tenías: quedó en "Por revisar" como posible duplicado.' };
@@ -31,5 +31,6 @@ export function importOutcomeText(outcome: EventOutcome): { ok: boolean; text: s
     case 'unresolved': return { ok: false, text: 'Reconocimos el banco pero no el formato del mensaje. No inventamos datos: regístralo manualmente.' };
     case 'not_financial': return { ok: false, text: 'No parece una notificación de un banco soportado (por ahora: BCP). No se registró nada.' };
     case 'rejected': return { ok: false, text: 'El mensaje es demasiado grande.' };
+    case 'plan_limit': return { ok: false, text: 'Llegaste al límite de movimientos automáticos de tu plan. Regístralo a mano o pasa a Plus.' };
   }
 }
