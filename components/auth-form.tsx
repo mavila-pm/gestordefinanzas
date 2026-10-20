@@ -1,10 +1,12 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useId, useState } from 'react';
 import type { FormState } from '../app/auth/actions';
 import { PasswordInput } from './password-input';
 import { CapField } from './cap-field';
 import type { CapScope } from '../src/web/cap';
+import { LOCKOUT_LINKS } from '../src/web/login';
 
 interface Field { name: string; label: string; type: string; autoComplete: string; hint?: string; minLength?: number }
 
@@ -44,6 +46,11 @@ export function AuthForm(props: {
       })}
       {props.cap && <CapField scope={props.cap} resetKey={state.error || state.message ? state : undefined} />}
       {state.error && <p role="alert" className="error" id={errorId}>{state.error}</p>}
+      {state.locked && (
+        <p className="auth-links" data-testid="lockout-ways-in">
+          {LOCKOUT_LINKS.map((l) => <Link key={l.href} href={l.href}>{l.label}</Link>)}
+        </p>
+      )}
       {state.message && <p role="status" className="notice positive">{state.message}</p>}
       <button type="submit" disabled={pending} className="wide">{pending ? 'Un momento…' : props.submit}</button>
     </form>

@@ -9,7 +9,7 @@ import { AUTH_NEXT_COOKIE, authNextCookieOptions, birthProblem, normalizePhone, 
 import { PRIVACY_VERSION, TERMS_VERSION } from '../../src/web/legal';
 import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError } from '../../src/web/password-reset';
 import { passwordChangeOutcome, parseReauthCode, reauthRequestOutcome, type ChangePasswordState } from '../../src/web/password-change';
-import { LOGIN_INVALID, LOGIN_SERVER, lockoutMessage, loginOutcome } from '../../src/web/login';
+import { LOGIN_INVALID, LOGIN_SERVER, lockedState, loginOutcome } from '../../src/web/login';
 import { capPassed } from '../../lib/cap';
 import { CAP_ERROR } from '../../lib/cap-core';
 
@@ -23,14 +23,19 @@ export interface FormState {
   message?: string;
   /** Registration: the link was sent (the form switches to "Revisa tu correo"). */
   sent?: true;
+  /** Login: password sign-in is locked for now; the form offers the email link and recovery (LOCKOUT_LINKS). */
+  locked?: true;
 }
 
 export async function login(_prev: FormState, form: FormData): Promise<FormState> {
   const email = parseEmail(form.get('email'));
   const password = form.get('password');
   if (!email || typeof password !== 'string' || !password) return { error: LOGIN_INVALID };
-  // Anti-bot first (Cap): a bot without a valid single-use token never reaches the lockout counter or Supabase Auth,
-  // so it cannot lock a real person's email either. The lockout below still applies to every verified attempt.
+  // Anti-bot first (Cap): a bot without a valid single-use token never reaches the lockout counter or Supabase Auth
+  // through this form. Cap does NOT protect the counter itself: public.login_attempt is executable by anon, so anyone
+  // with the publishable key can call /rest/v1/rpc/login_attempt directly and keep an email locked for password
+  // sign-in. The lock message therefore offers the email link and recovery (lockedState). Planned fix (owner
+  // decision, ADR-0016): run the counter with a server-only credential and revoke anon EXECUTE.
   if (!(await capPassed(form, 'login'))) return { error: CAP_ERROR };
   const supabase = await createSupabaseServerClient();
   // Progressive lockout (migrations 033/034): reserved in the database before the password is checked, keyed on the email.
@@ -41,12 +46,12 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
     console.warn(JSON.stringify({ event: 'login_gate_failed', code: gateError?.code ?? null }));
     return { error: LOGIN_SERVER };
   }
-  if (!g.allowed) return { error: lockoutMessage(g.wait_seconds) };
+  if (!g.allowed) return lockedState(g.wait_seconds);
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     const outcome = loginOutcome(error, g.wait_seconds);
     if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
-    return { error: outcome.message };
+    return outcome.locked ? { error: outcome.message, locked: true } : { error: outcome.message };
   }
   const { error: resetError } = await supabase.rpc('login_succeeded', { p_ip: null });
   if (resetError) console.warn(JSON.stringify({ event: 'login_reset_failed', code: resetError.code ?? null }));
