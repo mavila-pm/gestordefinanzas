@@ -4,6 +4,7 @@
 Provider payload -> FinancialEventSource.toRawEvent()   src/ingestion/sources/  (email_bridge, android_sms)
 RawFinancialEvent (untrusted)
   -> size limit / HTML->text            src/ingestion/sanitize.ts
+       (drops head/title/script/style/comments; fixed entity list + BMP numeric refs, never control chars)
   -> L1 dedupe: (user, channel, externalEventId)   (SMS without id: sha256 of content)
   -> AdapterRegistry.parse()            src/ingestion/adapter-registry.ts
        verified sender decides the bank; else every claiming adapter is tried (header-named bank first);
