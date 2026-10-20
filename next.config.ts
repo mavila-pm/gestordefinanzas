@@ -1,10 +1,16 @@
 import type { NextConfig } from 'next';
 
-const securityHeaders = [
+/**
+ * Sent on every path (static files included). HSTS (https only) and the Content-Security-Policy need the request,
+ * so proxy.ts adds them (src/web/security-headers.ts). tests/security-headers.test.ts guards this list.
+ */
+export const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  // No cross-origin window keeps a handle on ours (window.opener). The planned Culqi checkout uses an iframe, not a popup.
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
 ];
 
 const config: NextConfig = {
