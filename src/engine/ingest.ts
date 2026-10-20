@@ -113,10 +113,9 @@ export async function ingestRawEvent(
   const sameEvent = await repo.findBySource(ctx.userId, channel, externalEventId);
   if (sameEvent) return done('duplicate_same_event', sameEvent.id, null, null);
 
-  const adapter = registry.resolve(raw);
-  if (!adapter) return done('not_financial', null, 'no adapter for this message', null);
-
-  const parsed = adapter.parse(raw, toPlainText(raw.body));
+  // Every adapter that claims the message is tried (verified senders first); two banks reading it -> unresolved.
+  const parsed = registry.parse(raw, toPlainText(raw.body));
+  if (!parsed) return done('not_financial', null, 'no adapter for this message', null);
   if (!parsed.ok) {
     const outcome = parsed.reason === 'non_transactional' ? 'non_transactional' : 'unresolved';
     return done(outcome, null, `${parsed.reason}: ${parsed.detail}`, parsed.parserVersion);

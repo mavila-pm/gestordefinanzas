@@ -5,7 +5,9 @@ Provider payload -> FinancialEventSource.toRawEvent()   src/ingestion/sources/  
 RawFinancialEvent (untrusted)
   -> size limit / HTML->text            src/ingestion/sanitize.ts
   -> L1 dedupe: (user, channel, externalEventId)   (SMS without id: sha256 of content)
-  -> AdapterRegistry.resolve()          src/ingestion/adapter-registry.ts
+  -> AdapterRegistry.parse()            src/ingestion/adapter-registry.ts
+       verified sender decides the bank; else every claiming adapter is tried (header-named bank first);
+       two banks reading it -> ambiguous_institution (unresolved)
   -> BankAdapter.parse()                src/ingestion/adapters/<bank>/<bank>-<channel>-vN.ts
   -> NormalizedFinancialEvent           src/domain/types.ts
   -> L1b dedupe: same bank operation id (forwarded twice)
