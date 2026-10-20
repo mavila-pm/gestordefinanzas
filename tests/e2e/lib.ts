@@ -117,6 +117,15 @@ export async function runSuite(name: string, body: (s: Suite) => Promise<void>):
   const browser = await chromium.launch({ executablePath: chromiumPath() });
   const page = await browser.newPage();
   if (DEBUG) page.on('request', (r) => { if (r.resourceType() !== 'script' && r.resourceType() !== 'stylesheet') console.log('REQ', r.method(), r.resourceType(), r.url().slice(0, 90)); });
+  // CSP (report-only, proxy.ts): every violation on any visited page is collected; the suite ends with a check that
+  // there were none, so the policy can be enforced later without surprises.
+  const csp: string[] = [];
+  await page.exposeFunction('__e2eCsp', (v: string) => { csp.push(v); });
+  await page.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (e) => {
+      (window as unknown as { __e2eCsp: (v: string) => void }).__e2eCsp(`${location.pathname} ${e.effectiveDirective} ${e.blockedURI}`);
+    });
+  });
   const check = (n: string, ok: boolean, detail?: string) => { results.push([n, ok, detail]); };
   let crashed = false;
   try {
@@ -130,6 +139,7 @@ export async function runSuite(name: string, body: (s: Suite) => Promise<void>):
   } finally {
     await browser.close();
   }
+  if (!crashed) check('CSP (report-only): no violations on the visited pages', csp.length === 0, [...new Set(csp)].slice(0, 5).join(' | '));
   for (const [n, ok, d] of results) console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${ok || !d ? '' : `  [${d.slice(0, 160)}]`}`);
   const failed = results.filter((r) => !r[1]).length;
   console.log(`\n${name}: ${results.length - failed}/${results.length} passed${crashed ? ' (ABORTED)' : ''}`);
