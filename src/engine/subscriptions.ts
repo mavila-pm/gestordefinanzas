@@ -11,7 +11,8 @@ import { occurrencesBetween, type Obligation } from './planning';
  */
 export interface SubscriptionRow extends Obligation { active: boolean; provider: string | null; cardId: string | null; accountId: string | null }
 export interface SettlementFact {
-  obligationId: string; period: string; status: 'paid' | 'skipped';
+  /** 'partial': a real abono smaller than the charge (ADR-0017); the period stays open until it is closed. */
+  obligationId: string; period: string; status: 'paid' | 'partial' | 'skipped';
   /** The linked real movement (confirmed transaction); null if it is no longer readable. */
   transactionId: string | null; amountMinor: number | null; occurredOn: string | null; currency: Currency | null; merchant: string | null;
 }
@@ -59,6 +60,13 @@ export function nextCharge(s: SubscriptionRow, today: string, settled: ReadonlyS
   return { period: pick.period, date: pick.dueDate, amountMinor: pick.amountMinor, estimated: pick.amountStatus !== 'confirmed', overdue: pick.dueDate !== null && pick.dueDate < today };
 }
 
+/** Periods closed per subscription (paid or skipped). An abono alone leaves the period open. */
+export function closedPeriods(settlements: readonly Pick<SettlementFact, 'obligationId' | 'period' | 'status'>[]): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const x of settlements) if (x.status !== 'partial') (out.get(x.obligationId) ?? out.set(x.obligationId, new Set()).get(x.obligationId)!).add(x.period);
+  return out;
+}
+
 /** Real payment history of one subscription, newest first: what was paid (linked movement) or skipped, never planned. */
 export function paymentHistory(id: string, settlements: readonly SettlementFact[]): SettlementFact[] {
   return settlements.filter((x) => x.obligationId === id).sort((a, b) => b.period.localeCompare(a.period));
@@ -80,8 +88,7 @@ export function subscriptionTotals(subs: readonly SubscriptionRow[], settlements
   const horizon = addDays(today, 30);
   const out = new Map<Currency, SubscriptionTotals>();
   const t = (c: Currency) => out.get(c) ?? out.set(c, { currency: c, active: 0, next30Minor: 0, next30Count: 0, next30Unknown: 0, monthlyMinor: 0, monthlyUnknown: 0, paidMonthMinor: 0, paidMonthCount: 0 }).get(c)!;
-  const settledBy = new Map<string, Set<string>>();
-  for (const x of settlements) (settledBy.get(x.obligationId) ?? settledBy.set(x.obligationId, new Set()).get(x.obligationId)!).add(x.period);
+  const settledBy = closedPeriods(settlements);
   for (const s of subs) {
     const state = subscriptionState(s, today);
     if (state === 'ended') continue;
@@ -99,7 +106,8 @@ export function subscriptionTotals(subs: readonly SubscriptionRow[], settlements
   }
   const ids = new Map(subs.map((s) => [s.id, s.currency]));
   for (const x of settlements) {
-    if (x.status !== 'paid' || x.amountMinor === null || !x.occurredOn?.startsWith(month)) continue;
+    // Every real movement counts as paid this month, abonos included (skipped never does).
+    if (x.status === 'skipped' || x.amountMinor === null || !x.occurredOn?.startsWith(month)) continue;
     const cur = x.currency ?? ids.get(x.obligationId);
     if (!cur || !ids.has(x.obligationId) || ids.get(x.obligationId) !== cur) continue;
     const row = t(cur);

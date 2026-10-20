@@ -147,7 +147,8 @@ describe('what-if, variations, matching, debts, reminders', () => {
   it('matching suggests (never links) a real payment for the right period; linked transactions are not reused', () => {
     const car = ob({ id: 'car', name: 'Cuota carro', amountMinor: 95000, dueDay: 9, dueDayMax: 10 });
     const tx = { id: 't1', occurredOn: '2026-10-08', amountMinor: 95000, currency: 'PEN' as const, merchant: 'PAGO CUOTA CARRO' };
-    expect(suggestMatches([car], [tx], NONE, new Set())).toEqual([{ obligationId: 'car', name: 'Cuota carro', period: '2026-10', transactionId: 't1', confidence: 'high' }]);
+    expect(suggestMatches([car], [tx], NONE, new Set())).toEqual([{ obligationId: 'car', name: 'Cuota carro', period: '2026-10', transactionId: 't1', confidence: 'high',
+      amountMinor: 95000, remainingMinor: 95000, partial: false }]);
     expect(suggestMatches([car], [tx], NONE, new Set(['t1']))).toEqual([]);
     expect(suggestMatches([car], [tx], new Map([['car', new Set(['2026-10'])]]), new Set())).toEqual([]);
     expect(suggestMatches([car], [{ ...tx, amountMinor: 30000, merchant: 'WONG' }], NONE, new Set())).toEqual([]);

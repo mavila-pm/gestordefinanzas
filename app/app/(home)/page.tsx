@@ -29,7 +29,7 @@ import { creditSignals, creditUse, spendSlices, type CreditCardFacts } from '../
 import { loadCardViews } from '../../../lib/cards';
 import { fold } from '../../../src/ai/text';
 import { loadSubscriptions } from '../../../lib/subscriptions';
-import { knownSum, nextCharge, subscriptionState, subscriptionTotals } from '../../../src/engine/subscriptions';
+import { closedPeriods, knownSum, nextCharge, subscriptionState, subscriptionTotals } from '../../../src/engine/subscriptions';
 import { SubLogo } from '../../../components/sub-logo';
 
 /**
@@ -115,8 +115,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const cardNames = new Set(cards.map((c) => fold(c.name)));
   const loans = debts.filter((d) => !cardNames.has(fold(d.name)));
   // Suscripciones: the next charges (planned, from the same engine as Próximos pagos) and the analytical monthly cost.
-  const subsSettled = new Map<string, Set<string>>();
-  for (const x of subsData?.settlements ?? []) (subsSettled.get(x.obligationId) ?? subsSettled.set(x.obligationId, new Set()).get(x.obligationId)!).add(x.period);
+  const subsSettled = closedPeriods(subsData?.settlements ?? []);
   const subsNext = (subsData?.subs ?? []).filter((x) => subscriptionState(x, today) !== 'ended')
     .map((x) => ({ x, n: nextCharge(x, today, subsSettled.get(x.id) ?? new Set()) })).filter((r) => r.n?.date)
     .sort((a, b) => a.n!.date!.localeCompare(b.n!.date!)).slice(0, 3);

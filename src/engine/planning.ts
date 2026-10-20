@@ -5,7 +5,7 @@
  * line by line. Missing data is never invented: it lowers the plan's status and is listed as "falta confirmar".
  * Currencies are never mixed: one plan per currency.
  */
-import type { Currency } from '../domain/money';
+import { formatMoney, type Currency } from '../domain/money';
 import { addDays, daysBetween } from '../domain/dates';
 
 export type AmountStatus = 'confirmed' | 'estimated' | 'unknown';
@@ -181,7 +181,14 @@ export function nextIncome(incomes: readonly ExpectedIncome[], currency: Currenc
 
 // ── Safe-to-spend ("Dinero libre") ────────────────────────────────────────────────────────────────────────
 export type LineKind = 'overdue' | 'payment' | 'essentials' | 'debt' | 'reserve' | 'cushion';
-export interface PlanLine { kind: LineKind; label: string; amountMinor: number | null; date: string | null; dateMax: string | null; note: string | null; obligationId?: string; period?: string }
+/**
+ * amountMinor is what is still owed (planned − real abonos). When abonos exist, paidMinor is their real total and
+ * plannedMinor the occurrence's planned amount (null when unknown), so the screen can say "Pagaste X de Y".
+ */
+export interface PlanLine {
+  kind: LineKind; label: string; amountMinor: number | null; date: string | null; dateMax: string | null; note: string | null; obligationId?: string; period?: string;
+  paidMinor?: number; plannedMinor?: number | null;
+}
 export interface Missing { code: 'balance' | 'balance_stale' | 'next_income' | 'amount' | 'date' | 'essentials' | 'income_window'; text: string; obligationId?: string }
 export type PlanStatus = 'confirmed' | 'partial' | 'incomplete';
 
@@ -192,8 +199,10 @@ export interface PlanInput {
   /** bankMinor / cashMinor: the breakdown the person gave (display only; the engine uses amountMinor). */
   base: { kind: 'balance'; amountMinor: number; asOf: string; stale: boolean; bankMinor?: number | null; cashMinor?: number | null } | { kind: 'income'; amountMinor: number; date: string } | null;
   obligations: readonly Obligation[];
-  /** obligationId -> periods already paid (linked to a real transaction). */
+  /** obligationId -> periods closed: paid (linked to a real transaction) or skipped. */
   settledObligations: ReadonlyMap<string, ReadonlySet<string>>;
+  /** obligationId -> period -> real total of the abonos of a still-open occurrence (ADR-0017). */
+  partialPaid?: ReadonlyMap<string, ReadonlyMap<string, number>>;
   incomes: readonly ExpectedIncome[];
   settledIncomes: ReadonlyMap<string, ReadonlySet<string>>;
   essentialsMonthlyMinor: number | null;
@@ -248,19 +257,22 @@ export function buildPlan(input: PlanInput): Plan {
     let unknownDateCounted = false;
     for (const x of occ) {
       const payOn = x.targetDate ?? x.dueDate; // plan by the day the person wants to pay
+      // Abonos of this occurrence (real movements): only what remains is reserved; covered → nothing left to plan.
+      const abono = input.partialPaid?.get(o.id)?.get(x.period) ?? 0;
+      if (remainingMinor(x.amountMinor, abono) === 0) continue;
       if (x.dateStatus === 'unknown') {
         // A date we don't know: reserve it once (the earliest unpaid period) and ask for the date.
         if (unknownDateCounted || !until) continue;
         unknownDateCounted = true;
         missing.push({ code: 'date', text: `Falta la fecha de ${o.name}.`, obligationId: o.id });
-        lines.push(line(x, o.source === 'debt' ? 'debt' : 'payment', null));
+        lines.push(line(x, o.source === 'debt' ? 'debt' : 'payment', null, abono));
         continue;
       }
       const lastDay = x.dueDateMax ?? x.dueDate!;
       if (lastDay < lookback || (lastDay < from && x.dueDate! < o.since)) continue;
-      if (lastDay < from) { lines.push(line(x, 'overdue', 'Ya venció y no vemos el pago')); continue; }
+      if (lastDay < from) { lines.push(line(x, 'overdue', abono > 0 ? 'Ya venció y falta completar el pago' : 'Ya venció y no vemos el pago', abono)); continue; }
       if (!until || payOn! > until) continue; // after the next income: that income covers it
-      lines.push(line(x, o.source === 'debt' ? 'debt' : 'payment', x.dateStatus === 'window' ? `vence ${Number(x.dueDate!.slice(8))}–${Number(x.dueDateMax!.slice(8))} aprox.` : null));
+      lines.push(line(x, o.source === 'debt' ? 'debt' : 'payment', x.dateStatus === 'window' ? `vence ${Number(x.dueDate!.slice(8))}–${Number(x.dueDateMax!.slice(8))} aprox.` : null, abono));
       if (x.dateStatus === 'window') missing.push({ code: 'date', text: `Confirma si ${o.name} vence el ${Number(x.dueDate!.slice(8))} o el ${Number(x.dueDateMax!.slice(8))}.`, obligationId: o.id });
     }
     // Infrequent obligations due after the horizon: plan a proportional reserve (planned, not separated money).
@@ -275,7 +287,8 @@ export function buildPlan(input: PlanInput): Plan {
     }
   }
   for (const l of lines) if (l.amountMinor === null && l.obligationId) {
-    if (!missing.some((m) => m.code === 'amount' && m.obligationId === l.obligationId)) missing.push({ code: 'amount', text: `Falta el monto de ${l.label}.`, obligationId: l.obligationId });
+    const already = l.paidMinor ? `: ya pagaste ${formatMoney({ amountMinor: l.paidMinor, currency })}` : '';
+    if (!missing.some((m) => m.code === 'amount' && m.obligationId === l.obligationId)) missing.push({ code: 'amount', text: `Falta el monto de ${l.label}${already}.`, obligationId: l.obligationId });
   }
 
   if (until) {
@@ -292,9 +305,59 @@ export function buildPlan(input: PlanInput): Plan {
   const status: PlanStatus = blocking ? 'incomplete' : missing.length || (input.essentialsEstimated && until) ? 'partial' : 'confirmed';
   return { currency, status, base: input.base, from, nextIncome: next, until, lines, reservedMinor, freeMinor, missing };
 
-  function line(x: Occurrence, kind: LineKind, note: string | null): PlanLine {
-    return { kind, label: x.name, amountMinor: x.amountMinor, date: x.targetDate ?? x.dueDate, dateMax: x.targetDate ? null : x.dueDateMax, note, obligationId: x.obligationId, period: x.period };
+  function line(x: Occurrence, kind: LineKind, note: string | null, abono: number): PlanLine {
+    return {
+      kind, label: x.name, amountMinor: remainingMinor(x.amountMinor, abono), date: x.targetDate ?? x.dueDate, dateMax: x.targetDate ? null : x.dueDateMax, note,
+      obligationId: x.obligationId, period: x.period, ...(abono > 0 ? { paidMinor: abono, plannedMinor: x.amountMinor } : {}),
+    };
   }
+}
+
+/**
+ * What is still owed on one occurrence (ADR-0017): planned − real abonos, never below 0. Unknown planned stays
+ * unknown (never 0): a real abono does not tell us the price.
+ */
+export function remainingMinor(plannedMinor: number | null, paidMinor: number): number | null {
+  return plannedMinor === null ? null : Math.max(0, plannedMinor - paidMinor);
+}
+
+/**
+ * Abonos per still-open occurrence: Σ of the real movements of its 'partial' rows. A movement counts only while it
+ * is confirmed and in the payment's own currency (PEN ≠ USD); occurrences already closed are left out (the closing
+ * row ends them), so the plan never subtracts an abono twice.
+ */
+export function abonosByOccurrence(
+  rows: ReadonlyArray<{ obligationId: string; period: string; status: 'paid' | 'partial' | 'skipped'; amountMinor: number | null; currency: Currency | null; txConfirmed: boolean }>,
+  currencyOf: ReadonlyMap<string, Currency>,
+): Map<string, Map<string, number>> {
+  const closed = new Set(rows.filter((r) => r.status !== 'partial').map((r) => `${r.obligationId}|${r.period}`));
+  const out = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    if (r.status !== 'partial' || closed.has(`${r.obligationId}|${r.period}`) || r.amountMinor === null || !r.txConfirmed) continue;
+    if (!currencyOf.has(r.obligationId) || r.currency !== currencyOf.get(r.obligationId)) continue;
+    const m = out.get(r.obligationId) ?? out.set(r.obligationId, new Map()).get(r.obligationId)!;
+    m.set(r.period, (m.get(r.period) ?? 0) + r.amountMinor);
+  }
+  return out;
+}
+
+/**
+ * Real totals of CLOSED paid occurrences (a 'paid' row; rows without a status are paid): Σ of every real movement
+ * linked to it, abonos included. Occurrences with only abonos are left out: they are not finished, so their amount
+ * says nothing about the price (no "bajó S/ 1,000" for a partial payment).
+ */
+export interface PaidFact { obligationId: string; period: string; actualMinor: number; acknowledged?: boolean; status?: 'paid' | 'partial' }
+export function closedPaidTotals(paid: readonly PaidFact[]): Array<{ obligationId: string; period: string; actualMinor: number; acknowledged: boolean }> {
+  const groups = new Map<string, { obligationId: string; period: string; actualMinor: number; acknowledged: boolean; closed: boolean }>();
+  for (const p of paid) {
+    const key = `${p.obligationId}|${p.period}`;
+    const g = groups.get(key) ?? { obligationId: p.obligationId, period: p.period, actualMinor: 0, acknowledged: false, closed: false };
+    g.actualMinor += p.actualMinor;
+    g.acknowledged ||= p.acknowledged === true;
+    g.closed ||= (p.status ?? 'paid') === 'paid';
+    groups.set(key, g);
+  }
+  return [...groups.values()].filter((g) => g.closed).map(({ closed: _c, ...g }) => g);
 }
 
 // ── What-if: "¿Puedo gastar S/500?" (pure: never writes anything) ─────────────────────────────────────────
@@ -307,14 +370,13 @@ export function simulatePurchase(plan: Pick<Plan, 'freeMinor' | 'status'>, amoun
 
 // ── Recurring amount changes ("Internet subió S/31") ─────────────────────────────────────────────────────
 export interface Variation { obligationId: string; name: string; currency: Currency; expectedMinor: number; actualMinor: number; deltaMinor: number; period: string }
-export function detectVariations(
-  obligations: readonly Obligation[],
-  paid: ReadonlyArray<{ obligationId: string; period: string; actualMinor: number; acknowledged: boolean }>,
-): Variation[] {
+/** Compares the plan with the real total of the last CLOSED paid occurrence (abonos summed; open ones ignored). */
+export function detectVariations(obligations: readonly Obligation[], paid: readonly PaidFact[]): Variation[] {
   const out: Variation[] = [];
+  const closed = closedPaidTotals(paid);
   for (const o of obligations) {
     if (o.amountMinor === null || o.amountStatus === 'unknown') continue;
-    const last = paid.filter((p) => p.obligationId === o.id).sort((a, b) => b.period.localeCompare(a.period))[0];
+    const last = closed.filter((p) => p.obligationId === o.id).sort((a, b) => b.period.localeCompare(a.period))[0];
     if (!last || last.acknowledged || last.actualMinor === o.amountMinor) continue;
     out.push({ obligationId: o.id, name: o.name, currency: o.currency, expectedMinor: o.amountMinor, actualMinor: last.actualMinor, deltaMinor: last.actualMinor - o.amountMinor, period: last.period });
   }
@@ -323,12 +385,23 @@ export function detectVariations(
 
 // ── "Parece la cuota del carro": suggestions only, never auto-linked ─────────────────────────────────────
 export interface PaymentCandidate { id: string; occurredOn: string; amountMinor: number; currency: Currency; merchant: string | null }
-export interface MatchSuggestion { obligationId: string; name: string; period: string; transactionId: string; confidence: 'high' | 'medium' }
+/**
+ * amountMinor: the movement; remainingMinor: what the occurrence still owes (null = unknown price); partial: the
+ * movement is smaller than what remains, so the person chooses "Pago completo" or "Fue un abono" (never decided here).
+ */
+export interface MatchSuggestion {
+  obligationId: string; name: string; period: string; transactionId: string; confidence: 'high' | 'medium';
+  amountMinor?: number; remainingMinor?: number | null; partial?: boolean;
+}
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 
-export function suggestMatches(obligations: readonly Obligation[], txs: readonly PaymentCandidate[], settled: ReadonlyMap<string, ReadonlySet<string>>, linkedTx: ReadonlySet<string>): MatchSuggestion[] {
+export function suggestMatches(
+  obligations: readonly Obligation[], txs: readonly PaymentCandidate[], settled: ReadonlyMap<string, ReadonlySet<string>>, linkedTx: ReadonlySet<string>,
+  partialPaid?: ReadonlyMap<string, ReadonlyMap<string, number>>,
+): MatchSuggestion[] {
   const out: MatchSuggestion[] = [];
   const used = new Set(linkedTx);
+  const near = (amount: number, target: number, status: AmountStatus) => Math.abs(amount - target) <= Math.max(100, Math.round(target * (status === 'confirmed' ? 0.02 : 0.25)));
   for (const o of obligations) {
     if (o.source !== 'obligation') continue;
     for (const t of txs) {
@@ -337,12 +410,19 @@ export function suggestMatches(obligations: readonly Obligation[], txs: readonly
       if (settled.get(o.id)?.has(period)) continue;
       const [x] = occurrencesBetween(o, dayIn(period, 1), dayIn(period, 28)).filter((y) => y.period === period);
       if (!x) continue;
+      const abono = partialPaid?.get(o.id)?.get(period) ?? 0;
+      const remaining = remainingMinor(o.amountMinor, abono);
+      if (remaining === 0) continue; // already covered by real abonos
       const nameHit = !!t.merchant && norm(o.name).split(/\s+/).some((w) => w.length >= 4 && norm(t.merchant!).includes(w));
-      const amountHit = o.amountMinor !== null && Math.abs(t.amountMinor - o.amountMinor) <= Math.max(100, Math.round(o.amountMinor * (o.amountStatus === 'confirmed' ? 0.02 : 0.25)));
+      // Against the planned amount, or against what remains after abonos ("ya pagué 500, hoy pago los 1,000").
+      const amountHit = o.amountMinor !== null && (near(t.amountMinor, o.amountMinor, o.amountStatus) || (abono > 0 && near(t.amountMinor, remaining!, o.amountStatus)));
+      // Same name, a smaller amount than what remains: maybe an abono (the person says so; never assumed).
+      const abonoHit = nameHit && remaining !== null && t.amountMinor < remaining;
       const dateHit = x.dueDate === null || Math.abs(daysBetween(t.occurredOn, x.dueDateMax ?? x.dueDate)) <= 10;
       if (!dateHit || !(amountHit || nameHit)) continue;
-      if (!amountHit && o.amountMinor !== null) continue; // a name alone with a different amount: let the variation flow handle it after linking
-      out.push({ obligationId: o.id, name: o.name, period, transactionId: t.id, confidence: amountHit && nameHit ? 'high' : 'medium' });
+      if (!amountHit && !abonoHit && o.amountMinor !== null) continue; // a name alone with a larger amount: the variation flow handles it after linking
+      out.push({ obligationId: o.id, name: o.name, period, transactionId: t.id, confidence: amountHit && nameHit ? 'high' : 'medium',
+        amountMinor: t.amountMinor, remainingMinor: remaining, partial: remaining !== null && t.amountMinor < remaining });
       used.add(t.id);
       break;
     }
