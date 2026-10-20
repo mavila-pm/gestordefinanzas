@@ -9,3 +9,6 @@ next-env.d.ts
 *.tsbuildinfo
 .e2e/
 .qa/
+
+# Isolated git worktrees used by background agents (never committed)
+.claude/worktrees/
