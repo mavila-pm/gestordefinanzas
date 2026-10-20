@@ -30,6 +30,8 @@ RawFinancialEvent (untrusted)
 - ATM withdrawal is `transfer_to_cash`, not expense (ADR-0002). Metrics use `financialEffect()`.
 - Refund/reversal reduce expenses, never income. PEN and USD never mixed.
 - Unverified sender, unknown deposit origin, unknown transfer destination → review, never auto-confirmed.
+- Delivered channels (Email Bridge, future Android SMS) pass `requireVerifiedTemplate`: a SYNTHETIC_UNVERIFIED
+  template is read but never auto-confirmed (`template_unverified` → review_required), even from a verified sender.
 - Duplicated field labels or text appended to an SMS → rejected, not guessed.
 - One bad event never aborts a batch.
 

@@ -87,6 +87,11 @@ function isStrongMatch(kind: string, e: NormalizedFinancialEvent, type: Transact
 export interface IngestOptions {
   /** Persist the source as a user import (pasted text) instead of a delivered bank notification. */
   persistAs?: 'import';
+  /**
+   * Delivered bank notifications (Email Bridge, Android SMS): a template not yet calibrated on real samples
+   * (SYNTHETIC_UNVERIFIED) is read but never auto-confirmed ('template_unverified' -> review_required).
+   */
+  requireVerifiedTemplate?: boolean;
 }
 
 /**
@@ -122,7 +127,7 @@ export async function ingestRawEvent(
   }
   const e = parsed.event;
   try {
-    return await persist(raw, e, externalEventId, channel, ctx, repo, done);
+    return await persist(raw, e, externalEventId, channel, ctx, repo, done, opts);
   } catch (err) {
     // A concurrent delivery of the same event won the race: still exactly one transaction.
     if (!(err instanceof DuplicateSourceError)) throw err;
@@ -141,6 +146,7 @@ async function persist(
   ctx: UserContext,
   repo: TransactionRepository,
   done: Done,
+  opts: IngestOptions,
 ): Promise<IngestResult> {
 
   const source: TransactionSource = {
@@ -152,6 +158,9 @@ async function persist(
   const { type, direction, reasons } = resolveWithUserContext(e, ctx);
   // Pasted text cannot prove it came from the bank: an import is always reviewed by the user, never auto-confirmed.
   if (channel === 'import' && !reasons.includes('user_import')) reasons.push('user_import');
+  if (opts.requireVerifiedTemplate && e.templateVerification !== 'VERIFIED' && !reasons.includes('template_unverified')) {
+    reasons.push('template_unverified');
+  }
   const category = categorize(type, merchantNormalized, ctx.merchantRules);
 
   // Level 1b: the bank's own operation number identifies the same operation across forwards.

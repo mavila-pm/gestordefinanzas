@@ -61,7 +61,10 @@ describe.skipIf(!DATABASE_URL)('TASK-009: Email Bridge webhook (generic HMAC pro
   it('signed email to A\'s address -> A\'s transaction (channel email), nothing for B', async () => {
     const r = await handle(signed(email(addrA)));
     expect(r).toEqual({ status: 202, body: { status: 'accepted' } });
-    expect(await txsOf(USER_A)).toEqual([{ type: 'credit_card_purchase', status: 'confirmed', channel: 'email' }]);
+    // Verified sender, but the BCP template is SYNTHETIC_UNVERIFIED: a delivered email is never auto-confirmed.
+    expect(await txsOf(USER_A)).toEqual([{ type: 'credit_card_purchase', status: 'review_required', channel: 'email' }]);
+    expect((await pool.query('select detail from public.financial_events where user_id = $1', [USER_A])).rows)
+      .toEqual([{ detail: 'template_unverified' }]);
     expect(await txsOf(USER_B)).toEqual([]);
     expect((await pool.query('select outcome, user_id from public.inbound_deliveries')).rows).toEqual([{ outcome: 'processed', user_id: USER_A }]);
   });

@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { ingestRawEvent, type UserContext } from '../src/engine/ingest';
 import { InMemoryTransactionRepository } from '../src/engine/repository';
 import { monthlySummary } from '../src/engine/monthly-summary';
+import { parseIngestionCodes, reviewReasons } from '../src/engine/review-reasons';
+import { AdapterRegistry } from '../src/ingestion/adapter-registry';
+import type { BankAdapter } from '../src/ingestion/bank-adapter';
+import { bcpEmailV1 } from '../src/ingestion/adapters/bcp/bcp-email-v1';
 import * as fx from './fixtures/bcp';
 
 const USER_A: UserContext = { userId: 'user-a', ownAccountLast4: ['9001'], cards: [{ last4: '4821', kind: 'credit' }], merchantRules: [] };
@@ -176,5 +180,40 @@ describe('robustness', () => {
     const ctx = { ...USER_A, merchantRules: [{ contains: 'Restaurante el Ejemplo', category: 'Personal' as const }] };
     await ingestRawEvent(fx.purchasePenEmail(), ctx, repo);
     expect((await repo.listTransactions('user-a'))[0]!.category).toBe('Personal');
+  });
+});
+
+describe('delivered channels never auto-confirm an unverified template', () => {
+  const verifiedBcpEmail: BankAdapter = {
+    ...bcpEmailV1,
+    templateVerification: 'VERIFIED',
+    parse(raw, text) {
+      const r = bcpEmailV1.parse(raw, text);
+      return r.ok ? { ok: true, event: { ...r.event, templateVerification: 'VERIFIED' } } : r;
+    },
+  };
+
+  it('verified sender + SYNTHETIC_UNVERIFIED template -> review_required with a plain-language reason', async () => {
+    const r = await ingestRawEvent(fx.purchasePenEmail(), USER_A, repo, undefined, { requireVerifiedTemplate: true });
+    expect(r).toMatchObject({ outcome: 'created', detail: 'template_unverified' });
+    const [tx] = await repo.listTransactions('user-a');
+    expect(tx).toMatchObject({ status: 'review_required', confidence: 'medium', type: 'credit_card_purchase', amountMinor: 10000 });
+    const reasons = reviewReasons(tx!, { ingestionCodes: parseIngestionCodes(r.detail), registeredCardLast4: ['4821'], cardId: 'c1' });
+    expect(reasons.map((x) => x.code)).toEqual(['template_unverified']);
+    expect(reasons[0]!.text).toMatch(/aún no validamos/);
+  });
+
+  it('SMS too; without the option (tests, legacy callers) behaviour is unchanged', async () => {
+    await ingestRawEvent(fx.purchasePenSms(), USER_A, repo, undefined, { requireVerifiedTemplate: true });
+    expect((await repo.listTransactions('user-a'))[0]!.status).toBe('review_required');
+    const other = new InMemoryTransactionRepository();
+    await ingestRawEvent(fx.purchasePenEmail(), USER_A, other);
+    expect((await other.listTransactions('user-a'))[0]!.status).toBe('confirmed');
+  });
+
+  it('a VERIFIED template from a verified sender can still be confirmed', async () => {
+    const reg = new AdapterRegistry([verifiedBcpEmail]);
+    await ingestRawEvent(fx.purchasePenEmail(), USER_A, repo, reg, { requireVerifiedTemplate: true });
+    expect((await repo.listTransactions('user-a'))[0]).toMatchObject({ status: 'confirmed', confidence: 'high' });
   });
 });
