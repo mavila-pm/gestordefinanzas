@@ -64,6 +64,8 @@
 | 20261011000045_income_day_pending.sql | expected_incomes: a declared income may have its pay day por confirmar (day_of_month null; never projected); semimonthly needs both days or neither | 2026-10-11 |
 | 20261012000046_billing_checkout.sql | billing_price() (Mensual 400 → 900 from 2027-01-01 Lima, Anual 5900, Vitalicio 19800, USD minor) + billing_orders (RLS read own; writes only via billing_create_order / billing_simulate_payment (demo only) / billing_activate (service_role)) + subscriptions.billing_plan | 2026-10-12 |
 | 20261012000047_billing_hardening.sql | billing_create_order(plan, expected_minor) (price_changed; per-user advisory lock; supersedes pending orders) + billing_activate(order, provider, ref, amount, currency) (amount/currency/ref checked, 1 h TTL, re-checks subscription and trial at activation). Old signatures kept but EXECUTE revoked (no DROP) | 2026-10-12 |
+| 20261020000049_function_grants_registration_hardening.sql | **PENDING** (no DELETE/DROP: connector OK after PO approval; deploy the app first). Trigger functions not executable by clients (aborts if one still is); finish_registration replaces complete_registration (old kept, EXECUTE revoked): final once complete, phone_taken capped 5/account/24 h (registration_phone_refusals, deny-all). Verify: anon executes only cap_spend, login_attempt (query in `docs/security/rls.md`) | — |
+| 20261020000050_fk_supporting_indexes.sql | **PENDING** (connector OK after PO approval). transaction_allocations_category (category delete no longer scans every person's splits); the other advisor FK INFOs are accepted with reasons in the file | — |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
