@@ -44,7 +44,9 @@ const LENDERS: Array<[RegExp, string]> = [
 const INCOME = /\b(me pagan|pagan|sueldo|salario|cobro|gano|recibo|ingreso|ingresos|me depositan|me cae|honorarios|remuneracion)\b/;
 const DEBT = /\b(debo|deuda|deudas|adeudo|me presto|me prestaron|prestamo)\b/;
 const BALANCE = /\b(saldo|tengo ahorrado|me queda|me quedan|tengo (hoy|ahora)|tengo .{0,25}en (la |mi )?(cuenta|banco)|en (la |mi )?cuenta tengo|disponible)\b/;
-const CARD = /\b(tarjeta|visa|mastercard|amex|tc)\b/;
+const CARD = /\b(tarjetas?|visa|mastercard|amex|tc)\b/;
+/** "Dos tarjetas", "mis tarjetas": several cards, so the banks named after it are cards, not bank accounts. */
+const CARDS = /\btarjetas\b/;
 const REMOVE = /\b(quita|quitalo|elimina|borra|saca|ya no (tengo|pago|debo))\b/;
 const DONE_OBLIGATIONS = /\b(no tengo (mas|otros) (pagos|gastos)|no tengo mas|eso es todo|nada mas|es todo|ningun otro|ninguno mas)\b/;
 const NO_DEBTS = /\b(no (tengo|debo) (deudas|nada)|sin deudas|no debo)\b/;
@@ -107,7 +109,7 @@ export function readLoan(t: string): LoanFacts {
   return f;
 }
 
-type Ctx = { t: 'card'; institution?: string; last4?: string } | { t: 'obligation'; kind: ObligationKind; name: string } | { t: 'income' }
+type Ctx = { t: 'card'; institution?: string; last4?: string; many?: boolean } | { t: 'obligation'; kind: ObligationKind; name: string } | { t: 'income' }
   | { t: 'debt'; kind: 'personal' | 'loan'; name: string; institution?: string; lender?: string };
 export const bankIn = (t: string) => BANKS.filter(([re]) => re.test(t)).map(([, code]) => code);
 
@@ -188,6 +190,8 @@ export function interpret(message: string): Interpretation {
   if (split) return { patches: [{ t: 'balance', ...split }], bare: null };
   // Several debts in one message (a bank loan and a person), several fixed payments, several subscriptions: each
   // item keeps ITS amounts and dates (a list is never read as one item with the first number).
+  const cards = cardDebtList(t);
+  if (cards) return { patches: cards, bare: null };
   const debts = debtList(t);
   if (debts) return { patches: debts, bare: null };
   const payments = paymentList(t);
@@ -287,6 +291,59 @@ export function debtList(t: string): Patch[] | null {
   }
   // A single plain loan sentence is left to the normal reading (it already handles one loan well).
   return out.length >= 2 || out.some((p) => p.t === 'debt' && p.kind === 'personal' && p.installmentMinor !== undefined) ? out : null;
+}
+
+/**
+ * Several card debts in one message: "debo en dos tarjetas: bcp 1,200 y bbva 800", "debo 1,200 en la tarjeta bcp y
+ * 800 en la tarjeta bbva". Each card is its bank's, with the amount said next to that bank (its balance); a due day or
+ * the last 4 digits said in the same part go to that card. Nothing is spread or guessed: a part with two banks or two
+ * amounts, a minimum or payment, or any other subject (income, loan, person, payment) leaves the message to the
+ * normal reading. null unless at least two cards of different banks are read.
+ */
+const CARD_LIST_OTHER = /\b(pago|pagar|pagos|cuota|cuotas|minimo|limite|linea)\b/;
+export function cardDebtList(t: string): Patch[] | null {
+  if (!CARD.test(t) || !DEBT.test(t) || LOAN.test(t) || INCOME.test(t) || BALANCE.test(t) || REMOVE.test(t) || NO_DEBTS.test(t) || SPEND_START.test(t)
+    || CARD_LIST_OTHER.test(t) || PERSON_WORDS.test(t) || LENDERS.some(([re]) => re.test(t)) || OBLIGATIONS.some(([re]) => re.test(t)) || VARIABLE.some(([re]) => re.test(t))) return null;
+  const pieces = t.split(/\s*[;:\n]\s*|\s*,\s*(?!\d{3}\b)|\s+(?:y(?!\s+medi)|e|tambien|ademas|aparte)\s+/).map((x) => x.trim()).filter(Boolean);
+  const cards: Array<Extract<Patch, { t: 'debt' }>> = [];
+  for (const piece of pieces) {
+    const days = findDays(piece);
+    const last4 = LAST4.exec(piece);
+    const skip = [...days, ...(last4 ? [{ index: last4.index, end: last4.index + last4[0].length }] : [])];
+    const amounts = findAmounts(piece, skip);
+    const banks = [...new Set(bankIn(piece))];
+    // Each part says only which card and how much ("bcp 1,200", "y 800 en la tarjeta bbva"): anything else is left to
+    // the normal reading ("en bbva tengo 3,000" is money in an account, not a card).
+    if (banks.length > 1 || amounts.length > 1 || days.length > 1 || !onlyBank(piece, [...skip, ...amounts], CARD_WORDS)) return null;
+    const amount = amounts[0];
+    const day = days[0];
+    const facts = { ...(amount ? { balanceMinor: amount.minor, ...(amount.currency ? { currency: amount.currency } : {}), ...(amount.approx ? { approx: true } : {}) } : {}),
+      ...(day ? { dueDay: day.day } : {}), ...(last4 ? { last4: last4[1]! } : {}) };
+    if (banks.length === 1) {
+      const institution = banks[0]!;
+      if (cards.some((c) => c.institution === institution)) return null; // the same bank twice: which amount is which is not said
+      cards.push({ t: 'debt', kind: 'card', name: `Tarjeta ${BANK_LABEL[institution] ?? institution}`, institution, ...facts,
+        ...(!amount && UNKNOWN.test(piece) ? { unknownBalance: true } : {}) });
+    } else if (amount || day || last4) {
+      // "tarjeta bcp, debo 1,200": a part with no bank continues the card just named, only with what it still lacks.
+      const prev = cards.at(-1);
+      if (!prev || (amount && prev.balanceMinor !== undefined) || (day && prev.dueDay !== undefined) || (last4 && prev.last4 !== undefined)) return null;
+      Object.assign(prev, facts);
+    }
+  }
+  return cards.length >= 2 ? cards : null;
+}
+
+/** What is left of a clause once a bank, amounts, days and connecting words are taken out is empty: "y en la bbva 800". */
+const BANK_FILLER = /\b(en|la|el|los|las|de|del|mi|mis|su|sus|otra|otro|tambien|y|con|s|soles?|dolares?|us|usd|pen|vence)\b/g;
+/** Words a card-debt list may also carry: "debo en dos tarjetas", "tengo deuda en la de bbva", "como 800", "no sé". */
+const CARD_WORDS = /\b(tengo (una |un )?deudas?|debo|deudas?|tarjetas?|visa|mastercard|amex|tc|de credito|credito|dos|tres|ambas|un|una|que|ahora|hoy|como|aprox\w*|unos|unas|mas o menos|casi|no se|ni idea)\b/g;
+function onlyBank(c: string, spans: ReadonlyArray<{ index: number; end: number }>, words?: RegExp): boolean {
+  let s = c;
+  for (const sp of [...spans].sort((a, b) => b.index - a.index)) s = `${s.slice(0, sp.index)} ${s.slice(sp.end)}`;
+  for (const [re] of BANKS) s = s.replace(new RegExp(re.source, 'g'), ' ');
+  if (words) s = s.replace(words, ' ');
+  return s.replace(BANK_FILLER, ' ').replace(/[^a-z]+/g, ' ').trim() === '';
 }
 
 /**
@@ -398,7 +455,7 @@ function interpretRest(message: string): Interpretation {
         ...(unknown && !balance ? { unknownBalance: true } : {}), ...(min ? { minimumMinor: min.minor } : {}), ...(day ? { dueDay: day.day } : {}),
       });
       if (kind !== 'card') ctx = { t: 'debt', kind, name, ...(institution ? { institution } : {}), ...(lender && kind === 'personal' ? { lender: lender[1] } : {}) };
-      if (kind === 'card') ctx = { t: 'card', ...(institution ? { institution } : {}), ...(last4 ?? cardCtx?.last4 ? { last4: last4 ?? cardCtx?.last4 } : {}) };
+      if (kind === 'card') ctx = { t: 'card', ...(institution ? { institution } : {}), ...(last4 ?? cardCtx?.last4 ? { last4: last4 ?? cardCtx?.last4 } : {}), ...(CARDS.test(c) || cardCtx?.many ? { many: true } : {}) };
       continue;
     }
 
@@ -426,11 +483,25 @@ function interpretRest(message: string): Interpretation {
       continue;
     }
 
+    // After a card subject, a clause with only a bank and an amount ("…, y bbva 800") is THAT bank's card and what is
+    // owed on it, never a bank account; after "tengo dos tarjetas", a bank alone ("bcp y bbva") names one of the cards.
+    const cardSubject = ctx as Ctx | null;
+    if (cardSubject?.t === 'card' && banks.length === 1 && !CARD.test(c) && (amount || day || cardSubject.many) && onlyBank(c, [...skip, ...amounts])) {
+      const b = banks[0]!;
+      if (amount || day) {
+        patches.push({ t: 'debt', kind: 'card', name: `Tarjeta ${BANK_LABEL[b] ?? b}`, institution: b, ...(last4 ? { last4 } : {}),
+          ...(amount ? { balanceMinor: amount.minor, ...(amount.currency ? { currency: amount.currency } : {}), ...(amount.approx ? { approx: true } : {}) } : {}), ...(day ? { dueDay: day.day } : {}) });
+      } else patches.push({ t: 'account', institution: b, kind: 'card' });
+      ctx = { t: 'card', institution: b, ...(cardSubject.many ? { many: true } : {}) };
+      continue;
+    }
     if (CARD.test(c) || banks.length) {
       if (CARD.test(c)) {
-        const institution = banks[0] ?? banksInMessage[0] ?? 'OTRO';
-        patches.push({ t: 'account', institution, kind: 'card', ...(last4 ? { last4 } : {}) });
-        ctx = { t: 'card', ...(institution !== 'OTRO' ? { institution } : {}), ...(last4 ? { last4 } : {}) };
+        // "Tengo dos tarjetas" without a bank in that clause: the banks said next name them; none is assumed here.
+        const many = CARDS.test(c) && !banks.length;
+        const institution = banks[0] ?? (many ? undefined : banksInMessage[0]) ?? 'OTRO';
+        if (!many) patches.push({ t: 'account', institution, kind: 'card', ...(last4 ? { last4 } : {}) });
+        ctx = { t: 'card', ...(institution !== 'OTRO' ? { institution } : {}), ...(last4 ? { last4 } : {}), ...(CARDS.test(c) ? { many: true } : {}) };
       } else for (const b of banks) patches.push({ t: 'account', institution: b, kind: 'bank' });
       continue;
     }
