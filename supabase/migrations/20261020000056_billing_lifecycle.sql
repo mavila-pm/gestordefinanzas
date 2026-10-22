@@ -63,6 +63,10 @@ begin
        coalesce((select c.value from public.plan_config c where c.key = 'billing_grace_days'), 3), now()) <> 'free' then
     raise exception 'already_plus' using errcode = '22023';
   end if;
+  -- Never overwrite the reference of a subscription the provider can still charge (the new one is cancelled instead).
+  if public.billing_renewal_open(v_sub.billing_plan, v_sub.status, v_sub.provider_ref, v_sub.cancel_at_period_end) then
+    raise exception 'subscription_still_open' using errcode = '22023';
+  end if;
   -- The trial the person accepted must be the one the provider applied: same length (±1 day), or none at all.
   if v_order.trial_days > 0 then
     if v_sub.trial_started_at is not null then raise exception 'trial_no_longer_available' using errcode = '22023'; end if;
@@ -199,9 +203,53 @@ begin
   return case when v_sub.status = 'trialing' then v_sub.trial_ends_at else v_sub.current_period_end end;
 end $$;
 
+-- A successful charge of a subscription that NO subscriptions row holds: its activation was refused (the order
+-- closed with it), a later purchase replaced it after it was cancelled (its cancellation is in the ledger), or
+-- Velsuno never knew it. Nothing is granted for it. Recorded ONCE as needs_refund under 'orphan:<charge>' (the key
+-- billing_refund matches, and the guard against a second automatic refund). Returns the state ('flagged' |
+-- 'duplicate') and whether the subscription is provably Velsuno's ('ours'): then the server refunds the charge and
+-- stops the subscription at the provider; otherwise the owner reviews it (never an automatic refund of a charge
+-- nothing links to Velsuno). A subscription a row holds is refused ('subscription_known': it is a period charge).
+create function public.billing_flag_charge(p_provider text, p_charge_ref text, p_sub_ref text, p_amount_minor bigint, p_currency text,
+  p_livemode boolean, p_code text)
+returns table (state text, ours boolean) language plpgsql security definer set search_path = '' as $$
+declare
+  v_user uuid;
+  v_order uuid;
+  v_ours boolean := false;
+  v_ins bigint;
+begin
+  if p_provider is null or p_provider !~ '^[a-z0-9_]{2,30}$' or p_charge_ref is null or p_charge_ref !~ '^[A-Za-z0-9_]{3,100}$'
+     or p_sub_ref is null or p_sub_ref !~ '^[A-Za-z0-9_]{3,100}$' or p_code is null or p_code !~ '^[a-z0-9_:]{2,60}$'
+     or p_amount_minor is null or p_amount_minor not between 1 and 10000000 or p_currency is null or p_currency not in ('USD', 'PEN')
+     or p_livemode is null then
+    raise exception 'bad_reference' using errcode = '22023';
+  end if;
+  -- Whose it is: the order closed (or once settled) with this subscription, else its recorded cancellation.
+  select o.id, o.user_id into v_order, v_user from public.billing_orders o where o.provider = p_provider and o.provider_ref = p_sub_ref;
+  if v_order is not null then
+    v_ours := true;
+  else
+    select e.user_id into v_user from public.billing_events e where e.provider = p_provider and e.event_ref = 'cancel:' || p_sub_ref;
+    v_ours := found;
+  end if;
+  -- Same lock as every activation: a subscription being activated right now is seen as held, never refunded.
+  if v_user is not null then perform pg_advisory_xact_lock(hashtextextended('billing:' || v_user::text, 0)); end if;
+  if exists (select 1 from public.subscriptions s where s.provider = p_provider and s.provider_ref = p_sub_ref) then
+    raise exception 'subscription_known' using errcode = '22023';
+  end if;
+  insert into public.billing_events (provider, event_ref, source, type, object_ref, user_id, order_id, livemode, amount_minor, currency, outcome, detail, processed_at)
+  values (p_provider, 'orphan:' || p_charge_ref, 'action', 'charge.unmatched', p_charge_ref, v_user, v_order, p_livemode, p_amount_minor,
+    p_currency::public.currency_code, 'needs_refund', p_code || case when v_ours then ':ours' else ':review' end, now())
+  on conflict (provider, event_ref) do nothing returning id into v_ins;
+  return query select case when v_ins is null then 'duplicate' else 'flagged' end, v_ours;
+end $$;
+
 -- A refund the provider confirmed. Full refund of a Vitalicio charge: the order is refunded and the plan ends
 -- (traceable; data kept). A refund of a charge that was never activated closes that order. A refund of a period
--- charge is recorded only (the plan follows its period). Partial refunds are recorded only.
+-- charge or of a flagged charge (billing_flag_charge) is recorded next to it (the plan follows its period; a flagged
+-- charge granted nothing).
+-- Partial refunds are recorded only.
 create function public.billing_refund(p_provider text, p_charge_ref text, p_refund_ref text, p_amount_minor bigint, p_currency text)
 returns text language plpgsql security definer set search_path = '' as $$
 declare
@@ -209,6 +257,9 @@ declare
   v_user uuid;
   v_ins bigint;
   v_full boolean;
+  v_kind text;
+  v_charged bigint;
+  v_charged_currency text;
 begin
   if p_provider !~ '^[a-z0-9_]{2,30}$' or p_charge_ref !~ '^[A-Za-z0-9_]{3,100}$' or p_refund_ref !~ '^[A-Za-z0-9_]{3,100}$'
      or p_amount_minor is null or p_amount_minor < 1 or p_currency is null then
@@ -216,13 +267,17 @@ begin
   end if;
   select o.user_id into v_user from public.billing_orders o where o.provider = p_provider and o.provider_ref = p_charge_ref;
   if v_user is null then
-    -- A period charge (renewal) we recorded: the refund is recorded next to it, the plan follows its period.
-    select e.user_id into v_user from public.billing_events e
-      where e.provider = p_provider and e.event_ref = 'renewal:' || p_charge_ref;
-    if not found then raise exception 'unknown_charge' using errcode = '22023'; end if;
+    -- A period charge (renewal) we recorded, or a charge we flagged: the refund is recorded next to it, the plan
+    -- follows its period. Never more than that charge, never in another currency.
+    select e.user_id, e.event_ref, e.amount_minor, e.currency::text into v_user, v_kind, v_charged, v_charged_currency
+      from public.billing_events e
+      where e.provider = p_provider and e.event_ref in ('renewal:' || p_charge_ref, 'orphan:' || p_charge_ref)
+      order by e.id limit 1;
+    if v_kind is null then raise exception 'unknown_charge' using errcode = '22023'; end if;
+    if p_currency is distinct from v_charged_currency or p_amount_minor > v_charged then raise exception 'amount_mismatch' using errcode = '22023'; end if;
     insert into public.billing_events (provider, event_ref, source, type, object_ref, user_id, amount_minor, currency, outcome, detail, processed_at)
     values (p_provider, 'refund:' || p_refund_ref, 'action', 'charge.refunded', p_charge_ref, v_user, p_amount_minor,
-      p_currency::public.currency_code, 'processed', 'period_charge', now())
+      p_currency::public.currency_code, 'processed', case when v_kind like 'orphan:%' then 'flagged_charge' else 'period_charge' end, now())
     on conflict (provider, event_ref) do nothing returning id into v_ins;
     return case when v_ins is null then 'duplicate' else 'recorded' end;
   end if;
@@ -252,6 +307,7 @@ revoke execute on function
   public.billing_record_renewal(text, text, text, bigint, text, timestamptz),
   public.billing_mark_past_due(text, text, text, text),
   public.billing_cancel(uuid, text, text),
+  public.billing_flag_charge(text, text, text, bigint, text, boolean, text),
   public.billing_refund(text, text, text, bigint, text)
 from public, anon, authenticated;
 grant execute on function
@@ -260,5 +316,6 @@ grant execute on function
   public.billing_record_renewal(text, text, text, bigint, text, timestamptz),
   public.billing_mark_past_due(text, text, text, text),
   public.billing_cancel(uuid, text, text),
+  public.billing_flag_charge(text, text, text, bigint, text, boolean, text),
   public.billing_refund(text, text, text, bigint, text)
 to service_role;

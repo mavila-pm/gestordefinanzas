@@ -6,15 +6,31 @@
 --     now takes the per-person advisory lock FIRST (the person is read without a lock), then rows.
 -- (b) a new order superseded an order whose charge was running, and activating that charged order then failed
 --     (money taken, no Plus). The charge now starts with billing_begin_charge (pending → processing); a processing
---     order is never superseded and never expires; a new order is refused while one is in flight (15 min).
+--     order is never superseded and never expires; a new order is refused while one is in flight, at any age (a
+--     lost provider answer must never lead to paying twice: support reconciles a charge whose result never came).
 -- (c) the 1-hour expiry refused an order the provider had already charged (late webhook). It applies to pending
 --     orders only; a processing order activates at any age.
 -- (d) recurring plans are activated only with the provider's own subscription dates
 --     (billing_activate_subscription, part 3); billing_activate is for the one-time Vitalicio charge.
+-- (e) a lapsed Mensual/Anual whose renewal is still on at the provider (not cancelled there) could keep charging
+--     while a second purchase overwrote its reference (two live subscriptions, the old one's charges unattributed).
+--     While billing_renewal_open() holds, no order is created or charged and no activation overwrites the row: the
+--     server cancels the old subscription at the provider first (billing_cancel), then the purchase can start.
 --
 -- Service-only functions (EXECUTE: service_role and the owner; never anon/authenticated): billing_begin_charge,
 -- billing_fail_order, billing_activate. The server calls them through the privileged pool (lib/server-db.ts) after
 -- checking the signed-in person owns the order; the provider result is re-checked here (amount, currency, mode).
+
+-- True while a Mensual/Anual subscription can still be charged by the provider: it has a provider reference, its
+-- renewal was never cancelled and it is not closed. Pure; TS mirror: renewalStillOpen (src/domain/entitlements.ts).
+create function public.billing_renewal_open(p_billing_plan text, p_status text, p_provider_ref text, p_cancel boolean)
+returns boolean language sql immutable set search_path = '' as $$
+  select coalesce(p_billing_plan in ('monthly', 'annual') and p_provider_ref is not null and not coalesce(p_cancel, false)
+    and p_status in ('trialing', 'active', 'past_due'), false)
+$$;
+revoke execute on function public.billing_renewal_open(text, text, text, boolean) from public, anon, authenticated;
+-- billing_create_order runs as its owner app_writer (migration 047); the service functions run as the owner.
+grant execute on function public.billing_renewal_open(text, text, text, boolean) to app_writer, service_role;
 
 create or replace function public.billing_create_order(p_plan text, p_expected_minor bigint) returns uuid
 language plpgsql security definer set search_path = '' as $$
@@ -38,8 +54,13 @@ begin
        coalesce((select c.value from public.plan_config c where c.key = 'billing_grace_days'), 3), now()) <> 'free' then
     raise exception 'already_plus' using errcode = '22023';
   end if;
-  -- A charge in flight is never superseded: wait for its result (webhook or the person's own request).
-  if exists (select 1 from public.billing_orders where user_id = v_uid and status = 'processing' and processing_at > now() - interval '15 minutes') then
+  -- A lapsed Mensual/Anual still renewing at the provider: cancelled there first (the server does it), never two.
+  if public.billing_renewal_open(v_sub.billing_plan, v_sub.status, v_sub.provider_ref, v_sub.cancel_at_period_end) then
+    raise exception 'subscription_still_open' using errcode = '22023';
+  end if;
+  -- A charge in flight is never superseded and never forgotten: until its result arrives (webhook, or support
+  -- reconciles it) no second purchase starts, whatever its age.
+  if exists (select 1 from public.billing_orders where user_id = v_uid and status = 'processing') then
     raise exception 'payment_in_progress' using errcode = '22023';
   end if;
   if (select count(*) from public.billing_orders where user_id = v_uid and created_at > now() - interval '1 hour') >= 10 then
@@ -88,6 +109,9 @@ begin
        coalesce((select c.value from public.plan_config c where c.key = 'billing_grace_days'), 3), now()) <> 'free' then
     raise exception 'already_plus' using errcode = '22023';
   end if;
+  if public.billing_renewal_open(v_sub.billing_plan, v_sub.status, v_sub.provider_ref, v_sub.cancel_at_period_end) then
+    raise exception 'subscription_still_open' using errcode = '22023';
+  end if;
   if v_order.trial_days > 0 and v_sub.trial_started_at is not null then raise exception 'trial_no_longer_available' using errcode = '22023'; end if;
   update public.billing_orders set status = 'processing', provider = p_provider, livemode = p_livemode, processing_at = now() where id = p_order;
   insert into public.billing_events (provider, event_ref, source, type, object_ref, user_id, order_id, livemode, amount_minor, currency, outcome, processed_at)
@@ -97,7 +121,10 @@ begin
 end $$;
 
 -- The provider declined (a definitive answer, never a timeout): the order closes, nothing is granted. Idempotent.
--- p_charge_ref records a charge that DID go through but could not be activated (it will be refunded).
+-- p_charge_ref records what the provider created but could not be activated: a Vitalicio charge (refunded), or a
+-- subscription (stopped at the provider). The ledger says needs_refund only when money was taken: a Vitalicio charge
+-- or a subscription without trial (its plan charges at creation); a refused trial subscription charged nothing (if
+-- the provider ever charges it, that charge is flagged and refunded by billing_flag_charge).
 create function public.billing_fail_order(p_order uuid, p_code text, p_charge_ref text default null) returns text
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -116,7 +143,8 @@ begin
     provider_ref = coalesce(p_charge_ref, provider_ref) where id = p_order;
   insert into public.billing_events (provider, event_ref, source, type, object_ref, user_id, order_id, livemode, amount_minor, currency, outcome, detail, processed_at)
   values (coalesce(v_order.provider, 'none'), 'fail:' || p_order::text, 'action', 'order.failed', coalesce(p_charge_ref, p_order::text), v_user, p_order,
-    v_order.livemode, v_order.amount_minor, v_order.currency, case when p_charge_ref is null then 'processed' else 'needs_refund' end, p_code, now())
+    v_order.livemode, v_order.amount_minor, v_order.currency,
+    case when p_charge_ref is null or (v_order.plan_code <> 'lifetime' and v_order.trial_days > 0) then 'processed' else 'needs_refund' end, p_code, now())
   on conflict (provider, event_ref) do nothing;
   return 'failed';
 end $$;
@@ -158,6 +186,10 @@ begin
        v_sub.current_period_end, v_sub.cancel_at_period_end,
        coalesce((select c.value from public.plan_config c where c.key = 'billing_grace_days'), 3), now()) <> 'free' then
     raise exception 'already_plus' using errcode = '22023';
+  end if;
+  -- Never overwrite the reference of a subscription the provider can still charge (the charge is refunded instead).
+  if public.billing_renewal_open(v_sub.billing_plan, v_sub.status, v_sub.provider_ref, v_sub.cancel_at_period_end) then
+    raise exception 'subscription_still_open' using errcode = '22023';
   end if;
   update public.billing_orders set status = 'paid', provider = p_provider, provider_ref = p_ref, settled_at = now() where id = p_order;
   insert into public.subscriptions (user_id, plan, status, current_period_end, provider, provider_ref, billing_plan, livemode,

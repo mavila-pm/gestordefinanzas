@@ -71,13 +71,19 @@ describe.skipIf(!DATABASE_URL)('billing flow: one lock order, a charge in flight
     await asRole(pool, 'authenticated', USER_A, async (c) => {
       expect(await errorMessage(c, `select public.billing_create_order('monthly', public.billing_price('monthly'))`)).toBe('payment_in_progress');
     });
-    // 2 hours later (late webhook): still processing, a new order is allowed but X is NOT superseded, and X activates.
-    await pool.query(`update public.billing_orders set created_at = now() - interval '2 hours', processing_at = now() - interval '2 hours' where id = $1`, [x]);
-    const y = await orderFor(pool, USER_A, 'annual');
+    // 16 minutes and 2 hours later (late or lost webhook): still processing, never superseded, and still no second
+    // purchase — a result that never came is reconciled by support, nobody pays twice. X activates at any age.
+    for (const age of ['16 minutes', '2 hours']) {
+      await pool.query(`update public.billing_orders set created_at = now() - $2::interval, processing_at = now() - $2::interval where id = $1`, [x, age]);
+      await expect(orderFor(pool, USER_A, 'annual')).rejects.toThrow('payment_in_progress');
+    }
     expect((await pool.query('select status from public.billing_orders where id = $1', [x])).rows[0].status).toBe('processing');
     expect((await pool.query(`select public.billing_activate($1, 'culqi', 'chr_test_late', 19800, 'USD') as s`, [x])).rows[0].s).toBe('paid');
-    // The pending order Y can no longer start a charge: the person already has Plus.
-    await expect(beginCharge(pool, y, USER_A)).rejects.toThrow('already_plus');
+    await expect(orderFor(pool, USER_A, 'annual')).rejects.toThrow('already_lifetime');
+    // A pending order can no longer start a charge once the person has Plus (here granted after it was created).
+    const y = await orderFor(pool, USER_B, 'annual');
+    await pool.query(`insert into public.subscriptions (user_id, plan, status, billing_plan) values ($1, 'plus', 'active', 'lifetime')`, [USER_B]);
+    await expect(beginCharge(pool, y, USER_B)).rejects.toThrow('already_plus');
   });
 
   it('begin_charge: own order only, pending orders still expire, test mode only for demo accounts', async () => {
@@ -107,6 +113,17 @@ describe.skipIf(!DATABASE_URL)('billing flow: one lock order, a charge in flight
     await pool.query(`select public.billing_fail_order($1, 'activation_refused:already_plus', 'chr_test_paid')`, [y]);
     expect((await pool.query('select status, provider_ref from public.billing_orders where id = $1', [y])).rows[0]).toEqual({ status: 'failed', provider_ref: 'chr_test_paid' });
     expect((await pool.query(`select outcome, detail from public.billing_events where event_ref = $1`, [`fail:${y}`])).rows[0]).toEqual({ outcome: 'needs_refund', detail: 'activation_refused:already_plus' });
+    // A refused subscription: needs_refund only without a trial (its plan charged at creation); a trial charged nothing.
+    const outcome = async (id: string) => (await pool.query(`select outcome from public.billing_events where event_ref = $1`, [`fail:${id}`])).rows[0].outcome;
+    const trial = await orderFor(pool, USER_A, 'monthly');
+    await beginCharge(pool, trial, USER_A);
+    await pool.query(`select public.billing_fail_order($1, 'activation_refused:trial_mismatch', 'sxn_test_trial')`, [trial]);
+    expect(await outcome(trial)).toBe('processed');
+    const paidAtStart = await orderFor(pool, USER_A, 'annual');
+    await pool.query(`update public.billing_orders set trial_days = 0 where id = $1`, [paidAtStart]);
+    await beginCharge(pool, paidAtStart, USER_A);
+    await pool.query(`select public.billing_fail_order($1, 'activation_refused:bad_period', 'sxn_test_notrial')`, [paidAtStart]);
+    expect(await outcome(paidAtStart)).toBe('needs_refund');
     const z = await orderFor(pool, USER_B, 'lifetime');
     await pool.query(`select public.billing_activate($1, 'culqi', 'chr_test_z', 19800, 'USD')`, [z]);
     await expect(pool.query(`select public.billing_fail_order($1, 'card_declined')`, [z])).rejects.toThrow('order_already_settled');

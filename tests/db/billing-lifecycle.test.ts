@@ -111,6 +111,85 @@ describe.skipIf(!DATABASE_URL)('billing lifecycle (service only, idempotent per 
     await expect(pool.query(`select public.billing_cancel($1, 'culqi', 'sxn_test_a1')`, [USER_B])).rejects.toThrow('unknown_subscription');
   });
 
+  it('a lapsed Mensual still renewing at the provider: no new order, charge or activation until it is cancelled there', async () => {
+    await trialing();
+    // The first charge failed and the grace days passed: Free, but Culqi can still charge sxn_test_a1.
+    await pool.query(`update public.subscriptions set trial_ends_at = now() - interval '5 days' where user_id = $1`, [USER_A]);
+    expect(await q1(pool, `select public.billing_mark_past_due('culqi', 'sxn_test_a1', 'chr_test_f1', 'card_declined') as s`)).toBe('past_due');
+    await pool.query(`update public.subscriptions set current_period_end = now() - interval '4 days' where user_id = $1`, [USER_A]);
+    expect(await effectivePlan(pool, USER_A)).toBe('free');
+    for (const plan of ['lifetime', 'annual']) await expect(orderFor(pool, USER_A, plan)).rejects.toThrow('subscription_still_open');
+    // An order claimed before the lapse (a race): neither its charge nor its activation may replace the reference.
+    await pool.query(`update public.subscriptions set cancel_at_period_end = true where user_id = $1`, [USER_A]);
+    const life = await orderFor(pool, USER_A, 'lifetime');
+    await beginCharge(pool, life, USER_A);
+    await pool.query(`update public.subscriptions set cancel_at_period_end = false where user_id = $1`, [USER_A]);
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'chr_test_life', 19800, 'USD')`, [life])).rejects.toThrow('subscription_still_open');
+    // (The server then refunds that charge and closes the order.)
+    await pool.query(`select public.billing_fail_order($1, 'activation_refused:subscription_still_open', 'chr_test_life')`, [life]);
+    await expect(orderFor(pool, USER_A, 'annual')).rejects.toThrow('subscription_still_open');
+    expect((await sub(pool, USER_A)).provider_ref).toBe('sxn_test_a1');
+    // Cancelled at the provider first ("Cancelar renovación"): the purchase goes through and replaces the reference.
+    await pool.query(`select public.billing_cancel($1, 'culqi', 'sxn_test_a1')`, [USER_A]);
+    const again = await orderFor(pool, USER_A, 'lifetime');
+    await beginCharge(pool, again, USER_A);
+    expect(await q1(pool, `select public.billing_activate($1, 'culqi', 'chr_test_life2', 19800, 'USD') as s`, [again])).toBe('paid');
+    expect(await sub(pool, USER_A)).toMatchObject({ billing_plan: 'lifetime', provider_ref: 'chr_test_life2' });
+  });
+
+  it('activate_subscription never overwrites a subscription the provider can still charge', async () => {
+    await trialing();
+    await pool.query(`update public.subscriptions set trial_ends_at = now() - interval '5 days', current_period_end = now() - interval '5 days' where user_id = $1`, [USER_A]);
+    expect(await effectivePlan(pool, USER_A)).toBe('free');
+    // Claimed while the old renewal was (wrongly) marked cancelled, activated once it is open again.
+    await pool.query(`update public.subscriptions set cancel_at_period_end = true where user_id = $1`, [USER_A]);
+    const o = await orderFor(pool, USER_A, 'monthly');
+    await beginCharge(pool, o, USER_A);
+    await pool.query(`update public.subscriptions set cancel_at_period_end = false where user_id = $1`, [USER_A]);
+    await expect(activateSub(pool, o, { sub: 'sxn_test_a2', trialEnd: null, periodEnd: days(30) })).rejects.toThrow('subscription_still_open');
+    expect((await sub(pool, USER_A)).provider_ref).toBe('sxn_test_a1');
+  });
+
+  it('flag_charge: a charge of a subscription no row holds is recorded once; ours only when an order or a cancel links it', async () => {
+    const flag = async (charge: string, subRef: string, amount = 400) =>
+      (await pool.query(`select * from public.billing_flag_charge('culqi', $1, $2, $3, 'USD', true, 'unknown_subscription')`, [charge, subRef, amount])).rows[0];
+    // Held by a row: it is a period charge, never flagged.
+    const first = await trialing();
+    await expect(flag('chr_test_h1', 'sxn_test_a1')).rejects.toThrow('subscription_known');
+    // Replaced after its cancellation (Vitalicio bought later): ours → refunded by the server, recorded once.
+    await pool.query(`update public.subscriptions set trial_ends_at = now() - interval '5 days' where user_id = $1`, [USER_A]);
+    await pool.query(`select public.billing_cancel($1, 'culqi', 'sxn_test_a1')`, [USER_A]);
+    const life = await orderFor(pool, USER_A, 'lifetime');
+    await beginCharge(pool, life, USER_A);
+    await pool.query(`select public.billing_activate($1, 'culqi', 'chr_test_life', 19800, 'USD')`, [life]);
+    expect(await flag('chr_test_old1', 'sxn_test_a1')).toEqual({ state: 'flagged', ours: true });
+    expect(await flag('chr_test_old1', 'sxn_test_a1')).toEqual({ state: 'duplicate', ours: true });
+    // A refused subscription (its order failed with it): ours, linked to the order and the person.
+    const b = await orderFor(pool, USER_B, 'annual');
+    await beginCharge(pool, b, USER_B);
+    await pool.query(`select public.billing_fail_order($1, 'activation_refused:bad_period', 'sxn_test_refused')`, [b]);
+    expect(await flag('chr_test_ref1', 'sxn_test_refused', 5900)).toEqual({ state: 'flagged', ours: true });
+    // Nothing links it to Velsuno: flagged for the owner, never refunded automatically.
+    expect(await flag('chr_test_unk1', 'sxn_test_nobody')).toEqual({ state: 'flagged', ours: false });
+    const rows = (await pool.query(`select event_ref, outcome, detail, user_id, order_id from public.billing_events where type = 'charge.unmatched' order by id`)).rows;
+    expect(rows).toEqual([
+      { event_ref: 'orphan:chr_test_old1', outcome: 'needs_refund', detail: 'unknown_subscription:ours', user_id: USER_A, order_id: first },
+      { event_ref: 'orphan:chr_test_ref1', outcome: 'needs_refund', detail: 'unknown_subscription:ours', user_id: USER_B, order_id: b },
+      { event_ref: 'orphan:chr_test_unk1', outcome: 'needs_refund', detail: 'unknown_subscription:review', user_id: null, order_id: null },
+    ]);
+    // Its refund is matched (never more than the charge, never another currency).
+    await expect(pool.query(`select public.billing_refund('culqi', 'chr_test_ref1', 'ref_test_x1', 6000, 'USD')`)).rejects.toThrow('amount_mismatch');
+    await expect(pool.query(`select public.billing_refund('culqi', 'chr_test_ref1', 'ref_test_x1', 5900, 'PEN')`)).rejects.toThrow('amount_mismatch');
+    expect(await q1(pool, `select public.billing_refund('culqi', 'chr_test_ref1', 'ref_test_r1', 5900, 'USD') as s`)).toBe('recorded');
+    expect((await pool.query(`select detail, user_id from public.billing_events where event_ref = 'refund:ref_test_r1'`)).rows[0]).toEqual({ detail: 'flagged_charge', user_id: USER_B });
+    await expect(flag('chr bad', 'sxn_test_x')).rejects.toThrow('bad_reference');
+    await expect(flag('chr_test_z', 'sxn_test_x', 0)).rejects.toThrow('bad_reference');
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      expect(await errorCode(c, `select * from public.billing_flag_charge('culqi', 'chr_x1', 'sxn_x1', 400, 'USD', true, 'x_code')`)).toBe('42501');
+      expect(await errorCode(c, `select public.billing_renewal_open('monthly', 'active', 'sxn_x1', false)`)).toBe('42501');
+    });
+  });
+
   it('cancelling a card-backed trial: Plus until the trial ends, then Free with no charge', async () => {
     await trialing();
     const until = (await pool.query(`select public.billing_cancel($1, 'culqi', 'sxn_test_a1') as d`, [USER_A])).rows[0].d as Date;
