@@ -16,6 +16,7 @@ import { preferredName } from '../src/domain/profile';
 import { loadProfile } from './queries';
 import { loadPreferences } from './preferences';
 import { infer, STOP_TEXT } from './ai';
+import { aiAvailable } from '../src/ai/config';
 import { logLearning } from './learning';
 import { isReplay } from './idempotency';
 import { applyPlan } from './plan-applications';
@@ -346,11 +347,12 @@ export async function clearVels(supabase: SupabaseClient) {
 }
 
 /** Opening Vels (bubble or page): recent conversation + up to 3 openers from the real state and the current screen. */
-export async function velsOpen(supabase: SupabaseClient, path: string): Promise<{ messages: Awaited<ReturnType<typeof loadMessages>>; suggestions: string[]; greeting: string }> {
+export async function velsOpen(supabase: SupabaseClient, path: string): Promise<{ messages: Awaited<ReturnType<typeof loadMessages>>; suggestions: string[]; greeting: string; camera: boolean }> {
   const [messages, v, profile, prefs] = await Promise.all([loadMessages(supabase, 'assistant', KEEP), view(supabase), loadProfile(supabase), loadPreferences(supabase)]);
   // Shown only when the thread is empty (start of a conversation); the opener varies by day, not by reload.
   // Proactive suggestions (Ajustes → Vels): at most one useful line before the question, never a list.
   const hello = greeting(preferredName(profile), Number(v.today.slice(8, 10)));
   const note = prefs.velsProactive ? proactiveNote(v) : null;
-  return { messages, suggestions: velsSuggestions(v, path), greeting: note ? hello.replace(/ (¿[^?]*\?)$/, (_, q: string) => ` ${note} ${q}`) : hello };
+  // The camera needs Gemini: without it the control is not shown (it could only answer "todavía no está activa").
+  return { messages, suggestions: velsSuggestions(v, path), greeting: note ? hello.replace(/ (¿[^?]*\?)$/, (_, q: string) => ` ${note} ${q}`) : hello, camera: aiAvailable() };
 }

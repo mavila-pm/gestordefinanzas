@@ -357,3 +357,24 @@ describe('without Gemini, out of quota, or with Gemini failing: honest copy, nev
     expect(gemini.calls).toBe(0);
   });
 });
+
+describe('camera in Vels (panel and page)', () => {
+  it('is offered only when Gemini (or the E2E fixture) is configured: never a control that can only say "not active"', async () => {
+    const { velsOpen } = await import('../lib/vels');
+    const saved = { key: process.env.GEMINI_API_KEY, fixture: process.env.AI_FIXTURE, vercel: process.env.VERCEL_ENV };
+    try {
+      delete process.env.GEMINI_API_KEY; delete process.env.AI_FIXTURE; delete process.env.VERCEL_ENV;
+      expect((await velsOpen(fakeDb(), '/app')).camera).toBe(false);
+      process.env.AI_FIXTURE = '1';
+      expect((await velsOpen(fakeDb(), '/app')).camera).toBe(true);
+      process.env.VERCEL_ENV = 'preview'; // the fixture never runs on a deployment
+      expect((await velsOpen(fakeDb(), '/app')).camera).toBe(false);
+      process.env.GEMINI_API_KEY = 'k';
+      expect((await velsOpen(fakeDb(), '/app')).camera).toBe(true);
+    } finally {
+      for (const [k, v] of [['GEMINI_API_KEY', saved.key], ['AI_FIXTURE', saved.fixture], ['VERCEL_ENV', saved.vercel]] as const) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
+    }
+  });
+});
