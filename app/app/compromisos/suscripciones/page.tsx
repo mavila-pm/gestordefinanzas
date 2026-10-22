@@ -35,7 +35,7 @@ export default async function Subscriptions({ searchParams }: { searchParams: Pr
   const today = limaToday();
   const { subs, settlements, instruments } = data;
   const settledBy = closedPeriods(settlements);
-  const live =subs.filter((s) => subscriptionState(s, today) !== 'ended');
+  const live = subs.filter((s) => subscriptionState(s, today) !== 'ended');
   const ended = subs.filter((s) => subscriptionState(s, today) === 'ended');
   const sorted = live.map((s) => ({ s, next: nextCharge(s, today, settledBy.get(s.id) ?? new Set()) }))
     .sort((a, b) => (a.next?.date ?? '9999').localeCompare(b.next?.date ?? '9999') || a.s.name.localeCompare(b.s.name));

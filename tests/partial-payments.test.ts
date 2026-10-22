@@ -152,6 +152,16 @@ describe('partial payments in the plan (ADR-0017): planned ≠ paid, remaining =
     expect(subscriptionTotals([sub], [fact('partial', 2000)], '2026-10-01')[0]).toMatchObject({ paidMonthMinor: 2000, paidMonthCount: 1, next30Count: 1 });
     expect(subscriptionTotals([sub], [fact('skipped', null)], '2026-10-01')[0]).toMatchObject({ paidMonthMinor: 0, next30Count: 0 });
   });
+
+  it('review m4: a partly paid charge adds only what is left to the next 30 days; two abonos of one charge are one payment', () => {
+    const sub: SubscriptionRow = { ...ob({ id: 's', name: 'Netflix', kind: 'subscription', amountMinor: 4490, dueDay: 3 }), active: true, provider: 'netflix', cardId: null, accountId: null };
+    const fact = (amountMinor: number, currency: 'PEN' | 'USD' = 'PEN') => ({ obligationId: 's', period: '2026-10', status: 'partial' as const, transactionId: 't', amountMinor, occurredOn: '2026-10-01', currency, merchant: null });
+    expect(subscriptionTotals([sub], [fact(2000), fact(1000)], '2026-10-01')[0]).toMatchObject({ next30Minor: 1490, next30Count: 1, paidMonthMinor: 3000, paidMonthCount: 1 });
+    // PEN ≠ USD: a USD movement never lowers a PEN charge.
+    expect(subscriptionTotals([sub], [fact(2000, 'USD')], '2026-10-01')[0]).toMatchObject({ next30Minor: 4490 });
+    // An estimate already covered by abonos stays "por confirmar" (unknown ≠ 0), never a smaller number.
+    expect(subscriptionTotals([{ ...sub, amountStatus: 'estimated' }], [fact(4490)], '2026-10-01')[0]).toMatchObject({ next30Minor: 0, next30Unknown: 1, next30Count: 1 });
+  });
 });
 
 describe('the write decision (server-side, from real amounts): "Pago completo" vs "Fue un abono"', () => {

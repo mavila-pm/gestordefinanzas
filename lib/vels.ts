@@ -59,10 +59,11 @@ async function view(supabase: SupabaseClient): Promise<View> {
     timeline: planTimeline(d, 14),
     inputs: Object.fromEntries(currencies.map((c) => [c, planInputFor(d, c)])),
     subscriptions: (subs?.subs ?? []).filter((x) => subscriptionState(x, d.today) !== 'ended').map((x) => {
-      // Real movements only (abonos included); skipped never counts as paid.
+      // Real movements only (abonos included); skipped never counts as paid. Charges = distinct periods (abonos of one
+      // charge are one charge).
       const paid = (subs?.settlements ?? []).filter((p) => p.obligationId === x.id && p.status !== 'skipped' && p.amountMinor !== null && p.currency === x.currency && p.occurredOn?.startsWith(year));
       return { id: x.id, name: x.name, currency: x.currency, amountMinor: x.amountMinor, monthlyMinor: monthlyEquivalentMinor(x),
-        nextDate: nextCharge(x, d.today, settledBy.get(x.id) ?? new Set())?.date ?? null, paidYearMinor: paid.reduce((n, p) => n + p.amountMinor!, 0), paidYearCount: paid.length };
+        nextDate: nextCharge(x, d.today, settledBy.get(x.id) ?? new Set())?.date ?? null, paidYearMinor: paid.reduce((n, p) => n + p.amountMinor!, 0), paidYearCount: new Set(paid.map((p) => p.period)).size };
     }),
     reserves: d.reserves,
     debtLinks: d.debts.map((x) => ({ ...x, obligationId: d.obligationRows.find((o) => o.active && o.kind === 'card' && o.currency === x.currency && fold(o.name) === fold(x.name))?.id ?? null })),

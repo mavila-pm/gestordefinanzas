@@ -1,6 +1,6 @@
 import { addDays } from '../domain/dates';
 import type { Currency } from '../domain/money';
-import { occurrencesBetween, type Obligation } from './planning';
+import { occurrencesBetween, remainingMinor, type Obligation } from './planning';
 
 /**
  * Mis suscripciones. Pure. A subscription is an obligation with kind 'subscription': its future charges come from the
@@ -89,6 +89,14 @@ export function subscriptionTotals(subs: readonly SubscriptionRow[], settlements
   const out = new Map<Currency, SubscriptionTotals>();
   const t = (c: Currency) => out.get(c) ?? out.set(c, { currency: c, active: 0, next30Minor: 0, next30Count: 0, next30Unknown: 0, monthlyMinor: 0, monthlyUnknown: 0, paidMonthMinor: 0, paidMonthCount: 0 }).get(c)!;
   const settledBy = closedPeriods(settlements);
+  const ids = new Map(subs.map((s) => [s.id, s.currency]));
+  // Abonos of still-open periods (real money in the subscription's own currency): only what is left is still to come.
+  const abonos = new Map<string, number>();
+  for (const x of settlements) {
+    if (x.status !== 'partial' || x.amountMinor === null || (x.currency ?? ids.get(x.obligationId)) !== ids.get(x.obligationId)) continue;
+    const key = `${x.obligationId}|${x.period}`;
+    abonos.set(key, (abonos.get(key) ?? 0) + x.amountMinor);
+  }
   for (const s of subs) {
     const state = subscriptionState(s, today);
     if (state === 'ended') continue;
@@ -100,18 +108,23 @@ export function subscriptionTotals(subs: readonly SubscriptionRow[], settlements
     const settled = settledBy.get(s.id) ?? new Set<string>();
     for (const o of occurrencesBetween(s, today, horizon)) {
       if (o.dueDate === null || o.dueDate < today || o.dueDate > horizon || settled.has(o.period) || o.period < s.since.slice(0, 7)) continue;
+      // Planned ≠ paid: a partly paid charge adds what is left; an estimate already covered stays "por confirmar".
+      const left = remainingMinor(o.amountMinor, abonos.get(`${s.id}|${o.period}`) ?? 0, o.amountStatus);
+      if (left === 0) continue;
       row.next30Count++;
-      if (o.amountMinor === null) row.next30Unknown++; else row.next30Minor += o.amountMinor;
+      if (left === null) row.next30Unknown++; else row.next30Minor += left;
     }
   }
-  const ids = new Map(subs.map((s) => [s.id, s.currency]));
+  const counted = new Set<string>();
   for (const x of settlements) {
-    // Every real movement counts as paid this month, abonos included (skipped never does).
+    // Every real movement counts as paid this month, abonos included (skipped never does); a charge paid in several
+    // abonos is one payment.
     if (x.status === 'skipped' || x.amountMinor === null || !x.occurredOn?.startsWith(month)) continue;
     const cur = x.currency ?? ids.get(x.obligationId);
     if (!cur || !ids.has(x.obligationId) || ids.get(x.obligationId) !== cur) continue;
     const row = t(cur);
-    row.paidMonthMinor += x.amountMinor; row.paidMonthCount++;
+    row.paidMonthMinor += x.amountMinor;
+    if (!counted.has(`${x.obligationId}|${x.period}`)) { counted.add(`${x.obligationId}|${x.period}`); row.paidMonthCount++; }
   }
   return [...out.values()].sort((a, b) => (a.currency === 'PEN' ? -1 : b.currency === 'PEN' ? 1 : 0));
 }
