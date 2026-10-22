@@ -8,10 +8,56 @@ export interface SubscriptionRow {
   trial_started_at: string | null;
   trial_ends_at: string | null;
   current_period_end: string | null;
+  /** Paid plan behind the row (null: card-less trial or Plus granted by hand). */
+  billing_plan?: 'monthly' | 'annual' | 'lifetime' | null;
+  /** "Cancelar renovación": Plus until the end of the paid period, then Free. */
+  cancel_at_period_end?: boolean | null;
+}
+
+/** Columns every reader of the entitlement rule must select (keep in sync with billing_plan_state). */
+export const SUBSCRIPTION_COLUMNS = 'plan,status,trial_started_at,trial_ends_at,current_period_end,billing_plan,cancel_at_period_end';
+
+export type PlanState = 'free' | 'trial' | 'plus';
+
+/**
+ * THE entitlement rule (ADR-0018). Mirror of SQL public.billing_plan_state (migration 20261020000054), checked row
+ * by row by tests/db/entitlements-parity.test.ts — change both or neither.
+ * - Any trial: Plus ('trial') until its exact end. A card-backed trial whose first charge is being confirmed keeps
+ *   Plus for `graceDays`, never after a cancellation.
+ * - Vitalicio: Plus with no end (a full refund sets status 'canceled').
+ * - Mensual/Anual (active or past_due): Plus until the paid period ends, plus `graceDays` while a renewal is
+ *   expected; cancelled at period end: exactly until the period ends. No period end → Free (fail closed).
+ * - Plus granted by hand (no billing plan): until its end, if it has one.
+ * Payment state never deletes data: it only decides what the plan allows.
+ */
+export function planState(sub: Pick<SubscriptionRow, 'plan' | 'status' | 'trial_ends_at' | 'current_period_end' | 'billing_plan' | 'cancel_at_period_end'> | null, graceDays: number, now: Date): PlanState {
+  if (!sub || !sub.status) return 'free';
+  const t = now.getTime();
+  const at = (v: string | null | undefined) => (v ? Date.parse(v) : NaN);
+  const grace = Math.max(0, Number.isFinite(graceDays) ? Math.trunc(graceDays) : 0) * 86_400_000;
+  const recurring = sub.billing_plan === 'monthly' || sub.billing_plan === 'annual';
+  const cancel = sub.cancel_at_period_end === true;
+  if (sub.status === 'trialing') {
+    const end = at(sub.trial_ends_at);
+    if (end > t) return 'trial';
+    return recurring && !cancel && end + grace > t ? 'plus' : 'free';
+  }
+  if (sub.plan !== 'plus') return 'free';
+  const periodEnd = at(sub.current_period_end);
+  if (sub.status === 'active' && sub.billing_plan === 'lifetime') return 'plus';
+  if ((sub.status === 'active' || sub.status === 'past_due') && recurring) {
+    if (!sub.current_period_end) return 'free';
+    return periodEnd + (cancel ? 0 : grace) > t ? 'plus' : 'free';
+  }
+  if (sub.status === 'active' && !sub.billing_plan) return !sub.current_period_end || periodEnd > t ? 'plus' : 'free';
+  if (sub.status === 'past_due' && !sub.billing_plan) return periodEnd > t ? 'plus' : 'free';
+  return 'free';
 }
 
 export interface PlanConfig {
   trial_days: number;
+  /** Days with Plus after a paid period ends while its renewal is still being confirmed (plan_config). */
+  billing_grace_days: number;
   free_auto_movements_per_month: number;
   free_history_months: number;
   free_institutions: number;
@@ -19,7 +65,7 @@ export interface PlanConfig {
 }
 
 export const DEFAULT_PLAN_CONFIG: PlanConfig = {
-  trial_days: 14, free_auto_movements_per_month: 50, free_history_months: 3, free_institutions: 1, plus_institutions: 3,
+  trial_days: 14, billing_grace_days: 3, free_auto_movements_per_month: 50, free_history_months: 3, free_institutions: 1, plus_institutions: 3,
 };
 
 export interface Entitlements {
@@ -32,8 +78,9 @@ export interface Entitlements {
 }
 
 export function entitlementsFor(sub: SubscriptionRow | null, cfg: PlanConfig, now: Date): Entitlements {
-  const trialing = sub?.status === 'trialing' && !!sub.trial_ends_at && Date.parse(sub.trial_ends_at) > now.getTime();
-  const paid = sub?.plan === 'plus' && (sub.status === 'active' || (sub.status === 'past_due' && !!sub.current_period_end && Date.parse(sub.current_period_end) > now.getTime()));
+  const state = planState(sub, cfg.billing_grace_days, now);
+  const trialing = state === 'trial';
+  const paid = state === 'plus';
   const plus = trialing || paid;
   return {
     plan: plus ? 'plus' : 'free',

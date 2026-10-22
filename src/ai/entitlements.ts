@@ -3,6 +3,8 @@
  * Mirrors ai_effective_plan / ai_reserve (the database is the authority that enforces; this only displays).
  * Limits come from plan_config (server-side, PROPUESTO/configurable), never from constants in the UI.
  */
+import { DEFAULT_PLAN_CONFIG, planState } from '../domain/entitlements';
+
 export type AIPlan = 'free' | 'trial' | 'plus';
 export interface AIUsageRow { bucket: string; weighted_tokens: number | string; camera_reads: number }
 export interface Allowance {
@@ -14,12 +16,10 @@ export interface Allowance {
   reached: boolean;
 }
 
-export function aiPlanFrom(sub: { plan: string; status: string; trial_ends_at: string | null; current_period_end: string | null } | null, simulated: AIPlan | null, now: Date): AIPlan {
+/** Demo simulation first, then THE entitlement rule (planState ≡ SQL billing_plan_state, as ai_effective_plan). */
+export function aiPlanFrom(sub: Parameters<typeof planState>[0], simulated: AIPlan | null, now: Date, graceDays = DEFAULT_PLAN_CONFIG.billing_grace_days): AIPlan {
   if (simulated) return simulated;
-  if (!sub) return 'free';
-  if (sub.status === 'trialing' && sub.trial_ends_at && Date.parse(sub.trial_ends_at) > now.getTime()) return 'trial';
-  if (sub.plan === 'plus' && (sub.status === 'active' || (sub.status === 'past_due' && !!sub.current_period_end && Date.parse(sub.current_period_end) > now.getTime()))) return 'plus';
-  return 'free';
+  return planState(sub, graceDays, now);
 }
 
 export const limaMonthKey = (now: Date) => `m:${new Date(now.getTime() - 5 * 3600_000).toISOString().slice(0, 7)}`;
