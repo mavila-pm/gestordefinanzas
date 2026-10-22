@@ -13,7 +13,7 @@ import { formatLimaDateTime } from '../../../src/web/transaction-input';
 import { deactivateCommitmentAction, debtPaymentAction, saveDebtAction, saveFixedExpenseAction } from '../actions';
 import { removeObligationAction, saveObligationAction, skipOccurrenceAction, unlinkSettlementAction } from '../plan/actions';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
-import { occurrenceState, openOccurrence } from '../../../src/engine/planning';
+import { occurrenceState, openOccurrence, remainingMinor } from '../../../src/engine/planning';
 import { addDays } from '../../../src/domain/dates';
 import { ObligationFields } from '../../../components/obligation-fields';
 import { loadPlanningData } from '../../../lib/planning';
@@ -90,15 +90,21 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
               const state = stateOf(c);
               const undo = c.kind === 'fixed' ? settlementId.get(`${c.id}:${period}`) : undefined;
               const done = state === 'paid' || state === 'skipped';
+              // Abonos (real movements) vs the plan: "Pagaste S/ 500 de S/ 1,500" and what is still owed.
+              const abono = state === 'partial' ? plan.partialPaid.get(c.id)?.get(period) ?? 0 : 0;
+              const left = state === 'partial' ? remainingMinor(c.amountMinor, abono) : null;
+              const m = (v: number) => formatMoney({ amountMinor: v, currency: c.currency });
               return (
                 <li key={`${c.kind}-${c.id}-${c.dueDate}`} data-state={state}>
                   <span className="next-day">{shortDate(c.dueDate)}</span>
                   <span className="setting-text"><span>{c.name}</span>
+                    {state === 'partial' && abono > 0 && <small className="muted">Pagaste {m(abono)}{c.amountMinor !== null ? ` de ${m(c.amountMinor)}` : ''}</small>}
                     {!done && (c.daysUntil < 0 || c.daysUntil <= 3) && <small className={c.daysUntil < 0 ? 'error' : 'warn'}>
                       {c.daysUntil < 0 ? 'Venció' : c.daysUntil === 0 ? 'Vence hoy' : `Vence en ${plural(c.daysUntil, 'día', 'días')}`}</small>}</span>
                   <span className="actions" style={{ gap: 8 }}>
                     {state === 'paid' && <span className="tag positive-tag">Pagado</span>}
                     {state === 'skipped' && <span className="tag">Omitido</span>}
+                    {state === 'partial' && <span className="tag review">{left === null ? 'Falta el total' : `Faltan ${m(left)}`}</span>}
                     {undo && (
                       <ActionForm action={unlinkSettlementAction} className="inline" label={`Deshacer ${c.name}`}>
                         <input type="hidden" name="id" value={undo} />
@@ -142,7 +148,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                           <button type="submit" className="wide">Guardar</button>
                         </ActionForm>
                         <small className="muted">Los cambios aplican desde ahora. Lo ya pagado no cambia.</small>
-                        {open && (
+                        {open && !plan.partialPaid.get(f.id)?.has(open.period) && (
                           <ActionForm action={skipOccurrenceAction} className="inline" label={`Omitir ${f.name} ${open.period}`} closeOnSuccess>
                             <input type="hidden" name="obligationId" value={f.id} /><input type="hidden" name="period" value={open.period} />
                             <button type="submit" className="quiet">No lo pago {open.dueDate ? `el ${shortDate(open.dueDate)}` : 'este mes'}</button>
@@ -152,7 +158,8 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                         {past.length > 0 && (
                           <details><summary>Historial</summary>
                             <ul className="list" data-testid="obligation-history">{past.map((h) => (
-                              <li key={h.id}><span>{h.period}</span><span className="amount">{h.status === 'skipped' ? 'Omitido' : h.amountMinor === null ? <span className="muted">Sin monto</span> : formatMoney({ amountMinor: h.amountMinor, currency: f.currency })}</span></li>
+                              <li key={h.id}><span>{h.period}{h.status === 'partial' ? <small className="muted"> · abono</small> : null}</span>
+                                <span className="amount">{h.status === 'skipped' ? 'Omitido' : h.amountMinor === null ? <span className="muted">Sin monto</span> : formatMoney({ amountMinor: h.amountMinor, currency: f.currency })}</span></li>
                             ))}</ul>
                           </details>
                         )}

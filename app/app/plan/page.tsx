@@ -38,13 +38,18 @@ function Decide({ kind, subject, value, decision, label }: { kind: string; subje
   );
 }
 
+/** "Pagaste S/ 500.00 de S/ 1,500.00 · faltan S/ 1,000.00": real abonos vs the plan (ADR-0017); unknown price said as such. */
+const abonoNote = (l: PlanLine, c: Currency) => !l.paidMinor ? null
+  : l.plannedMinor == null || l.amountMinor === null ? `Pagaste ${formatMoney({ amountMinor: l.paidMinor, currency: c })} · falta confirmar el total`
+    : `Pagaste ${formatMoney({ amountMinor: l.paidMinor, currency: c })} de ${formatMoney({ amountMinor: l.plannedMinor, currency: c })} · faltan ${formatMoney({ amountMinor: l.amountMinor, currency: c })}`;
+
 function LineRow({ l, c }: { l: PlanLine; c: Currency }) {
   const when = l.date ? (l.dateMax ? `${shortDate(l.date)}–${shortDate(l.dateMax)} aprox.` : shortDate(l.date)) : null;
   return (
     <li>
       <span className="setting-text">
         <span>{l.label}</span>
-        <small className={l.kind === 'overdue' ? 'error' : 'muted'}>{[l.kind === 'overdue' ? 'Venció' : when ? `Pagar el ${when}` : null, l.note].filter(Boolean).join(' · ')}</small>
+        <small className={l.kind === 'overdue' ? 'error' : 'muted'}>{[l.kind === 'overdue' ? 'Venció' : when ? `Pagar el ${when}` : null, abonoNote(l, c), l.note].filter(Boolean).join(' · ')}</small>
       </span>
       <span className="amount">{l.amountMinor === null ? <span className="muted">por confirmar</span> : <>−<Money v={l.amountMinor} c={c} /></>}</span>
     </li>
@@ -191,16 +196,28 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           {d.suggestions.slice(0, 3).map((s) => {
             const t = d.transactionsById.get(s.transactionId);
             const o = obligationsById.get(s.obligationId);
+            const cur = o?.currency ?? 'PEN';
+            const settleForm = (mode: 'full' | 'partial', label: string, text: string, cls: string) => (
+              <ActionForm action={markObligationPaidAction} className="inline" label={label}>
+                <input type="hidden" name="obligationId" value={s.obligationId} />
+                <input type="hidden" name="transactionId" value={s.transactionId} />
+                <input type="hidden" name="period" value={s.period} />
+                <input type="hidden" name="mode" value={mode} />
+                <button type="submit" className={cls}>{text}</button>
+              </ActionForm>
+            );
             return (
-              <div key={s.transactionId} className="source row">
-                <span className="setting-text"><span>{t?.merchant ?? 'Movimiento'} · <Money v={t?.amountMinor ?? null} c={o?.currency ?? 'PEN'} /> · {t ? shortDate(t.occurredOn) : ''}</span>
-                  <small className="muted">Parece el pago de {s.name}.</small></span>
-                <ActionForm action={markObligationPaidAction} className="inline" label={`Confirmar pago de ${s.name}`}>
-                  <input type="hidden" name="obligationId" value={s.obligationId} />
-                  <input type="hidden" name="transactionId" value={s.transactionId} />
-                  <input type="hidden" name="period" value={s.period} />
-                  <button type="submit" className="quiet">Sí, es ese</button>
-                </ActionForm>
+              <div key={s.transactionId} className="source row" data-testid="match-suggestion">
+                <span className="setting-text"><span>{t?.merchant ?? 'Movimiento'} · <Money v={t?.amountMinor ?? null} c={cur} /> · {t ? shortDate(t.occurredOn) : ''}</span>
+                  <small className="muted">{s.partial
+                    ? <>Parece un pago de {s.name} ({d.partialPaid.get(s.obligationId)?.has(s.period) ? 'faltan ' : ''}<Money v={s.remainingMinor ?? null} c={cur} />). ¿Fue el pago completo o un abono?</>
+                    : <>Parece el pago de {s.name}.</>}</small></span>
+                {s.partial
+                  ? <div className="actions">
+                      {settleForm('partial', `Registrar abono de ${s.name}`, 'Fue un abono', 'quiet')}
+                      {settleForm('full', `Confirmar pago de ${s.name}`, 'Pago completo', 'link small-link')}
+                    </div>
+                  : settleForm('full', `Confirmar pago de ${s.name}`, 'Sí, es ese', 'quiet')}
               </div>
             );
           })}

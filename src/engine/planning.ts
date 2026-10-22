@@ -145,6 +145,16 @@ export function occurrenceState(rows: readonly SettlementRow[], obligationId: st
   return plannedMinor !== null && paid >= plannedMinor ? 'paid' : 'partial';
 }
 
+/**
+ * The status a new settlement is stored with (decided on the server from REAL amounts, never from a form amount):
+ * "Pago completo" closes the occurrence whatever the amount (the person says it is done); "Fue un abono" stays
+ * partial until the real abonos plus this movement reach a known planned amount, which then closes it.
+ */
+export function settlementStatus(mode: 'full' | 'partial', plannedMinor: number | null, priorAbonosMinor: number, txMinor: number): 'paid' | 'partial' {
+  if (mode === 'full') return 'paid';
+  return plannedMinor !== null && priorAbonosMinor + txMinor >= plannedMinor ? 'paid' : 'partial';
+}
+
 // ── Incomes ───────────────────────────────────────────────────────────────────────────────────────────────
 export function incomeOccurrencesBetween(i: ExpectedIncome, from: string, to: string): IncomeOccurrence[] {
   const out: IncomeOccurrence[] = [];

@@ -14,6 +14,7 @@ import { createSupabaseServerClient, authUser } from '../../../lib/supabase/serv
 import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSavingsGoalForm, parseSettingsForm } from '../../../src/web/planning-input';
 import { isUuid } from '../../../src/web/transaction-input';
 import { settleIncome, settleObligation, type SettleError } from '../../../lib/settlements';
+import { formatMoney } from '../../../src/domain/money';
 import type { ActionState } from '../actions';
 
 const SAVE_ERROR = 'No se guardó. Intenta de nuevo.';
@@ -156,8 +157,9 @@ export async function saveSettingsAction(_p: ActionState, form: FormData): Promi
 export async function markObligationPaidAction(_p: ActionState, form: FormData): Promise<ActionState> {
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
-  const r = await settleObligation(supabase, user.id, { obligationId: form.get('obligationId'), transactionId: form.get('transactionId'), period: form.get('period') });
+  const r = await settleObligation(supabase, user.id, { obligationId: form.get('obligationId'), transactionId: form.get('transactionId'), period: form.get('period'), mode: form.get('mode') });
   if (!r.ok) return { error: SETTLE_ERROR[r.error] };
+  if (r.status === 'partial') return done(r.remainingMinor === null ? 'Abono registrado. Falta confirmar el monto total.' : `Abono registrado. Faltan ${formatMoney({ amountMinor: r.remainingMinor, currency: r.currency })}.`);
   return done('Pago confirmado. El siguiente ya está en tus próximos pagos.');
 }
 
@@ -267,6 +269,9 @@ export async function skipOccurrenceAction(_p: ActionState, form: FormData): Pro
   if (!isUuid(obligationId) || typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
+  // A month with an abono was partly paid: "Omitido" would hide real money. Undo the abono first, or complete it.
+  const { data: abonos } = await supabase.from('plan_settlements').select('id').eq('fixed_expense_id', obligationId).eq('period', period).eq('status', 'partial').limit(1);
+  if (abonos?.length) return { error: 'Ese mes ya tiene un abono. Deshazlo o completa el pago.' };
   const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, fixed_expense_id: obligationId, period, status: 'skipped' });
   if (error) return { error: error.code === '23505' ? 'Ese mes ya estaba resuelto.' : SAVE_ERROR };
   await logLearning(supabase, user.id, 'settlement', 'dismissed', obligationId, { period, status: 'skipped' });

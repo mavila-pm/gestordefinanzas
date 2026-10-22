@@ -228,7 +228,8 @@ export async function velsAct(supabase: SupabaseClient, userId: string, act: str
   }
   if (act === 'mark_paid') {
     // Fields come from the button's JSON (client): the shared settle path re-checks everything (ADR-0017).
-    const r = await settleObligation(supabase, userId, { obligationId: fields.obligationId, transactionId: fields.transactionId, period: fields.period });
+    const r = await settleObligation(supabase, userId, { obligationId: fields.obligationId, transactionId: fields.transactionId, period: fields.period, mode: fields.mode });
+    if (r.ok && r.status === 'partial') return r.remainingMinor === null ? 'Listo, registré el abono. Falta confirmar el monto total.' : `Listo, registré el abono. Te faltan ${money(r.remainingMinor, r.currency)}.`;
     if (r.ok) return 'Listo, marcado como pagado.';
     return r.error === 'not_payment' ? 'Ese movimiento no es un pago confirmado en la misma moneda.' : r.error === 'duplicate' ? 'Ya estaba enlazado.' : 'No pude marcarlo.';
   }

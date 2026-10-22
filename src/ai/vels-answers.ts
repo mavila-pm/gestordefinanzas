@@ -161,7 +161,9 @@ export function answer(intent: Intent, v: View): Answer | null {
       if (!lines.length) return { text: intent.range === 'week' ? 'Esta semana no tienes pagos pendientes.' : 'No tienes pagos pendientes antes de tu próximo ingreso.' };
       return {
         text: intent.range === 'week' ? 'Esto viene esta semana:' : 'Esto tienes que pagar antes de tu próximo ingreso:',
-        rows: lines.slice(0, 6).map(({ l, cur }) => ({ label: `${l.label}${l.kind === 'overdue' ? ' (vencido)' : ''}`, value: `${l.amountMinor === null ? 'monto por confirmar' : money(l.amountMinor, cur)}${l.date ? ` · ${shortDate(l.date)}` : ''}` })),
+        // Partly paid: what is still owed, and the real abono (engine numbers, ADR-0017).
+        rows: lines.slice(0, 6).map(({ l, cur }) => ({ label: `${l.label}${l.kind === 'overdue' ? ' (vencido)' : ''}`,
+          value: `${l.amountMinor === null ? 'monto por confirmar' : `${l.paidMinor ? 'faltan ' : ''}${money(l.amountMinor, cur)}`}${l.paidMinor ? ` (pagaste ${money(l.paidMinor, cur)})` : ''}${l.date ? ` · ${shortDate(l.date)}` : ''}` })),
         actions: [{ type: 'link', label: 'Ver próximos pagos', href: '/app/compromisos' }],
       };
     }
@@ -194,7 +196,13 @@ export function answer(intent: Intent, v: View): Answer | null {
       const o = v.obligations.find((x) => fold(x.name).includes(intent.name));
       if (!o) return { text: `No tengo registrado un pago de ${intent.name}. ¿Quieres agregarlo?`, actions: [{ type: 'link', label: 'Agregar pago', href: '/app/compromisos' }] };
       const s = v.suggestions.find((x) => x.obligationId === o.id);
-      if (s) return { text: `Encontré un movimiento que parece el pago de ${o.name}. ¿Es este?`, actions: [{ type: 'act', label: 'Sí, marcar pagado', act: 'mark_paid', fields: { obligationId: o.id, transactionId: s.transactionId, period: s.period } }] };
+      const fields = (mode: 'full' | 'partial'): Record<string, string> => ({ obligationId: o.id, transactionId: s?.transactionId ?? '', period: s?.period ?? '', mode });
+      // Smaller than what is owed: the person says whether it was the whole payment or an abono (ADR-0017); never assumed.
+      if (s?.partial && s.amountMinor !== undefined) {
+        return { text: `Encontré un movimiento de ${money(s.amountMinor, o.currency)} que parece un pago de ${o.name}${s.remainingMinor != null ? ` (${s.remainingMinor === o.amountMinor ? 'son' : 'faltan'} ${money(s.remainingMinor, o.currency)})` : ''}. ¿Fue el pago completo o un abono?`,
+          actions: [{ type: 'act', label: 'Fue un abono', act: 'mark_paid', fields: fields('partial') }, { type: 'act', label: 'Pago completo', act: 'mark_paid', fields: fields('full') }] };
+      }
+      if (s) return { text: `Encontré un movimiento que parece el pago de ${o.name}. ¿Es este?`, actions: [{ type: 'act', label: 'Sí, marcar pagado', act: 'mark_paid', fields: fields('full') }] };
       return { text: `Cuando vea el movimiento del pago de ${o.name}, lo enlazo. Si fue en efectivo, regístralo como movimiento.`, actions: [{ type: 'link', label: 'Registrar movimiento', href: '/app/movimientos/nuevo' }] };
     }
     case 'update_amount': {

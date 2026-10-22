@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  abonosByOccurrence, buildPlan, detectVariations, occurrenceState, remainingMinor, suggestMatches,
+  abonosByOccurrence, buildPlan, detectVariations, occurrenceState, remainingMinor, settlementStatus, suggestMatches,
   type Obligation, type PlanInput, type SettlementRow,
 } from '../src/engine/planning';
+import { answer, type View } from '../src/ai/vels-answers';
 import { observedAmountsForUnknown, timeline } from '../src/engine/observed';
 import { subscriptionTotals, type SubscriptionRow } from '../src/engine/subscriptions';
 
@@ -150,5 +151,37 @@ describe('partial payments in the plan (ADR-0017): planned ≠ paid, remaining =
     const fact = (status: 'paid' | 'partial' | 'skipped', amountMinor: number | null) => ({ obligationId: 's', period: '2026-10', status, transactionId: 't', amountMinor, occurredOn: '2026-10-03', currency: 'PEN' as const, merchant: null });
     expect(subscriptionTotals([sub], [fact('partial', 2000)], '2026-10-01')[0]).toMatchObject({ paidMonthMinor: 2000, paidMonthCount: 1, next30Count: 1 });
     expect(subscriptionTotals([sub], [fact('skipped', null)], '2026-10-01')[0]).toMatchObject({ paidMonthMinor: 0, next30Count: 0 });
+  });
+});
+
+describe('the write decision (server-side, from real amounts): "Pago completo" vs "Fue un abono"', () => {
+  it('full closes whatever the amount; an abono closes only when the real total reaches a known plan', () => {
+    expect(settlementStatus('full', 150000, 0, 50000)).toBe('paid');
+    expect(settlementStatus('partial', 150000, 0, 50000)).toBe('partial');
+    expect(settlementStatus('partial', 150000, 50000, 100000)).toBe('paid');
+    expect(settlementStatus('partial', 150000, 50000, 99999)).toBe('partial');
+    expect(settlementStatus('partial', null, 0, 900000)).toBe('partial'); // unknown price: never assumed covered
+  });
+});
+
+describe('Vels reads partial payments from the engine (deterministic, no model call)', () => {
+  const plan = buildPlan(input({ partialPaid: abonos('rent', '2026-10', 50000) }));
+  const view: View = { today: '2026-10-01', plans: [plan], obligations: [{ id: 'rent', name: 'Alquiler', currency: 'PEN', amountMinor: 150000 }], debts: [], reviewCount: 0, suggestions: [] };
+
+  it('"¿qué tengo que pagar?" says what is still owed and the real abono', () => {
+    expect(answer({ k: 'upcoming', range: 'next' }, view)!.rows).toEqual([{ label: 'Alquiler', value: 'faltan S/ 1,000 (pagaste S/ 500) · 5 oct' }]);
+  });
+
+  it('"ya pagué el alquiler" with a smaller movement asks: pago completo or abono (both are confirmation buttons)', () => {
+    const s = { obligationId: 'rent', name: 'Alquiler', period: '2026-10', transactionId: 't9', confidence: 'medium' as const, amountMinor: 30000, remainingMinor: 100000, partial: true };
+    const a = answer({ k: 'paid', name: 'alquiler' }, { ...view, suggestions: [s] })!;
+    expect(a.text).toBe('Encontré un movimiento de S/ 300 que parece un pago de Alquiler (faltan S/ 1,000). ¿Fue el pago completo o un abono?');
+    const f = { obligationId: 'rent', transactionId: 't9', period: '2026-10' };
+    expect(a.actions).toEqual([
+      { type: 'act', label: 'Fue un abono', act: 'mark_paid', fields: { ...f, mode: 'partial' } },
+      { type: 'act', label: 'Pago completo', act: 'mark_paid', fields: { ...f, mode: 'full' } },
+    ]);
+    const full = answer({ k: 'paid', name: 'alquiler' }, { ...view, suggestions: [{ ...s, amountMinor: 100000, partial: false }] })!;
+    expect(full.actions).toEqual([{ type: 'act', label: 'Sí, marcar pagado', act: 'mark_paid', fields: { ...f, mode: 'full' } }]);
   });
 });
