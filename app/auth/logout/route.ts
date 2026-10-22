@@ -9,7 +9,8 @@ import { sameOriginPost } from '../../../src/web/auth-input';
  * JavaScript; GET is not handled (405), so a link or an image cannot sign anyone out, and a cross-site form is refused.
  */
 export async function POST(request: NextRequest) {
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
+  // The host the browser reached: Vercel sets x-forwarded-host (first value if a proxy chain added more).
+  const host = (request.headers.get('x-forwarded-host') ?? request.headers.get('host'))?.split(',')[0]?.trim() ?? null;
   if (!sameOriginPost(request.headers.get('origin'), request.headers.get('sec-fetch-site'), host)) {
     return new Response(null, { status: 403, headers: { 'Cache-Control': 'no-store' } });
   }

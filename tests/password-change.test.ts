@@ -176,6 +176,8 @@ describe('POST /auth/logout ("Cerrar sesión", a plain form outside /app)', () =
     const { POST } = await import('../app/auth/logout/route');
     const res = await POST(post({ origin: 'https://velsuno.example', host: 'internal.vercel', 'x-forwarded-host': 'velsuno.example' }));
     expect(res.status).toBe(303);
+    expect((await POST(post({ origin: 'https://velsuno.example', host: 'internal.vercel', 'x-forwarded-host': 'velsuno.example, internal.vercel' }))).status).toBe(303);
+    expect((await POST(post({ origin: 'https://velsuno.example', host: 'velsuno.example', 'x-forwarded-host': 'evil.example' }))).status).toBe(403);
   });
 
   it('no server action is left for "Cerrar sesión" (it would post to /app and meet the registration gate)', async () => {
