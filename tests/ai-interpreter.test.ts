@@ -140,4 +140,31 @@ describe('sanitizer (§16-§17)', () => {
     expect(s.text).toContain('•••• 8012');
     expect(sanitizeUserText('me pagan 5,700 el 5').redacted).toBe(false);
   });
+  it('the secret after a qualified label is dropped (never the qualifier), and IDs, OTPs and dotted card numbers too', () => {
+    const cases: Array<[string, string]> = [
+      ['clave sol MiClave2024', 'MiClave2024'], ['mi clave web es abc123', 'abc123'], ['mi contraseña es p@ss.word!', 'p@ss.word'],
+      ['mi DNI es 12345678', '12345678'], ['el código que me llegó es 482913', '482913'], ['tarjeta 4557.8800.1234.5678', '4557.8800'],
+      ['carnet de extranjeria 001234567', '001234567'], ['pasaporte 123456789', '123456789'], ['la clave de mi cuenta bcp es 1234', '1234'],
+      ['mi clave de 6 dígitos es 123456', '123456'], ['Carné de Extranjería N° 001234567', '001234567'], ['pasaporte n° AB123456', 'AB123456'], ['mi RUC 10456789123', '10456789123'],
+    ];
+    for (const [raw, secret] of cases) {
+      const s = sanitizeUserText(raw);
+      expect(s.redacted, raw).toBe(true);
+      expect(s.text, raw).not.toContain(secret);
+    }
+    expect(sanitizeUserText('clave sol MiClave2024').text).toBe('clave sol [omitido]');
+    expect(sanitizeUserText('tarjeta 4557.8800.1234.5678').text).toBe('tarjeta •••• 5678');
+  });
+  it('money and dates are never taken for secrets', () => {
+    for (const t of ['debo 500 en la tarjeta', 'pago 1,200 el 5', 'me pagan 5,700 el 5', 'olvidé mi clave. Me pagan 5,700 el 5', 'cobro 1.234.567 al año']) {
+      expect(sanitizeUserText(t), t).toEqual({ text: t, redacted: false });
+    }
+    // The amount next to a code or a PIN stays (only the code goes).
+    expect(sanitizeUserText('me llegó el código 482913 y debo 1500 soles').text).toBe('me llegó el código [omitido] y debo 1500 soles');
+    expect(sanitizeUserText('mi pin es 1234, debo 2,400 en la tarjeta bcp').text).toBe('mi pin es [omitido], debo 2,400 en la tarjeta bcp');
+    // Bench t29: secrets dropped, the card debt still read.
+    const t29 = sanitizeUserText('mi clave es 4455 y el cvv 123, debo 500 en la tarjeta').text;
+    expect(t29).not.toMatch(/4455|\b123\b/);
+    expect(interpret(t29).patches).toEqual([{ t: 'debt', kind: 'card', name: 'Tarjeta', balanceMinor: 50000 }]);
+  });
 });
