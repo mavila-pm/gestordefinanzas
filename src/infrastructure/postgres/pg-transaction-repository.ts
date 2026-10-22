@@ -40,7 +40,7 @@ function toTransaction(r: TxRow): Transaction {
 }
 
 const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === '23505';
-/** public.assert_auto_allowance raises these messages with errcode 53400 (migration 032). */
+/** public.assert_auto_allowance raises these messages with errcode 53400 (migrations 032, 048). */
 const planLimitCode = (e: unknown): PlanLimitError['code'] | null => {
   const { code, message } = (e ?? {}) as { code?: string; message?: string };
   return code === '53400' && (message === 'plan_auto_limit' || message === 'plan_institution_limit') ? message : null;
@@ -117,12 +117,13 @@ export class PgTransactionRepository implements TransactionRepository {
   insert(t: Omit<Transaction, 'id'>, bankOperationId: string | null) {
     return this.inTx(async (c) => {
       // Plan limits for automatic movements (spec §81), in the SAME transaction as the insert, like the import path
-      // (import_insert_transaction). The per-user advisory lock serializes concurrent deliveries so two of them cannot
-      // both take the last free slot; it is released at commit/rollback.
+      // (import_insert_transaction). Since migration 048 assert_auto_allowance itself takes the per-person advisory lock
+      // shared by every automatic write path (imports included); this lock (same key, re-entrant) keeps deliveries
+      // serialized even against a database where 048 is not applied yet. Both are released at commit/rollback.
       await c.query(`select pg_advisory_xact_lock(hashtextextended('auto_allowance:' || $1::text, 0))`, [t.userId]);
-      // assert_auto_allowance runs as app_writer, whose RLS is keyed on request_uid(): without the person's id it would
-      // see no rows (and no subscription) and never limit anything. Transaction-local (is_local = true): it ends with
-      // this transaction and names the same user every query here already filters by.
+      // assert_auto_allowance runs as app_writer, whose RLS is keyed on request_uid(): it refuses (42501) unless the
+      // caller identity names this person. Transaction-local (is_local = true): it ends with this transaction and names
+      // the same user every query here already filters by.
       await c.query(`select set_config('request.jwt.claim.sub', $1, true)`, [t.userId]);
       await c.query('select public.assert_auto_allowance($1, $2)', [t.userId, t.institution]);
       const { rows } = await c.query<{ id: string }>(
