@@ -138,6 +138,70 @@ describe.skipIf(!DATABASE_URL)('RLS: user isolation (User A vs User B)', () => {
   });
 });
 
+/**
+ * Function EXECUTE grants (migration 049). Extension functions (pgcrypto lives in public locally, in `extensions` on
+ * Supabase) are left out. A new function that anon can call, or a new SECURITY DEFINER function that authenticated can
+ * call, fails here until it is reviewed and added below with its reason (docs/security/rls.md, "Function grants").
+ */
+const ANON_EXECUTE: Record<string, string> = {
+  cap_spend: 'Cap replay store; /api/cap redeems before anyone is signed in (ADR-0016). Growth only, no token without the secret.',
+  login_attempt: 'login lockout counter, reserved before the password is checked. Callable outside Cap: the owner decides the server-only gate (ADR-0016).',
+};
+const AUTHENTICATED_DEFINER = [
+  'ai_record', 'ai_reserve', 'billing_create_order', 'billing_simulate_payment', 'cap_spend',
+  'correct_transaction', 'create_manual_transaction', 'delete_demo_balance_snapshots', 'delete_manual_transaction', 'finish_registration',
+  'import_add_source', 'import_insert_transaction', 'import_record_event', 'link_card_history', 'login_attempt',
+  'login_succeeded', 'my_registration', 'reset_demo_ai_onboarding', 'review_transaction', 'rotate_email_connection',
+  'set_demo_plan', 'set_transaction_split', 'start_plus_trial',
+].sort();
+
+describe.skipIf(!DATABASE_URL)('function EXECUTE grants (guard for future functions)', () => {
+  let pool: pg.Pool;
+  beforeAll(() => { pool = makePool(); });
+  afterAll(async () => { await pool?.end(); });
+  const fns = `from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.prokind = 'f'
+      and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')`;
+
+  it('anon may execute only the documented allowlist', async () => {
+    const { rows } = await pool.query(`select distinct p.proname ${fns} and has_function_privilege('anon', p.oid, 'EXECUTE') order by 1`);
+    expect(rows.map((r) => r.proname)).toEqual(Object.keys(ANON_EXECUTE).sort());
+  });
+
+  it('trigger functions are executable by no client role (triggers fire without EXECUTE)', async () => {
+    const { rows } = await pool.query(`select p.oid::regprocedure::text f, r.role from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace cross join (values ('anon'), ('authenticated')) r(role)
+      where n.nspname = 'public' and p.prorettype = 'trigger'::regtype and has_function_privilege(r.role, p.oid, 'EXECUTE')`);
+    expect(rows).toEqual([]);
+    const triggers = await pool.query(`select count(*)::int n ${fns} and p.prorettype = 'trigger'::regtype`);
+    expect(triggers.rows[0].n).toBeGreaterThanOrEqual(8); // the guard really looked at them
+  });
+
+  it('SECURITY DEFINER functions callable by authenticated equal the reviewed list (each guards auth.uid() itself)', async () => {
+    const { rows } = await pool.query(`select distinct p.proname ${fns} and p.prosecdef and has_function_privilege('authenticated', p.oid, 'EXECUTE') order by 1`);
+    expect(rows.map((r) => r.proname)).toEqual(AUTHENTICATED_DEFINER);
+  });
+
+  it('every SECURITY DEFINER function pins its search_path', async () => {
+    const { rows } = await pool.query(`select p.proname ${fns} and p.prosecdef
+      and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%')`);
+    expect(rows).toEqual([]);
+  });
+
+  it('a trigger still fires for a client after the revoke (card_statements_currency on insert)', async () => {
+    await pool.query(`insert into auth.users (id, email) values ($1, 'fn-guard@test.local') on conflict do nothing`, [USER_A]);
+    const card = await pool.query(`insert into public.cards (user_id, alias, kind, currency, last4) values ($1, 'Visa', 'credit', 'PEN', '1234') returning id`, [USER_A]);
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      expect(await errorCode(c, 'select public.card_statements_currency()')).toBe(PERMISSION_DENIED);
+      const sql = `insert into public.card_statements (user_id, card_id, cut_date, due_date, currency, billed_minor, minimum_minor)
+        values ($1, $2, current_date, current_date + 20, $3, 1000, 100)`;
+      expect(await errorCode(c, sql, [USER_A, card.rows[0].id, 'USD'])).toBe('23514'); // fired: currency must match the card
+      expect(await errorCode(c, sql, [USER_A, card.rows[0].id, 'PEN'])).toBeNull(); // and lets a valid row through
+    });
+    await pool.query('delete from public.cards where id = $1', [card.rows[0].id]);
+  });
+});
+
 describe.skipIf(!DATABASE_URL)('schema invariants', () => {
   let pool: pg.Pool;
   beforeAll(() => { pool = makePool(); });

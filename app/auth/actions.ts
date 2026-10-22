@@ -7,7 +7,7 @@ import { authUser, createSupabaseServerClient } from '../../lib/supabase/server'
 import { limaToday } from '../../src/domain/dates';
 import { AUTH_NEXT_COOKIE, authNextCookieOptions, birthProblem, normalizePhone, parseBirthDate, parseEmail, passwordProblem, PHONE_ERROR, safeNextPath } from '../../src/web/auth-input';
 import { PRIVACY_VERSION, TERMS_VERSION } from '../../src/web/legal';
-import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError } from '../../src/web/password-reset';
+import { emailLinkOutcome, newPasswordError, passwordResetOutcome, REGISTRATION_RPC_MISSING, registrationOutcome } from '../../src/web/password-reset';
 import { passwordChangeOutcome, parseReauthCode, reauthRequestOutcome, type ChangePasswordState } from '../../src/web/password-change';
 import { LOGIN_INVALID, LOGIN_SERVER, lockedState, loginOutcome } from '../../src/web/login';
 import { capPassed } from '../../lib/cap';
@@ -104,11 +104,16 @@ export async function completeProfile(_prev: FormState, form: FormData): Promise
   if (form.get('accept') !== 'on') return { error: 'Para continuar, acepta los Términos y la Política de Privacidad.' };
   const supabase = await createSupabaseServerClient();
   if (!(await authUser(supabase))) redirect('/login');
-  const { error } = await supabase.rpc('complete_registration', {
-    p_given: given, p_family: family, p_phone: phone, p_birth: birth, p_terms: TERMS_VERSION, p_privacy: PRIVACY_VERSION,
-  });
-  if (error) return { error: registrationError(error.message) };
-  redirect('/bienvenida');
+  // finish_registration (migration 049) answers a status ('ok' | 'already_registered' | 'phone_taken' |
+  // 'too_many_attempts'); validation problems still come back as errors. A finished registration is final and
+  // phone_taken answers are capped. Until 049 is applied the function does not exist yet (PGRST202): only then the
+  // previous complete_registration is used. Remove the fallback once 049 is live.
+  const args = { p_given: given, p_family: family, p_phone: phone, p_birth: birth, p_terms: TERMS_VERSION, p_privacy: PRIVACY_VERSION };
+  let { data, error } = await supabase.rpc('finish_registration', args);
+  if (error?.code === REGISTRATION_RPC_MISSING) ({ data, error } = await supabase.rpc('complete_registration', args));
+  const outcome = registrationOutcome(data, error);
+  if ('error' in outcome) return { error: outcome.error };
+  redirect(outcome.next);
 }
 
 export async function requestPasswordReset(_prev: FormState, form: FormData): Promise<FormState> {
