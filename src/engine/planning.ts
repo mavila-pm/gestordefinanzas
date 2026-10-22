@@ -331,12 +331,14 @@ export function buildPlan(input: PlanInput): Plan {
     // Infrequent obligations due after the horizon: plan a reserve (planned, not separated money). Rule: one switch.
     if (until && o.frequency !== 'monthly' && o.amountMinor !== null && o.amountStatus !== 'unknown') {
       const due = nextOccurrence(o, addDays(until, 1), paid);
-      if (due?.dueDate && due.dueDate > until) {
+      // Abonos already made toward that occurrence (real movements) lower what is left to set aside (planned ≠ paid).
+      const left = due ? remainingMinor(o.amountMinor, input.partialPaid?.get(o.id)?.get(due.period) ?? 0)! : 0;
+      if (due?.dueDate && due.dueDate > until && left > 0) {
         const months = STEP[o.frequency];
         // Rounded to whole units: a plan, not an invoice.
         const share = (input.infrequentRule ?? INFREQUENT_RESERVE_RULE) === 'time_left'
-          ? timeShare(o.amountMinor, due.targetDate ?? due.dueDate, from, until)
-          : roundUnit((o.amountMinor * (daysBetween(from, until) + 1)) / (months * 30.4375));
+          ? timeShare(left, due.targetDate ?? due.dueDate, from, until)
+          : Math.min(left, roundUnit((left * (daysBetween(from, until) + 1)) / (months * 30.4375)));
         if (share > 0) lines.push({ kind: 'reserve', label: `Para ${o.name}`, amountMinor: share, date: null, dateMax: null, note: `Vence en ${due.period}; separa de a pocos.`, obligationId: o.id });
       }
     }

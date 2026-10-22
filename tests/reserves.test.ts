@@ -99,6 +99,12 @@ describe('infrequent payments: one switch between the accepted rule and the time
     expect(INFREQUENT_RESERVE_RULE).toBe('proportional');
     expect(buildPlan(soatInput()).lines).toEqual([expect.objectContaining({ kind: 'reserve', label: 'Para SOAT', amountMinor: 2500 })]);
   });
+  it('abonos already made toward the SOAT lower what is set aside; fully covered → nothing (planned ≠ paid)', () => {
+    const paidPart = new Map([['soat', new Map([['2026-11', 30000]])]]);
+    expect(buildPlan(soatInput({ partialPaid: paidPart })).lines).toEqual([expect.objectContaining({ amountMinor: 1200 })]); // 300 × 15 / 365.25
+    expect(buildPlan(soatInput({ partialPaid: paidPart, infrequentRule: 'time_left' })).lines).toEqual([expect.objectContaining({ amountMinor: 12500 })]);
+    expect(buildPlan(soatInput({ partialPaid: new Map([['soat', new Map([['2026-11', 60000]])]]) })).lines).toEqual([]);
+  });
   it('time_left: 600 × 15 / 36 → S/ 250', () => {
     expect(buildPlan(soatInput({ infrequentRule: 'time_left' })).lines).toEqual([expect.objectContaining({ kind: 'reserve', label: 'Para SOAT', amountMinor: 25000 })]);
   });
