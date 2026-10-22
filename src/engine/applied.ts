@@ -4,7 +4,7 @@ import type { LineKind, Plan } from './planning';
 /**
  * "Aplicar plan" (ADR-0013): a saved snapshot of the plan the person saw. Pure. Applying never pays, moves money or
  * marks anything paid: a line is `realized` only when a real settlement exists for its obligation and period.
- * Six things stay apart: saldo (base) · comprometido (payments/debts still pending) · reservado (basics, reserves,
+ * Six things stay apart: saldo (base) · comprometido (payments/debts still pending) · reservado (basics, reserves, apartados,
  * cushion) · realizado (paid, from real movements) · por confirmar (unknown amounts, never 0) · libre.
  */
 /** paidMinor: real abonos of that occurrence when the plan was applied (amountMinor already excludes them). */
@@ -26,7 +26,7 @@ export interface Reconciled {
   expired: boolean;
 }
 
-const KINDS = new Set<LineKind>(['overdue', 'payment', 'essentials', 'debt', 'reserve', 'cushion']);
+const KINDS = new Set<LineKind>(['overdue', 'payment', 'essentials', 'debt', 'reserve', 'fund', 'cushion']);
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])(-\d{2})?$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -190,7 +190,8 @@ export function nextIncome(incomes: readonly ExpectedIncome[], currency: Currenc
 }
 
 // ── Safe-to-spend ("Dinero libre") ────────────────────────────────────────────────────────────────────────
-export type LineKind = 'overdue' | 'payment' | 'essentials' | 'debt' | 'reserve' | 'cushion';
+/** 'reserve' = planned contribution (infrequent payment or an Apartado's target); 'fund' = money already set aside. */
+export type LineKind = 'overdue' | 'payment' | 'essentials' | 'debt' | 'reserve' | 'fund' | 'cushion';
 /**
  * amountMinor is what is still owed (planned − real abonos). When abonos exist, paidMinor is their real total and
  * plannedMinor the occurrence's planned amount (null when unknown), so the screen can say "Pagaste X de Y".
@@ -198,6 +199,8 @@ export type LineKind = 'overdue' | 'payment' | 'essentials' | 'debt' | 'reserve'
 export interface PlanLine {
   kind: LineKind; label: string; amountMinor: number | null; date: string | null; dateMax: string | null; note: string | null; obligationId?: string; period?: string;
   paidMinor?: number; plannedMinor?: number | null;
+  /** The Apartado a 'fund' / 'reserve' line belongs to. */
+  reserveId?: string;
 }
 export interface Missing { code: 'balance' | 'balance_stale' | 'next_income' | 'amount' | 'date' | 'essentials' | 'income_window'; text: string; obligationId?: string }
 export type PlanStatus = 'confirmed' | 'partial' | 'incomplete';
@@ -221,7 +224,27 @@ export interface PlanInput {
   essentialsEstimated?: boolean;
   /** What-if only: the next income arrives this many days later than expected (scenarios.ts). */
   incomeDelayDays?: number;
+  /** Apartados (all currencies; the plan keeps only its own). Saved money is not free money (ADR-0017). */
+  reserves?: readonly Reserve[];
+  /** Overrides INFREQUENT_RESERVE_RULE (tests / what-if only). */
+  infrequentRule?: InfrequentRule;
 }
+
+/**
+ * An Apartado (named reserve) as the engine sees it. savedMinor = Σ in − Σ out of its REAL entries (SQL view
+ * reserve_balances), never a typed total. Target and date are optional; without both nothing is planned for it.
+ */
+export interface Reserve { id: string; name: string; currency: Currency; savedMinor: number; targetMinor: number | null; targetDate: string | null }
+
+/**
+ * How the plan reserves for an infrequent payment (yearly SOAT, quarterly tax) due after the horizon.
+ *   'proportional' (ADR-0005, accepted): amount × horizon days / the period length in days.
+ *   'time_left'    (ADR-0017, PENDING PO APPROVAL): amount × horizon days / days left until it is due — the closer
+ *                  the date, the larger the share (SOAT S/ 600 in 36 days, 15-day horizon: S/ 25 → S/ 250).
+ * Single switch: change it only after the PO approves ADR-0017 §"Reserva por tiempo restante".
+ */
+export type InfrequentRule = 'proportional' | 'time_left';
+export const INFREQUENT_RESERVE_RULE: InfrequentRule = 'proportional';
 
 export interface Plan {
   currency: Currency;
@@ -239,7 +262,7 @@ export interface Plan {
 
 /** Planned amounts are rounded to whole soles/dollars (never used for real movements). */
 const roundUnit = (minor: number) => Math.round(minor / 100) * 100;
-const ORDER: Record<LineKind, number> = { overdue: 0, payment: 1, essentials: 2, debt: 3, reserve: 4, cushion: 5 };
+const ORDER: Record<LineKind, number> = { overdue: 0, payment: 1, essentials: 2, debt: 3, reserve: 4, fund: 5, cushion: 6 };
 const fmtDay = (d: string) => `${Number(d.slice(8, 10))}/${d.slice(5, 7)}`;
 
 export function buildPlan(input: PlanInput): Plan {
@@ -285,16 +308,26 @@ export function buildPlan(input: PlanInput): Plan {
       lines.push(line(x, o.source === 'debt' ? 'debt' : 'payment', x.dateStatus === 'window' ? `vence ${Number(x.dueDate!.slice(8))}–${Number(x.dueDateMax!.slice(8))} aprox.` : null, abono));
       if (x.dateStatus === 'window') missing.push({ code: 'date', text: `Confirma si ${o.name} vence el ${Number(x.dueDate!.slice(8))} o el ${Number(x.dueDateMax!.slice(8))}.`, obligationId: o.id });
     }
-    // Infrequent obligations due after the horizon: plan a proportional reserve (planned, not separated money).
+    // Infrequent obligations due after the horizon: plan a reserve (planned, not separated money). Rule: one switch.
     if (until && o.frequency !== 'monthly' && o.amountMinor !== null && o.amountStatus !== 'unknown') {
       const due = nextOccurrence(o, addDays(until, 1), paid);
       if (due?.dueDate && due.dueDate > until) {
         const months = STEP[o.frequency];
         // Rounded to whole units: a plan, not an invoice.
-        const share = roundUnit((o.amountMinor * (daysBetween(from, until) + 1)) / (months * 30.4375));
+        const share = (input.infrequentRule ?? INFREQUENT_RESERVE_RULE) === 'time_left'
+          ? timeShare(o.amountMinor, due.targetDate ?? due.dueDate, from, until)
+          : roundUnit((o.amountMinor * (daysBetween(from, until) + 1)) / (months * 30.4375));
         if (share > 0) lines.push({ kind: 'reserve', label: `Para ${o.name}`, amountMinor: share, date: null, dateMax: null, note: `Vence en ${due.period}; separa de a pocos.`, obligationId: o.id });
       }
     }
+  }
+  // Apartados of this currency only (PEN ≠ USD): what is saved is set aside (real money, never rounded); a dated
+  // target adds this horizon's planned contribution. No target or no date: nothing is planned (never invented).
+  for (const r of (input.reserves ?? []).filter((x) => x.currency === currency)) {
+    if (r.savedMinor > 0) lines.push({ kind: 'fund', label: `Apartado: ${r.name}`, amountMinor: r.savedMinor, date: null, dateMax: null, note: 'Ya separado: no es dinero libre', reserveId: r.id });
+    const c = until ? reserveContribution(r, from, until) : null;
+    if (c) lines.push({ kind: 'reserve', label: `Para ${r.name}`, amountMinor: c, date: null, dateMax: null,
+      note: `Meta ${formatMoney({ amountMinor: r.targetMinor!, currency })} al ${fmtDay(r.targetDate!)}`, reserveId: r.id });
   }
   for (const l of lines) if (l.amountMinor === null && l.obligationId) {
     const already = l.paidMinor ? `: ya pagaste ${formatMoney({ amountMinor: l.paidMinor, currency })}` : '';
@@ -321,6 +354,45 @@ export function buildPlan(input: PlanInput): Plan {
       obligationId: x.obligationId, period: x.period, ...(abono > 0 ? { paidMinor: abono, plannedMinor: x.amountMinor } : {}),
     };
   }
+}
+
+/**
+ * This horizon's share of a planned amount due on `date` (ADR-0017): need × horizon days / days left until the date,
+ * rounded to whole units (a plan), never above the need. Due inside the horizon → all of it now.
+ */
+function timeShare(needMinor: number, date: string, from: string, until: string): number {
+  if (!Number.isSafeInteger(needMinor) || needMinor <= 0) return 0;
+  if (date <= until) return needMinor;
+  const share = roundUnit((needMinor * (daysBetween(from, until) + 1)) / daysBetween(from, date));
+  return Math.min(needMinor, share);
+}
+
+/** Planned contribution of an Apartado in [from, until]: null without a target and a date; 0 once reached. */
+export function reserveContribution(r: Pick<Reserve, 'savedMinor' | 'targetMinor' | 'targetDate'>, from: string, until: string): number | null {
+  if (r.targetMinor === null || r.targetDate === null) return null;
+  return timeShare(Math.max(0, r.targetMinor - Math.max(0, r.savedMinor)), r.targetDate, from, until);
+}
+
+/**
+ * Progress of an Apartado (engine numbers; Vels and the screen only render them). Without a target there is no
+ * ratio nor remaining (unknown ≠ 0). Suggested monthly = remaining / months left, whole units (a plan); the last
+ * month asks for exactly what remains, so rounding never leaves the target short.
+ */
+export interface ReserveProgress {
+  savedMinor: number; targetMinor: number | null; remainingMinor: number | null; ratio: number | null; reached: boolean;
+  monthsLeft: number | null; monthlyMinor: number | null; late: boolean;
+}
+export function reserveProgress(r: Pick<Reserve, 'savedMinor' | 'targetMinor' | 'targetDate'>, today: string): ReserveProgress {
+  const saved = Math.max(0, r.savedMinor);
+  const target = r.targetMinor;
+  const remaining = target === null ? null : Math.max(0, target - saved);
+  const monthsLeft = target !== null && r.targetDate !== null ? Math.max(1, Math.ceil(daysBetween(today, r.targetDate) / 30.4375)) : null;
+  const raw = remaining !== null && monthsLeft !== null ? roundUnit(remaining / monthsLeft) : null;
+  return {
+    savedMinor: saved, targetMinor: target, remainingMinor: remaining, ratio: target === null ? null : Math.min(1, saved / target),
+    reached: remaining === 0, monthsLeft, late: r.targetDate !== null && r.targetDate < today && remaining !== 0,
+    monthlyMinor: raw === null ? null : monthsLeft === 1 ? remaining : Math.min(remaining!, raw > 0 ? raw : remaining!),
+  };
 }
 
 /**
