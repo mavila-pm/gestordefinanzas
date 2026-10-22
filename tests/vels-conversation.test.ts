@@ -11,7 +11,7 @@ const TODAY = '2026-10-08';
 type Row = Record<string, unknown>;
 const profile = { name: 'Mauro' as string | null };
 const store = { messages: [] as Array<{ id: string; role: 'user' | 'velsuno'; body: string; card: Row | null }>, balances: [] as Row[], incomes: [] as Row[], debtsUsd: false };
-const gemini = { text: null as string | null };
+const gemini = { text: null as string | null, fail: null as string | null, calls: 0 };
 
 function planningData() {
   const last = new Map<string, Row>();
@@ -43,9 +43,14 @@ const prefs = { velsStyle: 'balanced' as 'brief' | 'balanced' | 'detailed', vels
 vi.mock('../lib/preferences', () => ({ loadPreferences: async () => ({ ...prefs, primaryCurrency: 'PEN', primaryAccountId: null, notifyUpcoming: true, notifyReview: true, notifyMonthly: true, notifyLimits: true }) }));
 vi.mock('../lib/plan-applications', () => ({ applyPlan: async () => ({ ok: false, error: 'x' }) }));
 vi.mock('../lib/onboarding', () => ({ loadMessages: async () => store.messages.slice(-8), readImages: async () => [] }));
-vi.mock('../lib/ai', () => ({
-  infer: async () => (gemini.text ? { ok: true, text: gemini.text, usage: { input: 1, output: 1, cached: 0, image: 0 }, provider: 'gemini', model: 'gemini-3.8-flash' } : { ok: false, reason: 'unavailable' }),
-  STOP_TEXT: { ai_quota: 'q', failed: 'f', unavailable: 'u' },
+vi.mock('../lib/ai', async () => ({
+  infer: async () => {
+    gemini.calls++;
+    if (gemini.fail) return { ok: false, reason: gemini.fail };
+    return gemini.text ? { ok: true, text: gemini.text, usage: { input: 1, output: 1, cached: 0, image: 0 }, provider: 'gemini', model: 'gemini-3.8-flash' } : { ok: false, reason: 'unavailable' };
+  },
+  // The real copy: the tests below assert what the person reads.
+  STOP_TEXT: (await vi.importActual<typeof import('../lib/ai')>('../lib/ai')).STOP_TEXT,
 }));
 
 function fakeDb() {
@@ -73,7 +78,7 @@ async function engineAnswer(intent: Parameters<typeof answer>[0]) {
 }
 const questions = (s: string) => (s.match(/\?/g) ?? []).length;
 
-beforeEach(() => { profile.name = 'Mauro'; store.messages = []; store.balances = []; store.incomes = []; store.debtsUsd = false; gemini.text = null; });
+beforeEach(() => { profile.name = 'Mauro'; store.messages = []; store.balances = []; store.incomes = []; store.debtsUsd = false; gemini.text = null; gemini.fail = null; gemini.calls = 0; });
 
 describe('Vels asks for one missing fact at a time, then the engine answers', () => {
   it('A: "¿Cuánto tengo libre?" without a balance → asks only the balance', async () => {
@@ -308,5 +313,47 @@ describe('reading natural replies', () => {
   });
   it('"no sé todavía" for the amount → income with unknown amount (never 0)', () => {
     expect(readReply('income_amount', { day: 15 }, 'no sé todavía', TODAY, false)).toMatchObject({ kind: 'income', income: { day: 15, amountMinor: null } });
+  });
+});
+
+describe('without Gemini, out of quota, or with Gemini failing: honest copy, never a made-up answer', () => {
+  const OUTSIDE = 'cuéntame algo sobre el bitcoin';
+  const FIXTURE_SENTENCE = 'Con lo que tengo registrado no puedo responder eso con precisión';
+  const known = () => {
+    store.balances.push({ currency: 'PEN', amount_minor: 320000 });
+    store.incomes.push({ name: 'Sueldo', currency: 'PEN', amount_minor: 450000, amount_status: 'confirmed', frequency: 'monthly', day_of_month: 15 });
+  };
+  it('no key ("unavailable") → the honest line, no figures, never the test fixture sentence', async () => {
+    const { NOT_AVAILABLE } = await import('../lib/vels');
+    known();
+    const m = await turn(OUTSIDE);
+    expect(gemini.calls).toBe(1);
+    expect(m.body).toBe(NOT_AVAILABLE);
+    expect(m.body).not.toMatch(/\d/);
+    expect(m.body).not.toContain(FIXTURE_SENTENCE);
+    expect(m.card?.stop).toBeUndefined();
+  });
+  it('out of quota → the quota line with the "Ver Plus" link, marked as a stop', async () => {
+    const { STOP_TEXT } = await import('../lib/ai');
+    gemini.fail = 'ai_quota';
+    const m = await turn(OUTSIDE);
+    expect(m.body).toBe(STOP_TEXT.ai_quota);
+    expect(m.card).toMatchObject({ stop: true, links: [{ label: 'Ver Plus', href: '/app/ajustes/plan' }] });
+  });
+  it('a provider failure ("busy") says Vels took too long — not "no te entendí"; only unusable output is "not understood"', async () => {
+    const { NOT_UNDERSTOOD } = await import('../lib/vels');
+    gemini.fail = 'busy';
+    const busy = await turn(OUTSIDE);
+    expect(busy.body).toBe('Tardé demasiado en responder. Intenta de nuevo en un momento.');
+    expect(busy.body).not.toBe(NOT_UNDERSTOOD);
+    gemini.fail = 'failed';
+    expect((await turn(OUTSIDE)).body).toBe(NOT_UNDERSTOOD);
+    gemini.fail = 'ai_rate';
+    expect((await turn(OUTSIDE)).card).toMatchObject({ stop: true });
+  });
+  it('a question the rules answer never calls Gemini (zero AI cost): money, dates, greetings, thanks', async () => {
+    known();
+    for (const t of ['¿Cuánto tengo libre?', '¿Cuándo me pagan?', '¿Me alcanza para unas zapatillas de 300?', 'Hola', 'gracias']) await turn(t);
+    expect(gemini.calls).toBe(0);
   });
 });

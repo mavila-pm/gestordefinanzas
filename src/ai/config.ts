@@ -6,7 +6,7 @@ import type { Operation } from './types';
 /**
  * Server-side AI configuration (§29). Gemini is the only model; nothing here reaches the browser.
  *   GEMINI_API_KEY (server only; never NEXT_PUBLIC_; without it Vels answers deterministically)
- *   GEMINI_MODEL (default GEMINI_DEFAULT_MODEL)   AI_TIMEOUT_MS   AI_REASONING=off|low|high
+ *   GEMINI_MODEL (default GEMINI_DEFAULT_MODEL)   AI_TIMEOUT_MS (per attempt)   AI_DEADLINE_MS (whole call, retries included)   AI_REASONING=off|low|high
  *   AI_MAX_INPUT_CHARS   AI_MAX_OUTPUT_<OPERATION>   AI_PRICES (JSON, see pricing.ts)
  *   AI_FIXTURE=1 → canned test fixture instead of Gemini (local/CI E2E only; ignored on any Vercel deployment)
  */
@@ -15,6 +15,8 @@ export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash';
 export interface AIConfig {
   model: string;
   timeoutMs: number;
+  /** Total time for one call, retries included (lib/ai.ts): a turn never waits longer than this for Gemini. */
+  deadlineMs: number;
   reasoning: 'off' | 'low' | 'high';
   maxInputChars: number;
   maxOutput: Record<Operation, number>;
@@ -31,6 +33,7 @@ export function aiConfig(env: Env = process.env): AIConfig {
   return {
     model: fixtureOn(env) ? 'fixture' : modelId(env.GEMINI_MODEL),
     timeoutMs: int(env.AI_TIMEOUT_MS, 15000, 1000, 60000),
+    deadlineMs: int(env.AI_DEADLINE_MS, 20000, 2000, 60000),
     reasoning: env.AI_REASONING === 'low' || env.AI_REASONING === 'high' ? env.AI_REASONING : 'off',
     maxInputChars: int(env.AI_MAX_INPUT_CHARS, 6000, 500, 40000),
     // Caps per call. On Gemini 3.x thinking counts inside them, so they leave room for LOW thinking + a short answer;

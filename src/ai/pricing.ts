@@ -27,3 +27,16 @@ export function estimateCostMicroUsd(model: string, u: AIUsage, rates: Record<st
   const fresh = Math.max(u.input - u.cached, 0) + u.image;
   return Math.ceil((fresh * r.in + u.cached * r.cached + u.output * r.out) / 1_000_000);
 }
+
+/** Image tokens assumed for a read whose usage never came back (above Gemini's per-image counts: fail safe). */
+export const IMAGE_TOKENS_CEILING = 1120;
+/**
+ * Cost-guard estimate for a call whose usage the provider never reported (a timeout): what it COULD have cost —
+ * the prompt at ~4 characters per token, the whole output cap and each image at IMAGE_TOKENS_CEILING — at the
+ * model's rate (UNPRICED_CEILING without one). Counted only in the cost guards, never as the person's tokens.
+ */
+export function ceilingCostMicroUsd(model: string, c: { inputChars: number; maxOutputTokens: number; images: number }, rates: Record<string, Rate> = PRICE_SNAPSHOT): number {
+  const r = rates[model] ?? UNPRICED_CEILING;
+  const input = Math.ceil(Math.max(c.inputChars, 0) / 4) + Math.max(c.images, 0) * IMAGE_TOKENS_CEILING;
+  return Math.min(Math.ceil((input * r.in + Math.max(c.maxOutputTokens, 0) * r.out) / 1_000_000), 2_147_483_647);
+}

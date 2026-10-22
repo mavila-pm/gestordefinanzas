@@ -29,7 +29,8 @@ import { loadPlanningData, planFor, planInputFor, planTimeline } from './plannin
  * rules do not cover, with a compact state + the last few messages. Thread is capped (older messages pruned).
  */
 const KEEP = 40;
-const NOT_UNDERSTOOD = 'No te entendí bien. ¿Me lo dices de otra forma?';
+export const NOT_UNDERSTOOD = 'No te entendí bien. ¿Me lo dices de otra forma?';
+export const NOT_AVAILABLE = 'Eso todavía no sé responderlo. Pregúntame por tu dinero disponible o tus pagos y lo vemos.';
 const SOCIAL: readonly Social[] = ['greeting', 'how', 'how_reply', 'thanks', 'ack', 'bye', 'capabilities', 'follow_up', 'open_order', 'open_spending'];
 const UNSURE = /\b(no se|ni idea|tu dime|donde sea|cualquiera|como quieras|por donde sea|no tengo idea)\b/;
 
@@ -145,10 +146,12 @@ export async function velsTurn(supabase: SupabaseClient, userId: string, raw: st
   else if (route?.kind === 'reply') await say(supabase, userId, 'velsuno', route.text.slice(0, 600));
   else if (r.ok) await say(supabase, userId, 'velsuno', NOT_UNDERSTOOD);
   else if (r.reason === 'ai_quota') await say(supabase, userId, 'velsuno', STOP_TEXT.ai_quota, { stop: true, links: [{ label: 'Ver Plus', href: '/app/ajustes/plan' }] });
-  else if (r.reason === 'unavailable' || r.reason === 'failed') {
-    // Timeout, provider error, rate limit, empty or invalid output: a friendly way forward, never a broken thread.
-    await say(supabase, userId, 'velsuno', r.reason === 'failed' ? NOT_UNDERSTOOD : 'Eso todavía no sé responderlo. Pregúntame por tu dinero disponible o tus pagos y lo vemos.');
-  } else await say(supabase, userId, 'velsuno', STOP_TEXT[r.reason], { stop: true });
+  // Timeout, provider error or rate limit: our side failed, so Vels says so (never "no te entendí", never a made-up answer).
+  else if (r.reason === 'busy') await say(supabase, userId, 'velsuno', STOP_TEXT.busy);
+  // Only an answer that came back unusable is "not understood"; without Gemini, an honest way forward.
+  else if (r.reason === 'failed') await say(supabase, userId, 'velsuno', NOT_UNDERSTOOD);
+  else if (r.reason === 'unavailable') await say(supabase, userId, 'velsuno', NOT_AVAILABLE);
+  else await say(supabase, userId, 'velsuno', STOP_TEXT[r.reason], { stop: true });
   await prune(supabase);
 }
 

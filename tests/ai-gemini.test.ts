@@ -177,7 +177,7 @@ describe('Vels → Gemini → engine: the money comes from the engine', () => {
     expect(a.text).not.toContain('99');
     expect(f.calls.map((c) => c.fn)).toEqual(['ai_reserve', 'ai_record']);
   });
-  it('invalid Gemini output → recorded as invalid_output, never reaches the engine; API error → failed (Vels falls back)', async () => {
+  it('invalid Gemini output → recorded as invalid_output, never reaches the engine ("failed"); API error → "busy" (Vels says so)', async () => {
     const f = fakeDb();
     const bad = geminiModel({ models: stub('{"intent":"pay_everything"}') });
     expect(await infer(f.db, { operation: 'assistant_answer', system: 's', messages: [{ role: 'user', content: 'x' }] },
@@ -186,6 +186,6 @@ describe('Vels → Gemini → engine: the money comes from the engine', () => {
     const g = fakeDb();
     const down = geminiModel({ models: stub(() => { throw Object.assign(new Error('Internal'), { status: 500 }); }) });
     expect(await infer(g.db, { operation: 'assistant_answer', system: 's', messages: [{ role: 'user', content: 'x' }] },
-      () => true, aiConfig({ GEMINI_API_KEY: 'k' }), down)).toEqual({ ok: false, reason: 'failed' });
+      () => true, aiConfig({ GEMINI_API_KEY: 'k' }), down)).toEqual({ ok: false, reason: 'busy' });
   });
 });
