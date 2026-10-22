@@ -23,10 +23,13 @@ export function parseMoneyExpr(s: string): { amountMinor: number; currency: Curr
   return { amountMinor, currency };
 }
 
-/** Last 4 digits of a masked number ("************4821", "****1234", "•••• 1234"); null when not masked like that. */
+/**
+ * Last 4 digits of a masked number ("************4821", "****1234", "•••• 1234"); null when not masked like that.
+ * Only the tail is read, and a match must start where the mask starts: linear even on a 64 KB line of "*".
+ */
 export function last4(s: string | undefined): string | null {
   if (!s) return null;
-  const m = /[*xX•]+\s*(\d{4})\s*$/.exec(s.trim());
+  const m = /(?<![*xX•])[*xX•]+\s*(\d{4})$/.exec(s.trim().slice(-40));
   return m ? m[1]! : null;
 }
 
@@ -41,20 +44,32 @@ export function cleanMerchant(s: string | undefined): string | null {
   return v.length ? v : null;
 }
 
+/** No real label value is this long: a longer one is corruption or padding, never truncated into a reading. */
+export const MAX_LABEL_VALUE = 200;
+
+export type LabelProblem = 'repeated' | 'too_long';
+
 /**
  * Reads "Label: value" lines. Each regex must be global/multiline with one capture group. A label that appears more
- * than once (corruption or injected text) makes the whole message ambiguous: the caller must not pick one.
+ * than once (corruption or injected text), or whose value is longer than MAX_LABEL_VALUE, makes the whole message
+ * unreadable: the caller must not pick one value or cut it.
  */
 export function readLabels<K extends string>(text: string, labels: Readonly<Record<K, RegExp>>):
-  { ok: true; values: Partial<Record<K, string>> } | { ok: false; ambiguous: K } {
+  { ok: true; values: Partial<Record<K, string>> } | { ok: false; label: K; problem: LabelProblem } {
   const values: Partial<Record<K, string>> = {};
   for (const key of Object.keys(labels) as K[]) {
     const matches = [...text.matchAll(labels[key])];
-    if (matches.length > 1) return { ok: false, ambiguous: key };
+    if (matches.length > 1) return { ok: false, label: key, problem: 'repeated' };
     const v = matches[0]?.[1]?.trim();
+    if (v !== undefined && v.length > MAX_LABEL_VALUE) return { ok: false, label: key, problem: 'too_long' };
     if (v !== undefined) values[key] = v;
   }
   return { ok: true, values };
+}
+
+/** Failure detail for a readLabels problem (no value is ever copied into it). */
+export function labelProblemDetail(r: { label: string; problem: LabelProblem }): string {
+  return r.problem === 'repeated' ? `label "${r.label}" appears more than once` : `label "${r.label}" is too long`;
 }
 
 /** "15/09/2026" + "20:30" (24 h) -> Lima ISO; null for impossible dates or times. */

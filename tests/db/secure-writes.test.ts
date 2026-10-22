@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
-import { ingestRawEvent, type UserContext } from '../../src/engine/ingest';
+import type { UserContext } from '../../src/engine/ingest';
+import { ingestAsVerifiedTemplate as ingestRawEvent } from '../fixtures/engine';
 import { monthlySummary } from '../../src/engine/monthly-summary';
 import { PgTransactionRepository } from '../../src/infrastructure/postgres/pg-transaction-repository';
 import * as fx from '../fixtures/bcp';

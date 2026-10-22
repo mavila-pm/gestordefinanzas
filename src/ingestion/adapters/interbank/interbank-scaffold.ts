@@ -3,8 +3,9 @@ import type { RawFinancialEvent } from '../../../domain/types';
 
 /**
  * Interbank SCAFFOLD. No Interbank message has been observed and there are ZERO templates: these adapters only claim
- * messages that name Interbank, so an Interbank email that mentions another bank (e.g. "paga en agentes BCP") is
- * never read with that bank's templates. Everything they claim ends unresolved (unknown_template, no transaction).
+ * messages that name Interbank. When Interbank is named in the sender/subject, the registry never lets another bank
+ * take the message from a body mention (e.g. "paga en agentes BCP", "transferencia a una cuenta BCP"): if that bank's
+ * template reads it, the result is ambiguous_institution. Everything ends unresolved (no transaction).
  * No sender is allowlisted. Real templates arrive as new parser versions calibrated on real anonymized samples.
  */
 const NAMES = /\bInterbank\b/i;

@@ -1,13 +1,20 @@
 import type { RawFinancialEvent } from '../domain/types';
 import type { IngestOutcome } from '../engine/ingest';
-import { supportedInstitutions } from '../ingestion/adapter-registry';
+import { supportedInstitutions, trialInstitutions } from '../ingestion/adapter-registry';
 import { MAX_BODY_BYTES } from '../ingestion/sanitize';
 import { INSTITUTION_LABEL, joinSpanish } from './labels';
 import type { Get, Parsed } from './transaction-input';
 
-/** "BCP y BBVA": the banks whose messages are read today, from the adapter registry (scaffolds excluded). */
-export function supportedBanksText(): string {
-  return joinSpanish(supportedInstitutions().map((c) => INSTITUTION_LABEL[c] ?? c));
+const bankNames = (codes: readonly string[]) => joinSpanish(codes.map((c) => INSTITUTION_LABEL[c] ?? c));
+
+/**
+ * "BCP (BBVA en prueba)": banks backed by real observed messages, then banks read only with invented templates.
+ * From the adapter registry (scaffolds excluded); a bank is never called supported without real evidence.
+ */
+export function bankCoverageText(): string {
+  const read = bankNames(supportedInstitutions());
+  const trial = bankNames(trialInstitutions());
+  return trial ? `${read} (${trial} en prueba)` : read;
 }
 
 /**
@@ -36,7 +43,7 @@ export function importOutcomeText(outcome: IngestOutcome): { ok: boolean; text: 
     case 'duplicate_same_event': return { ok: true, text: 'Ya habías importado este mismo mensaje. No se creó nada nuevo.' };
     case 'non_transactional': return { ok: false, text: 'Es un aviso del banco (estado de cuenta o alerta), no un movimiento. No se registró nada.' };
     case 'unresolved': return { ok: false, text: 'Reconocimos el banco pero no el formato del mensaje. No inventamos datos: regístralo manualmente.' };
-    case 'not_financial': return { ok: false, text: `No parece una notificación de un banco soportado (por ahora: ${supportedBanksText()}). No se registró nada.` };
+    case 'not_financial': return { ok: false, text: `No parece una notificación de un banco soportado. Por ahora: ${bankCoverageText()}. No se registró nada.` };
     case 'rejected': return { ok: false, text: 'El mensaje es demasiado grande.' };
     case 'plan_limit': return { ok: false, text: 'Llegaste al límite de movimientos automáticos de tu plan. Regístralo a mano o pasa a Plus.' };
   }

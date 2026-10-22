@@ -1,23 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { registeredAdapters, supportedInstitutions } from '../src/ingestion/adapter-registry';
-import { importOutcomeText, parseImportForm, supportedBanksText } from '../src/web/import-input';
+import { registeredAdapters, supportedInstitutions, trialInstitutions } from '../src/ingestion/adapter-registry';
+import { bankCoverageText, importOutcomeText, parseImportForm } from '../src/web/import-input';
 import { joinSpanish, messageFormatLabel, sourceOriginLabel } from '../src/web/labels';
 import { ingestRawEvent } from '../src/engine/ingest';
 import { InMemoryTransactionRepository } from '../src/engine/repository';
 
-describe('supported banks come from the adapter registry', () => {
-  it('BCP and BBVA are read; the Interbank scaffold is registered but not supported', () => {
+describe('supported banks come from the adapter registry and real evidence', () => {
+  it('only BCP has observed messages; BBVA (invented templates) is "en prueba"; the Interbank scaffold is neither', () => {
     expect(registeredAdapters.some((a) => a.institution === 'INTERBANK')).toBe(true);
-    expect(supportedInstitutions()).toEqual(['BCP', 'BBVA']);
+    expect(supportedInstitutions()).toEqual(['BCP']);
+    expect(trialInstitutions()).toEqual(['BBVA']);
+    expect(registeredAdapters.filter((a) => a.institution === 'BBVA').every((a) => !a.observed)).toBe(true);
     expect(supportedInstitutions(registeredAdapters.filter((a) => a.institution !== 'BBVA'))).toEqual(['BCP']);
+    expect(trialInstitutions(registeredAdapters.filter((a) => a.institution !== 'BBVA'))).toEqual([]);
+    // A bank becomes supported only when one of its adapters is backed by a real sample.
+    const observedBbva = registeredAdapters.map((a) => (a.institution === 'BBVA' ? { ...a, observed: true } : a));
+    expect(supportedInstitutions(observedBbva)).toEqual(['BCP', 'BBVA']);
   });
 
-  it('copy names the supported banks in plain Spanish', () => {
-    expect(supportedBanksText()).toBe('BCP y BBVA');
+  it('copy never claims BBVA is read: it is labelled "en prueba"', () => {
+    expect(bankCoverageText()).toBe('BCP (BBVA en prueba)');
     expect(joinSpanish([])).toBe('');
     expect(joinSpanish(['BCP'])).toBe('BCP');
     expect(joinSpanish(['BCP', 'BBVA', 'Interbank'])).toBe('BCP, BBVA y Interbank');
-    expect(importOutcomeText('not_financial').text).toBe('No parece una notificación de un banco soportado (por ahora: BCP y BBVA). No se registró nada.');
+    expect(importOutcomeText('not_financial').text)
+      .toBe('No parece una notificación de un banco soportado. Por ahora: BCP (BBVA en prueba). No se registró nada.');
     expect(importOutcomeText('plan_limit')).toMatchObject({ ok: false });
   });
 });

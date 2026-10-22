@@ -9,6 +9,6 @@
   },
   "expected": {
     "outcome": "created",
-    "transaction": { "type": "credit_card_purchase", "amountMinor": 4500, "cardLast4": "1234", "category": "Alimentación", "status": "confirmed" }
+    "transaction": { "type": "credit_card_purchase", "amountMinor": 4500, "cardLast4": "1234", "category": "Alimentación", "status": "review_required" }
   }
 }

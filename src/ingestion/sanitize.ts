@@ -14,13 +14,18 @@ const NAMED_ENTITIES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Numeric references: BMP only, never control characters or surrogates. A decoded "&#10;" could otherwise turn text
- * inside one field into a new "Label: value" line.
+ * Never produced by a numeric reference: controls (C0/C1), format characters (bidi overrides, zero-width, BOM, soft
+ * hyphen), line/paragraph separators (U+2028/U+2029 are JS line terminators), surrogates, private use, unassigned and
+ * noncharacters. A decoded "&#10;" or "&#8232;" could otherwise turn text inside one field into a new "Label: value"
+ * line, and bidi/zero-width characters could disguise a merchant name.
  */
+const UNDECODABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}\p{Co}\p{Cn}]/u;
+
+/** Numeric references: BMP only, and only visible characters (see UNDECODABLE). */
 function decodeCodePoint(cp: number): string | null {
   if (!Number.isInteger(cp) || cp > 0xffff) return null;
-  if (cp < 0x20 || (cp >= 0x7f && cp <= 0x9f) || (cp >= 0xd800 && cp <= 0xdfff)) return null;
-  return String.fromCharCode(cp);
+  const ch = String.fromCharCode(cp);
+  return UNDECODABLE.test(ch) ? null : ch;
 }
 
 /** Single pass (so "&amp;lt;" becomes "&lt;", not "<"). Unknown or forbidden references stay as written. */
@@ -36,18 +41,24 @@ export function decodeEntities(text: string): string {
  * Converts an untrusted HTML/text body into plain text. HTML is never rendered or executed:
  * comments and script/style/head/title blocks are dropped, remaining tags are removed, then entities are decoded
  * (after tag removal, so an encoded "&lt;b&gt;" stays text).
+ * Only "\n" ends a line afterwards: every other whitespace (including U+2028/U+2029, which JS regexes treat as line
+ * breaks) becomes a plain space, so text inside one field can never start a new "Label: value" line.
+ * Every pattern is linear on the 64 KB cap (no backtracking across the input): an unterminated comment or block runs
+ * to the end of the body (as in a browser), and a tag never spans another "<".
  */
 export function toPlainText(body: string): string {
   const stripped = body
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<(script|style|head|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
+    .replace(/<(script|style|head|title)\b[^<>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|tr|li|h\d)>/gi, '\n')
-    .replace(/<[^>]*>/g, ' ');
+    .replace(/<[^<>]*>/g, ' ');
   return decodeEntities(stripped)
-    .replace(/ /g, ' ')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\s*\n\s*/g, '\n')
+    // Invisible zero-width and bidi control characters written literally: dropped (they only disguise text).
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/(?:[^\S\n]|\u0085)+/g, ' ')
+    .replace(/ ?\n\s*/g, '\n')
     .trim();
 }
 

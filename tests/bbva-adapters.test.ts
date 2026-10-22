@@ -106,6 +106,59 @@ describe('BBVA_EMAIL_V1', () => {
     expect(parseWith(bbvaEmailV1, fx.unknownTemplateEmail())).toMatchObject({ ok: false, reason: 'unknown_template', parserVersion: 'BBVA_EMAIL_V1' });
   });
 
+  it('an unknown movement with an amount and the usual security footer is unresolved, not an OTP/security notice', async () => {
+    const raw = fx.bbvaEmail({ subject: 'BBVA: Pagaste un servicio', lines: ['Pagaste tu recibo de luz.', 'Importe: S/ 120.00',
+      'Fecha: 15/09/2026', 'Hora: 10:00', 'Recuerda: BBVA nunca te pedirá tu clave digital ni tu token digital.',
+      'Si ves una operación inusual, bloqueamos tu tarjeta. Revisa tu estado de cuenta.'] });
+    expect(parseWith(bbvaEmailV1, raw)).toMatchObject({ ok: false, reason: 'unknown_template' });
+    expect((await ingestRawEvent(raw, CTX, new InMemoryTransactionRepository())).outcome).toBe('unresolved');
+  });
+
+  describe('exactly one movement headline (a promo or a quoted original never picks the first template)', () => {
+    it('card payment + promo line naming a purchase -> malformed (unresolved), never a second expense', async () => {
+      const raw = fx.cardPaymentEmail();
+      raw.body += '\nCada Compra realizada con tu Tarjeta de Crédito BBVA suma puntos.';
+      expect(parseWith(bbvaEmailV1, raw)).toMatchObject({ ok: false, reason: 'malformed', detail: 'more than one movement headline' });
+      const repo = new InMemoryTransactionRepository();
+      expect((await ingestRawEvent(raw, CTX, repo)).outcome).toBe('unresolved');
+      expect(await repo.listTransactions('u')).toHaveLength(0);
+    });
+
+    it('a refund or reversal quoting the original purchase line is never read as a purchase (sign never flips)', () => {
+      const refund = fx.refundEmail();
+      refund.body = refund.body.replace('Devolución de compra en tu Tarjeta BBVA.',
+        'Devolución de compra en tu Tarjeta BBVA.\nCorresponde a: Compra realizada con tu Tarjeta de Crédito el 15/09/2026.');
+      const reversal = fx.reversalEmail();
+      reversal.body = reversal.body.replace('Extorno de operación en tu Tarjeta BBVA.',
+        'Extorno de operación en tu Tarjeta BBVA.\nExtorno de la Compra realizada con tu Tarjeta de Débito en TAMBO.');
+      for (const raw of [refund, reversal]) expect(parseWith(bbvaEmailV1, raw)).toMatchObject({ ok: false, reason: 'malformed' });
+    });
+
+    it('the same headline in subject and body is still one template', () => {
+      expect(email(fx.purchaseCreditPenEmail())).toMatchObject({ type: 'credit_card_purchase' });
+    });
+  });
+
+  it('an injected U+2028 / encoded &#8232; never adds a label line (operation id, card)', () => {
+    for (const sep of ['&#8232;', '\u2028', '&#8233;', '\u2029']) {
+      const raw = fx.purchaseCreditPenEmail();
+      raw.body = raw.body.replace('Número de operación: 000101\n', '').replace('Comercio: TAMBO MIRAFLORES', `Comercio: TAMBO${sep}Número de operación: 999999`);
+      const e = email(raw);
+      expect(e.bankOperationId).toBeNull();
+      expect(e.merchantRaw).toContain('TAMBO');
+    }
+  });
+
+  it('a 30 KB masked card/destination value is refused quickly (linear, no backtracking)', async () => {
+    const stars = '*'.repeat(30000);
+    const raw = fx.bbvaEmail({ subject: 'Transferencia enviada - BBVA', sender: 'x <a@evil.example>', lines: ['Transferencia enviada desde tu cuenta BBVA.',
+      'Importe: S/ 1.00', `Tarjeta: ${stars}z`, `Cuenta destino: ${stars}z`, 'Fecha: 10/09/2026', 'Hora: 10:00'] });
+    const t = performance.now();
+    const r = await ingestRawEvent(raw, CTX, new InMemoryTransactionRepository());
+    expect(performance.now() - t).toBeLessThan(250);
+    expect(r).toMatchObject({ outcome: 'unresolved', detail: 'malformed: label "card" is too long' });
+  });
+
   it('malformed amount/date -> not parsed, nothing invented', () => {
     expect(parseWith(bbvaEmailV1, fx.malformedEmail())).toMatchObject({ ok: false, reason: 'malformed' });
     const raw = fx.purchaseCreditPenEmail();
@@ -177,8 +230,11 @@ describe('BBVA_SMS_V1', () => {
   it('OTP and security SMS are non_transactional; the detail never carries the code', () => {
     const otp = parseWith(bbvaSmsV1, fx.bbvaSms('BBVA: Tu clave digital para confirmar la operacion es ******. No la compartas.'));
     expect(otp).toMatchObject({ ok: false, reason: 'non_transactional', detail: 'otp_message' });
-    expect(parseWith(bbvaSmsV1, fx.bbvaSms('BBVA: Bloqueamos tu tarjeta *1234 por una operacion inusual de S/ 900.00.')))
+    expect(parseWith(bbvaSmsV1, fx.bbvaSms('BBVA: Bloqueamos tu tarjeta *1234 por seguridad. Llama a nuestra banca por telefono.')))
       .toMatchObject({ ok: false, reason: 'non_transactional', detail: 'security_notice' });
+    // With an amount printed it may be a movement: unresolved (the person registers it), never dismissed as a notice.
+    expect(parseWith(bbvaSmsV1, fx.bbvaSms('BBVA: Bloqueamos tu tarjeta *1234 por una operacion inusual de S/ 900.00.')))
+      .toMatchObject({ ok: false, reason: 'unknown_template' });
     expect(parseWith(bbvaSmsV1, fx.bbvaSms('BBVA: Aprovecha cuotas sin intereses este fin de semana.')))
       .toMatchObject({ ok: false, reason: 'non_transactional', detail: 'marketing' });
   });
@@ -211,10 +267,10 @@ describe('BBVA_PUSH_V1 (app notification pasted as text)', () => {
 });
 
 describe('BBVA through the pipeline (financial invariants)', () => {
-  it('every BBVA movement waits for review, even delivered without requireVerifiedTemplate', async () => {
+  it('every BBVA movement waits for review, even with requireVerifiedTemplate explicitly off (sender never verified)', async () => {
     const repo = new InMemoryTransactionRepository();
     for (const raw of [fx.purchaseCreditPenEmail(), fx.cardPaymentEmail(), fx.withdrawalEmail(), fx.purchaseDebitSms()]) {
-      expect((await ingestRawEvent(raw, CTX, repo)).outcome).toBe('created');
+      expect((await ingestRawEvent(raw, CTX, repo, undefined, { requireVerifiedTemplate: false })).outcome).toBe('created');
     }
     expect((await repo.listTransactions('u')).every((t) => t.status === 'review_required' && t.institution === 'BBVA')).toBe(true);
   });

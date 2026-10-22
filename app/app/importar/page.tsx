@@ -1,5 +1,5 @@
 import { ImportForm } from '../../../components/import-form';
-import { supportedBanksText } from '../../../src/web/import-input';
+import { bankCoverageText } from '../../../src/web/import-input';
 
 export const metadata = { title: 'Pegar mensaje' };
 
@@ -11,7 +11,7 @@ export default function ImportPage() {
         <p>Pega el SMS, la notificación de la app o el correo. Lo leemos y lo dejamos en Por revisar. No guardamos el texto.</p>
       </div>
       <ImportForm />
-      <p className="muted small">Por ahora leemos avisos de {supportedBanksText()}. Si algo no cuadra, lo corriges al revisar.</p>
+      <p className="muted small">Por ahora leemos avisos de {bankCoverageText()}. Si algo no cuadra, lo corriges al revisar.</p>
     </main>
   );
 }

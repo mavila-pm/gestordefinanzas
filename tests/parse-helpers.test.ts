@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanMerchant, emailDomain, last4, parseDateAndTime, parseMoneyExpr, readLabels } from '../src/ingestion/parse-helpers';
+import { cleanMerchant, emailDomain, labelProblemDetail, last4, MAX_LABEL_VALUE, parseDateAndTime, parseMoneyExpr, readLabels } from '../src/ingestion/parse-helpers';
 
 describe('bank-agnostic parse helpers', () => {
   it.each([
@@ -16,6 +16,16 @@ describe('bank-agnostic parse helpers', () => {
     expect(last4('XXXX5678')).toBe('5678');
     expect(last4('4821')).toBeNull();
     expect(last4(undefined)).toBeNull();
+    expect(last4('BCP ****7777')).toBe('7777');
+    expect(last4(`${'*'.repeat(50)}1234`)).toBe('1234');
+  });
+
+  it('last4 is linear on 60 KB of mask characters', () => {
+    for (const s of [`${'*'.repeat(60000)}z`, `${'x'.repeat(60000)}1`, `${'*'.repeat(30000)} ${'•'.repeat(30000)}12`]) {
+      const t = performance.now();
+      expect(last4(s)).toBeNull();
+      expect(performance.now() - t).toBeLessThan(50);
+    }
   });
 
   it('merchant is trimmed, single-spaced and capped', () => {
@@ -33,8 +43,16 @@ describe('bank-agnostic parse helpers', () => {
   it('labels: a repeated label is ambiguous, never picked', () => {
     const L = { amount: /^Monto:\s*(.+)$/gim, date: /^Fecha:\s*(.+)$/gim };
     expect(readLabels('Monto: S/ 1.00\nFecha: hoy', L)).toEqual({ ok: true, values: { amount: 'S/ 1.00', date: 'hoy' } });
-    expect(readLabels('Monto: S/ 1.00\nMonto: S/ 9.00', L)).toEqual({ ok: false, ambiguous: 'amount' });
+    expect(readLabels('Monto: S/ 1.00\nMonto: S/ 9.00', L)).toEqual({ ok: false, label: 'amount', problem: 'repeated' });
     expect(readLabels('nada', L)).toEqual({ ok: true, values: {} });
+  });
+
+  it('labels: a value longer than MAX_LABEL_VALUE is refused, never cut into a reading', () => {
+    const L = { merchant: /^Comercio:\s*(.+)$/gim };
+    expect(readLabels(`Comercio: ${'A'.repeat(MAX_LABEL_VALUE)}`, L)).toMatchObject({ ok: true });
+    const long = readLabels(`Comercio: ${'A'.repeat(MAX_LABEL_VALUE + 1)}`, L);
+    expect(long).toEqual({ ok: false, label: 'merchant', problem: 'too_long' });
+    if (!long.ok) expect(labelProblemDetail(long)).toBe('label "merchant" is too long');
   });
 
   it('numeric date + 24 h time in Lima; impossible values -> null', () => {

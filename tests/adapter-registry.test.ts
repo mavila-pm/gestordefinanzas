@@ -94,13 +94,62 @@ describe('AdapterRegistry routing', () => {
     expect(reg.parse(raw, toPlainText(raw.body))).toMatchObject({ ok: false, reason: 'unknown_template', parserVersion: 'NAMED_V1' });
   });
 
-  it('all fail with the same evidence: non_transactional > malformed > unknown_template', () => {
+  it('all fail with the same evidence: malformed > unknown_template > non_transactional (only when every adapter agrees)', () => {
     const raw = email({ body: 'AVISO' });
     const u = stub({ institution: 'BCP', version: 'U_V1', claims: /AVISO/, parse: 'unknown_template' });
     const m = stub({ institution: 'BBVA', version: 'M_V1', claims: /AVISO/, parse: 'malformed' });
     const n = stub({ institution: 'INTERBANK', version: 'N_V1', claims: /AVISO/, parse: 'non_transactional' });
-    expect(new AdapterRegistry([u, m, n]).parse(raw, raw.body)).toMatchObject({ reason: 'non_transactional', parserVersion: 'N_V1' });
-    expect(new AdapterRegistry([u, m]).parse(raw, raw.body)).toMatchObject({ reason: 'malformed', parserVersion: 'M_V1' });
+    const n2 = stub({ institution: 'BBVA', version: 'N2_V1', claims: /AVISO/, parse: 'non_transactional' });
+    expect(new AdapterRegistry([u, m, n]).parse(raw, raw.body)).toMatchObject({ reason: 'malformed', parserVersion: 'M_V1' });
+    expect(new AdapterRegistry([n, u]).parse(raw, raw.body)).toMatchObject({ reason: 'unknown_template', parserVersion: 'U_V1' });
+    expect(new AdapterRegistry([n, n2]).parse(raw, raw.body)).toMatchObject({ reason: 'non_transactional', parserVersion: 'N_V1' });
+  });
+
+  it('regression: a pasted BCP email with an unknown template stays unresolved even if BBVA calls its footer a notice', async () => {
+    const raw: RawFinancialEvent = {
+      channel: 'email', sender: 'user-import:email', subject: '', receivedAt: '2026-09-16T01:31:00Z',
+      body: ['Pagaste tu servicio con tu cuenta BCP.', 'Monto: S/ 120.00', 'Fecha y hora: 10 de septiembre de 2026 - 10:00 AM',
+        'Si detectas una operación inusual llama al BCP. Transferencias a BBVA sin costo.'].join('\n'),
+    };
+    const repo = new InMemoryTransactionRepository();
+    const r = await ingestRawEvent(raw, CTX, repo, undefined, { persistAs: 'import' });
+    expect(r).toMatchObject({ outcome: 'unresolved', transactionId: null });
+    expect(r.detail).toMatch(/^unknown_template: /);
+    expect(repo.events[0]).toMatchObject({ parserVersion: 'BCP_EMAIL_V1' });
+  });
+
+  describe('the bank named in the sender/subject decides; a body-only read by another bank is never the result', () => {
+    // Real BCP adapter: these bodies match BCP templates exactly, so BCP's read SUCCEEDS from the body mention alone.
+    const bcpTransferBody = ['Realizaste una transferencia a una cuenta BCP.', 'Monto: S/ 500.00', 'Cuenta destino: BCP ****7777',
+      'Fecha y hora: 10 de septiembre de 2026 - 10:00 AM'].join('\n');
+
+    it('an Interbank email whose body reads as a BCP transfer -> ambiguous_institution, never a BCP movement', async () => {
+      const raw = email({ sender: 'Interbank <avisos@interbank-sintetico.example>', subject: 'Constancia Interbank', body: bcpTransferBody });
+      expect(bcpEmailV1.parse(raw, toPlainText(raw.body))).toMatchObject({ ok: true, event: { institution: 'BCP' } });
+      expect(defaultAdapterRegistry.parse(raw, toPlainText(raw.body)))
+        .toEqual({ ok: false, reason: 'ambiguous_institution', detail: 'BCP_EMAIL_V1', parserVersion: null });
+      const repo = new InMemoryTransactionRepository();
+      expect(await ingestRawEvent(raw, CTX, repo)).toMatchObject({ outcome: 'unresolved', transactionId: null });
+      expect(await repo.listTransactions('u')).toHaveLength(0);
+    });
+
+    it('a BBVA-named email whose body reads as a BCP deposit -> ambiguous_institution, never a BCP deposit', () => {
+      const raw = email({ sender: 'BBVA Notificaciones <avisos@bbva-sintetico.example>', subject: 'BBVA: constancia de operación',
+        body: ['Recibiste un depósito de una cuenta BCP.', 'Monto: S/ 500.00', 'Fecha y hora: 10 de septiembre de 2026 - 10:05 AM'].join('\n') });
+      expect(bcpEmailV1.parse(raw, toPlainText(raw.body))).toMatchObject({ ok: true });
+      expect(defaultAdapterRegistry.parse(raw, toPlainText(raw.body))).toMatchObject({ ok: false, reason: 'ambiguous_institution', parserVersion: null });
+    });
+
+    it('named bank reads it and the body-only bank does not -> the named bank (stub named, real BCP fails)', () => {
+      const named = stub({ institution: 'BBVA', version: 'NAMED_V1', claims: /\bNOMBRADO\b/, parse: 'ok' });
+      const raw = email({ subject: 'NOMBRADO: aviso', body: 'Compra aprobada.\nTransferencias a cuentas BCP sin costo.' });
+      expect(new AdapterRegistry([bcpEmailV1, named]).parse(raw, toPlainText(raw.body))).toMatchObject({ ok: true, event: { parserVersion: 'NAMED_V1' } });
+    });
+
+    it('without any bank in the header, the body-only BCP read stands (no other evidence)', () => {
+      const raw = email({ sender: 'avisos@otro.example', subject: 'Constancia', body: bcpTransferBody });
+      expect(defaultAdapterRegistry.parse(raw, toPlainText(raw.body))).toMatchObject({ ok: true, event: { institution: 'BCP' } });
+    });
   });
 
   it('nobody claims it -> null (not financial)', () => {

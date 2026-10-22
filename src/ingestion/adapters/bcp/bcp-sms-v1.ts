@@ -46,6 +46,8 @@ export const bcpSmsV1: BankAdapter = {
   institution: 'BCP',
   parserVersion: VERSION,
   templateVerification: 'SYNTHETIC_UNVERIFIED',
+  /** Real anonymized samples observed (sender and a non-movement notice); see bcp/common.ts. */
+  observed: true,
 
   canHandle(raw: RawFinancialEvent) {
     return raw.channel === 'sms' && (bcpSmsV1.verifySource(raw) || /^BCP(?: Alertas)?:/i.test(raw.body.trim()));

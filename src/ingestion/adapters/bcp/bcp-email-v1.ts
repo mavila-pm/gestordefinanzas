@@ -1,7 +1,7 @@
 import type { BankAdapter, ParseResult } from '../../bank-adapter';
 import type { CardKind, Direction, NormalizedFinancialEvent, RawFinancialEvent, TransactionType } from '../../../domain/types';
 import { parseSpanishLongDate } from '../../lima-time';
-import { cleanMerchant, emailDomain, last4, parseDateAndTime, parseMoneyExpr, readLabels } from '../../parse-helpers';
+import { cleanMerchant, emailDomain, labelProblemDetail, last4, parseDateAndTime, parseMoneyExpr, readLabels } from '../../parse-helpers';
 import { deriveExternalEventId } from '../../sanitize';
 import { BCP_EMAIL_SENDER_DOMAINS } from './common';
 
@@ -28,7 +28,8 @@ interface Template {
   uncertainty?: string;
 }
 
-// SYNTHETIC_UNVERIFIED templates. Order matters: first match wins.
+// SYNTHETIC_UNVERIFIED templates. Exactly one may match: a promo line or a quoted original ("Realizaste un consumo..."
+// inside a refund) makes the message unreadable, never read as the first template found.
 const TEMPLATES: Template[] = [
   { headline: /Realizaste un consumo con tu Tarjeta de Cr[ée]dito/i, type: 'credit_card_purchase', direction: 'outflow', cardKind: 'credit', requires: ['merchant', 'card'] },
   { headline: /Realizaste un consumo con tu Tarjeta de D[ée]bito/i, type: 'expense', direction: 'outflow', cardKind: 'debit', requires: ['merchant', 'card'] },
@@ -68,6 +69,8 @@ export const bcpEmailV1: BankAdapter = {
   institution: 'BCP',
   parserVersion: VERSION,
   templateVerification: 'SYNTHETIC_UNVERIFIED',
+  /** Real anonymized samples observed (sender and a non-movement notice); see bcp/common.ts. */
+  observed: true,
 
   canHandle(raw: RawFinancialEvent) {
     return raw.channel === 'email'
@@ -87,11 +90,13 @@ export const bcpEmailV1: BankAdapter = {
     if (nonTx) return fail('non_transactional', nonTx.kind);
 
     const labels = readLabels(text, LABELS);
-    if (!labels.ok) return fail('malformed', `label "${labels.ambiguous}" appears more than once`);
+    if (!labels.ok) return fail('malformed', labelProblemDetail(labels));
     const values = labels.values;
 
     const haystack = `${raw.subject ?? ''}\n${text}`;
-    const tpl = TEMPLATES.find((t) => t.headline.test(haystack) && (!t.operation || t.operation.test(values.operationKind ?? '')));
+    const matched = TEMPLATES.filter((t) => t.headline.test(haystack) && (!t.operation || t.operation.test(values.operationKind ?? '')));
+    if (matched.length > 1) return fail('malformed', 'more than one movement headline');
+    const tpl = matched[0];
     if (!tpl) return fail('unknown_template', 'no known BCP headline');
 
     const money = values.amount ? parseMoneyExpr(values.amount) : null;

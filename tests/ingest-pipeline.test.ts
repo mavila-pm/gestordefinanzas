@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ingestRawEvent, type UserContext } from '../src/engine/ingest';
+import { ingestRawEvent as ingestWithProductionDefaults, type UserContext } from '../src/engine/ingest';
+import { ingestAsVerifiedTemplate as ingestRawEvent } from './fixtures/engine';
 import { InMemoryTransactionRepository, PlanLimitError } from '../src/engine/repository';
 import { monthlySummary } from '../src/engine/monthly-summary';
 import { parseIngestionCodes, reviewReasons } from '../src/engine/review-reasons';
@@ -203,12 +204,21 @@ describe('delivered channels never auto-confirm an unverified template', () => {
     expect(reasons[0]!.text).toMatch(/aún no validamos/);
   });
 
-  it('SMS too; without the option (tests, legacy callers) behaviour is unchanged', async () => {
+  it('SMS too; a caller that forgets the option is still safe (on by default); only an explicit opt-out confirms', async () => {
     await ingestRawEvent(fx.purchasePenSms(), USER_A, repo, undefined, { requireVerifiedTemplate: true });
     expect((await repo.listTransactions('user-a'))[0]!.status).toBe('review_required');
-    const other = new InMemoryTransactionRepository();
-    await ingestRawEvent(fx.purchasePenEmail(), USER_A, other);
-    expect((await other.listTransactions('user-a'))[0]!.status).toBe('confirmed');
+    const forgot = new InMemoryTransactionRepository();
+    expect(await ingestWithProductionDefaults(fx.purchasePenEmail(), USER_A, forgot)).toMatchObject({ outcome: 'created', detail: 'template_unverified' });
+    expect((await forgot.listTransactions('user-a'))[0]!.status).toBe('review_required');
+    const optedOut = new InMemoryTransactionRepository();
+    await ingestWithProductionDefaults(fx.purchasePenEmail(), USER_A, optedOut, undefined, { requireVerifiedTemplate: false });
+    expect((await optedOut.listTransactions('user-a'))[0]!.status).toBe('confirmed');
+  });
+
+  it('imports do not get template_unverified (they are always reviewed as user_import)', async () => {
+    const imported = new InMemoryTransactionRepository();
+    const r = await ingestWithProductionDefaults({ ...fx.purchasePenSms(), sender: 'user-import:sms' }, USER_A, imported, undefined, { persistAs: 'import' });
+    expect(r.detail?.split(',')).toEqual(['sender_not_verified', 'user_import']);
   });
 
   it('plan limit from the repository -> outcome plan_limit, nothing created, traced as rejected with the code', async () => {

@@ -9,7 +9,8 @@ import { interbankEmailV1, interbankSmsV1 } from './adapters/interbank/interbank
 
 /**
  * What routing + parsing produced for one raw event. `ambiguous_institution`: adapters of two different banks read
- * the same message successfully, so the bank cannot be known from the text; nothing is guessed (goes to unresolved).
+ * the same message successfully (or the header names one bank and another bank's adapter reads the body), so the bank
+ * cannot be known from the text; nothing is guessed (goes to unresolved).
  */
 export type RoutedParse =
   | ParseResult
@@ -19,8 +20,14 @@ export type RoutedParse =
 const Evidence = { VerifiedSender: 0, NamedInHeader: 1, MentionedInBody: 2 } as const;
 type Evidence = (typeof Evidence)[keyof typeof Evidence];
 
-/** When every candidate fails, the most informative failure is reported. */
-const FAILURE_ORDER: Record<ParseFailureReason, number> = { non_transactional: 0, malformed: 1, unknown_template: 2 };
+/**
+ * When every deciding candidate fails, the most informative failure is reported. `non_transactional` ("no movement,
+ * nothing to do") ranks LAST: it is reported only when every deciding adapter says so, because telling the person a
+ * real movement is just a notice would lose it; unresolved asks them to register it.
+ */
+const FAILURE_ORDER: Record<ParseFailureReason, number> = { malformed: 0, unknown_template: 1, non_transactional: 2 };
+
+interface Tried extends Candidate { result: ParseResult }
 
 export interface Candidate { adapter: BankAdapter; evidence: Evidence; index: number }
 
@@ -51,34 +58,52 @@ export class AdapterRegistry {
   /**
    * Routes and parses. Returns null when no adapter claims the message (not financial).
    * - A verified sender decides the bank: only that bank's adapters are tried.
-   * - Otherwise every candidate is tried (a mention of another bank's name never hijacks the message).
-   * - Successful reads from two different banks -> `ambiguous_institution` (never pick one at random).
-   * - All failed -> the failure of the best-evidenced adapter (then the most informative reason).
+   * - Otherwise, when the sender/subject names a bank, only the named bank(s) can be the result. Another bank's adapter
+   *   that only saw its name in the body can never take the message: if it reads it successfully the bank is unclear
+   *   -> `ambiguous_institution` (e.g. an Interbank email saying "transferencia a una cuenta BCP").
+   * - With no bank in the header, every candidate decides; successful reads from two different banks ->
+   *   `ambiguous_institution` (never pick one at random).
+   * - All deciding candidates failed -> the most informative failure (see FAILURE_ORDER).
    */
   parse(raw: RawFinancialEvent, text: string): RoutedParse | null {
     const all = this.candidates(raw);
     if (!all.length) return null;
+    const run = (c: Candidate): Tried => ({ ...c, result: c.adapter.parse(raw, text) });
+
     const verified = all.filter((c) => c.evidence === Evidence.VerifiedSender);
-    const tried = (verified.length ? verified : all).map((c) => ({ ...c, result: c.adapter.parse(raw, text) }));
+    if (verified.length) return decide(verified.map(run));
 
-    const oks = tried.filter((t) => t.result.ok);
-    const banks = [...new Set(oks.map((t) => t.adapter.institution))];
-    if (banks.length > 1) {
-      return { ok: false, reason: 'ambiguous_institution', detail: oks.map((t) => t.adapter.parserVersion).join(','), parserVersion: null };
-    }
-    if (oks.length) return oks[0]!.result;
-
-    const rank = (r: ParseResult) => (r.ok ? -1 : FAILURE_ORDER[r.reason]);
-    tried.sort((a, b) => a.evidence - b.evidence || rank(a.result) - rank(b.result) || a.index - b.index);
-    return tried[0]!.result;
+    const named = new Set(all.filter((c) => c.evidence === Evidence.NamedInHeader).map((c) => c.adapter.institution));
+    const tried = all.map(run);
+    if (!named.size) return decide(tried);
+    const deciding = tried.filter((t) => named.has(t.adapter.institution));
+    const bodyOnlyReads = tried.filter((t) => !named.has(t.adapter.institution) && t.result.ok);
+    if (bodyOnlyReads.length) return ambiguous([...deciding.filter((t) => t.result.ok), ...bodyOnlyReads]);
+    return decide(deciding);
   }
+}
+
+function ambiguous(reads: readonly Tried[]): RoutedParse {
+  return { ok: false, reason: 'ambiguous_institution', detail: reads.map((t) => t.adapter.parserVersion).join(','), parserVersion: null };
+}
+
+/** Candidates are already strongest-evidence first. */
+function decide(tried: readonly Tried[]): RoutedParse {
+  const oks = tried.filter((t) => t.result.ok);
+  if (new Set(oks.map((t) => t.adapter.institution)).size > 1) return ambiguous(oks);
+  if (oks.length) return oks[0]!.result;
+  const rank = (r: ParseResult) => (r.ok ? -1 : FAILURE_ORDER[r.reason]);
+  return [...tried].sort((a, b) => a.evidence - b.evidence || rank(a.result) - rank(b.result) || a.index - b.index)[0]!.result;
 }
 
 export const bcpAdapters: readonly BankAdapter[] = [bcpEmailV1, bcpSmsV1];
 /** SYNTHETIC_UNVERIFIED templates and empty sender allowlists: every BBVA event goes to review. */
 export const bbvaAdapters: readonly BankAdapter[] = [bbvaEmailV1, bbvaSmsV1, bbvaPushV1];
 
-/** Scaffold: claims messages naming Interbank (so they are never misread by another bank) and reads nothing yet. */
+/**
+ * Scaffold: claims messages naming Interbank and reads nothing yet. When Interbank is named in the sender/subject,
+ * another bank reading the body makes the message ambiguous_institution (unresolved), never that bank's movement.
+ */
 export const interbankAdapters: readonly BankAdapter[] = [interbankEmailV1, interbankSmsV1];
 
 /** Every adapter the app runs, in registry order. */
@@ -86,7 +111,18 @@ export const registeredAdapters: readonly BankAdapter[] = [...bcpAdapters, ...bb
 
 export const defaultAdapterRegistry = new AdapterRegistry(registeredAdapters);
 
-/** Banks whose messages are actually read (scaffolds excluded), in registry order. Copy is built from this list. */
+const unique = (adapters: readonly BankAdapter[]) => [...new Set(adapters.map((a) => a.institution))];
+
+/**
+ * Banks we can say we read: at least one adapter backed by real observed messages (scaffolds excluded), in registry
+ * order. Copy is built from this list, never from invented templates.
+ */
 export function supportedInstitutions(adapters: readonly BankAdapter[] = registeredAdapters): InstitutionCode[] {
-  return [...new Set(adapters.filter((a) => !a.scaffold).map((a) => a.institution))];
+  return unique(adapters.filter((a) => !a.scaffold && a.observed));
+}
+
+/** Banks read only with invented templates (nothing observed yet): shown as "en prueba", never as supported. */
+export function trialInstitutions(adapters: readonly BankAdapter[] = registeredAdapters): InstitutionCode[] {
+  const supported = new Set(supportedInstitutions(adapters));
+  return unique(adapters.filter((a) => !a.scaffold && !supported.has(a.institution)));
 }

@@ -15,8 +15,13 @@ import { deriveExternalEventId } from '../../sanitize';
 export const BBVA_EMAIL_SENDER_DOMAINS: readonly string[] = [];
 export const BBVA_SMS_SENDERS: readonly string[] = [];
 
-/** Genuine-looking bank messages that are not money movements. Checked only when no template matched. */
-export interface NonTransactionalRule { re: RegExp; kind: string; whenNoAmount?: boolean }
+/**
+ * Genuine-looking bank messages that are not money movements. Checked only when no template matched, and only when
+ * NO amount is printed anywhere: these words also appear in the security footers of real movement emails ("nunca te
+ * pediremos tu clave digital"), so a message with an amount stays unresolved (the person registers it), never
+ * dismissed as a notice.
+ */
+export interface NonTransactionalRule { re: RegExp; kind: string }
 
 export const NON_TRANSACTIONAL: readonly NonTransactionalRule[] = [
   // One-time codes: never a movement; the code itself is never kept (detail is only the kind).
@@ -24,15 +29,14 @@ export const NON_TRANSACTIONAL: readonly NonTransactionalRule[] = [
   // Security notices (a blocked/unusual operation is not a completed movement).
   { re: /\b(inicio de sesi[óo]n|bloqueamos|operaci[óo]n inusual|cambio de clave|actualizaste tus datos)\b/i, kind: 'security_notice' },
   { re: /\bestado de cuenta\b/i, kind: 'account_statement' },
-  // Marketing only when no amount is printed; with an amount the message stays unresolved (never guessed either way).
-  { re: /\b(promoci[óo]n|campa[ñn]a|aprovecha|descuentos?|beneficios?)\b/i, kind: 'marketing', whenNoAmount: true },
+  { re: /\b(promoci[óo]n|campa[ñn]a|aprovecha|descuentos?|beneficios?)\b/i, kind: 'marketing' },
 ];
 
 const ANY_AMOUNT = new RegExp(MONEY_EXPR, 'i');
 
 export function nonTransactionalKind(text: string): string | null {
-  const hasAmount = ANY_AMOUNT.test(text);
-  return NON_TRANSACTIONAL.find((r) => r.re.test(text) && !(r.whenNoAmount && hasAmount))?.kind ?? null;
+  if (ANY_AMOUNT.test(text)) return null;
+  return NON_TRANSACTIONAL.find((r) => r.re.test(text))?.kind ?? null;
 }
 
 export interface EventShape {

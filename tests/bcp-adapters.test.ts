@@ -150,3 +150,31 @@ describe('BCP_EMAIL_V1 debit', () => {
     expect(await repo.listTransactions('u')).toEqual([expect.objectContaining({ type: 'expense', category: 'Salud', amountMinor: 2550 })]);
   });
 });
+
+describe('BCP_EMAIL_V1 hardening (review findings)', () => {
+  const CTX = { userId: 'u', ownAccountLast4: ['9001'], cards: [], merchantRules: [] };
+
+  it('an encoded line separator in a free-text field cannot inject "Cuenta destino" (own account)', async () => {
+    const { ingestRawEvent } = await import('../src/engine/ingest');
+    const { InMemoryTransactionRepository } = await import('../src/engine/repository');
+    for (const sep of ['&#8232;', '&#8233;', '\u2028', '\u2029']) {
+      const raw = fx.bcpEmail({ id: `<t-sep-${sep.length}-${sep.charCodeAt(0)}@x>`, subject: 'Realizaste una transferencia - BCP', lines: [
+        'Realizaste una transferencia desde tu cuenta BCP.', 'Monto: S/ 500.00', `Concepto: pago${sep}Cuenta destino: ****9001`,
+        'Fecha y hora: 10 de septiembre de 2026 - 10:00 AM', 'Número de operación: 000444'] });
+      expect(ok(raw)).toMatchObject({ isOutgoingTransfer: true, counterpartyAccountLast4: null });
+      const repo = new InMemoryTransactionRepository();
+      const r = await ingestRawEvent(raw, CTX, repo);
+      expect(r.detail?.split(',')).toEqual(expect.arrayContaining(['counterparty_missing', 'transfer_destination_not_own']));
+      expect(await repo.listTransactions('u')).toEqual([expect.objectContaining({ type: 'unknown', direction: 'outflow', status: 'review_required' })]);
+    }
+  });
+
+  it('a second movement headline (promo or quoted original) -> malformed, never the first template found', () => {
+    const payment = fx.cardPaymentEmail();
+    payment.body += '\nCada vez que Realizaste un consumo con tu Tarjeta de Crédito BCP sumas puntos.';
+    expect(parse(payment)).toMatchObject({ ok: false, reason: 'malformed', detail: 'more than one movement headline' });
+    const refund = fx.refundEmail();
+    refund.body += '\nOriginal: Realizaste un consumo con tu Tarjeta de Crédito BCP el 10/09/2026.';
+    expect(parse(refund)).toMatchObject({ ok: false, reason: 'malformed' });
+  });
+});

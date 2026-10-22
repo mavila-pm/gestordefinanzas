@@ -1,6 +1,6 @@
 import type { BankAdapter, ParseResult } from '../../bank-adapter';
 import type { RawFinancialEvent } from '../../../domain/types';
-import { cleanMerchant, emailDomain, last4, parseDateAndTime, parseMoneyExpr, readLabels } from '../../parse-helpers';
+import { cleanMerchant, emailDomain, labelProblemDetail, last4, parseDateAndTime, parseMoneyExpr, readLabels } from '../../parse-helpers';
 import { BBVA_EMAIL_SENDER_DOMAINS, bbvaEvent, nonTransactionalKind, type EventShape } from './common';
 
 const VERSION = 'BBVA_EMAIL_V1';
@@ -10,8 +10,9 @@ interface Template extends EventShape {
   requires: Array<'merchant' | 'card' | 'counterparty'>;
 }
 
-// SYNTHETIC_UNVERIFIED templates (no real BBVA email observed). Order matters: first match wins. Wording is distinct
-// from the BCP templates on purpose, so one message is never read by both banks.
+// SYNTHETIC_UNVERIFIED templates (no real BBVA email observed). Exactly one headline may appear: a promo line or a
+// quoted original ("Compra realizada con tu Tarjeta..." inside a refund) makes the message unreadable, never a
+// purchase. Wording is distinct from the BCP templates on purpose, so one message is never read by both banks.
 const TEMPLATES: Template[] = [
   { headline: /Compra realizada con tu Tarjeta de Cr[ée]dito/i, type: 'credit_card_purchase', direction: 'outflow', cardKind: 'credit', requires: ['merchant', 'card'] },
   { headline: /Compra realizada con tu Tarjeta de D[ée]bito/i, type: 'expense', direction: 'outflow', cardKind: 'debit', requires: ['merchant', 'card'] },
@@ -56,15 +57,17 @@ export const bbvaEmailV1: BankAdapter = {
       ({ ok: false, reason, detail, parserVersion: VERSION });
 
     const haystack = `${raw.subject ?? ''}\n${text}`;
-    const tpl = TEMPLATES.find((t) => t.headline.test(haystack));
+    const matched = TEMPLATES.filter((t) => t.headline.test(haystack));
+    if (matched.length > 1) return fail('malformed', 'more than one movement headline');
+    const tpl = matched[0];
     if (!tpl) {
-      // Only when no movement template matched: a promo footer never turns a real movement into a notice.
+      // Only when no movement template matched and no amount is printed: a footer never turns a movement into a notice.
       const kind = nonTransactionalKind(haystack);
       return kind ? fail('non_transactional', kind) : fail('unknown_template', 'no known BBVA headline');
     }
 
     const labels = readLabels(text, LABELS);
-    if (!labels.ok) return fail('malformed', `label "${labels.ambiguous}" appears more than once`);
+    if (!labels.ok) return fail('malformed', labelProblemDetail(labels));
     const v = labels.values;
 
     const money = v.amount ? parseMoneyExpr(v.amount) : null;

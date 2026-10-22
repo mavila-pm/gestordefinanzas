@@ -114,8 +114,10 @@ export interface IngestOptions {
   /** Persist the source as a user import (pasted text) instead of a delivered bank notification. */
   persistAs?: 'import';
   /**
-   * Delivered bank notifications (Email Bridge, Android SMS): a template not yet calibrated on real samples
-   * (SYNTHETIC_UNVERIFIED) is read but never auto-confirmed ('template_unverified' -> review_required).
+   * A template not yet calibrated on real samples (SYNTHETIC_UNVERIFIED) is read but never auto-confirmed
+   * ('template_unverified' -> review_required). ON BY DEFAULT for every delivered source (Email Bridge, Android SMS,
+   * any future channel), so a caller that forgets it stays safe. Imports are always reviewed anyway (user_import),
+   * so it does not apply to them. `false` is an explicit opt-out (engine tests that stand in for VERIFIED templates).
    */
   requireVerifiedTemplate?: boolean;
 }
@@ -188,7 +190,8 @@ async function persist(
   const { type, direction, reasons } = resolveWithUserContext(e, ctx);
   // Pasted text cannot prove it came from the bank: an import is always reviewed by the user, never auto-confirmed.
   if (channel === 'import' && !reasons.includes('user_import')) reasons.push('user_import');
-  if (opts.requireVerifiedTemplate && e.templateVerification !== 'VERIFIED' && !reasons.includes('template_unverified')) {
+  const requireVerified = opts.requireVerifiedTemplate ?? channel !== 'import';
+  if (requireVerified && e.templateVerification !== 'VERIFIED' && !reasons.includes('template_unverified')) {
     reasons.push('template_unverified');
   }
   const category = categorize(type, merchantNormalized, ctx.merchantRules);
