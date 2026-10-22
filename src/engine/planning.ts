@@ -150,11 +150,15 @@ export function occurrenceState(rows: readonly SettlementRow[], obligationId: st
 /**
  * The status a new settlement is stored with (decided on the server from REAL amounts, never from a form amount):
  * "Pago completo" closes the occurrence whatever the amount (the person says it is done); "Fue un abono" stays
- * partial until the real abonos plus this movement reach a known planned amount, which then closes it.
+ * partial until the real abonos plus this movement reach a CONFIRMED planned amount, which then closes it. An
+ * estimate ("Luz ≈ S/ 100") never closes on its own: the real bill may be higher, and the person said it was an abono
+ * (estimated ≠ confirmed); "Pago completo" closes it.
  */
-export function settlementStatus(mode: 'full' | 'partial', plannedMinor: number | null, priorAbonosMinor: number, txMinor: number): 'paid' | 'partial' {
+export function settlementStatus(
+  mode: 'full' | 'partial', plannedMinor: number | null, priorAbonosMinor: number, txMinor: number, amountStatus: AmountStatus = 'confirmed',
+): 'paid' | 'partial' {
   if (mode === 'full') return 'paid';
-  return plannedMinor !== null && priorAbonosMinor + txMinor >= plannedMinor ? 'paid' : 'partial';
+  return amountStatus === 'confirmed' && plannedMinor !== null && priorAbonosMinor + txMinor >= plannedMinor ? 'paid' : 'partial';
 }
 
 // ── Incomes ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -312,7 +316,7 @@ export function buildPlan(input: PlanInput): Plan {
       const payOn = x.targetDate ?? x.dueDate; // plan by the day the person wants to pay
       // Abonos of this occurrence (real movements): only what remains is reserved; covered → nothing left to plan.
       const abono = input.partialPaid?.get(o.id)?.get(x.period) ?? 0;
-      if (remainingMinor(x.amountMinor, abono) === 0) continue;
+      if (remainingMinor(x.amountMinor, abono, x.amountStatus) === 0) continue;
       if (x.dateStatus === 'unknown') {
         // A date we don't know: reserve it once (the earliest unpaid period) and ask for the date.
         if (unknownDateCounted || !until) continue;
@@ -332,7 +336,7 @@ export function buildPlan(input: PlanInput): Plan {
     if (until && o.frequency !== 'monthly' && o.amountMinor !== null && o.amountStatus !== 'unknown') {
       const due = nextOccurrence(o, addDays(until, 1), paid);
       // Abonos already made toward that occurrence (real movements) lower what is left to set aside (planned ≠ paid).
-      const left = due ? remainingMinor(o.amountMinor, input.partialPaid?.get(o.id)?.get(due.period) ?? 0)! : 0;
+      const left = due ? remainingMinor(o.amountMinor, input.partialPaid?.get(o.id)?.get(due.period) ?? 0, o.amountStatus) ?? 0 : 0;
       if (due?.dueDate && due.dueDate > until && left > 0) {
         const months = STEP[o.frequency];
         // Rounded to whole units: a plan, not an invoice.
@@ -373,7 +377,7 @@ export function buildPlan(input: PlanInput): Plan {
 
   function line(x: Occurrence, kind: LineKind, note: string | null, abono: number): PlanLine {
     return {
-      kind, label: x.name, amountMinor: remainingMinor(x.amountMinor, abono), date: x.targetDate ?? x.dueDate, dateMax: x.targetDate ? null : x.dueDateMax, note,
+      kind, label: x.name, amountMinor: remainingMinor(x.amountMinor, abono, x.amountStatus), date: x.targetDate ?? x.dueDate, dateMax: x.targetDate ? null : x.dueDateMax, note,
       obligationId: x.obligationId, period: x.period, ...(abono > 0 ? { paidMinor: abono, plannedMinor: x.amountMinor } : {}),
     };
   }
@@ -419,11 +423,14 @@ export function reserveProgress(r: Pick<Reserve, 'savedMinor' | 'targetMinor' | 
 }
 
 /**
- * What is still owed on one occurrence (ADR-0017): planned − real abonos, never below 0. Unknown planned stays
- * unknown (never 0): a real abono does not tell us the price.
+ * What is still owed on one OPEN occurrence (ADR-0017): planned − real abonos, never below 0. Unknown planned stays
+ * unknown (never 0): a real abono does not tell us the price. An estimate already reached by abonos of an occurrence
+ * that is still open (the person said "Fue un abono") is unknown too: the real bill was higher than the estimate.
  */
-export function remainingMinor(plannedMinor: number | null, paidMinor: number): number | null {
-  return plannedMinor === null ? null : Math.max(0, plannedMinor - paidMinor);
+export function remainingMinor(plannedMinor: number | null, paidMinor: number, amountStatus: AmountStatus = 'confirmed'): number | null {
+  if (plannedMinor === null || amountStatus === 'unknown') return null;
+  if (amountStatus === 'estimated' && paidMinor > 0 && paidMinor >= plannedMinor) return null;
+  return Math.max(0, plannedMinor - paidMinor);
 }
 
 /**
@@ -516,18 +523,20 @@ export function suggestMatches(
       const [x] = occurrencesBetween(o, dayIn(period, 1), dayIn(period, 28)).filter((y) => y.period === period);
       if (!x) continue;
       const abono = partialPaid?.get(o.id)?.get(period) ?? 0;
-      const remaining = remainingMinor(o.amountMinor, abono);
+      const remaining = remainingMinor(o.amountMinor, abono, o.amountStatus);
       if (remaining === 0) continue; // already covered by real abonos
       const nameHit = !!t.merchant && norm(o.name).split(/\s+/).some((w) => w.length >= 4 && norm(t.merchant!).includes(w));
       // Against the planned amount, or against what remains after abonos ("ya pagué 500, hoy pago los 1,000").
-      const amountHit = o.amountMinor !== null && (near(t.amountMinor, o.amountMinor, o.amountStatus) || (abono > 0 && near(t.amountMinor, remaining!, o.amountStatus)));
-      // Same name, a smaller amount than what remains: maybe an abono (the person says so; never assumed).
-      const abonoHit = nameHit && remaining !== null && t.amountMinor < remaining;
+      const amountHit = o.amountMinor !== null && (near(t.amountMinor, o.amountMinor, o.amountStatus) || (abono > 0 && remaining !== null && near(t.amountMinor, remaining, o.amountStatus)));
+      // Same name, a smaller amount than what remains: maybe an abono (the person says so; never assumed). An open
+      // occurrence whose estimate the abonos already reached owes an unknown rest: the person says which it was.
+      const openRest = abono > 0 && remaining === null;
+      const abonoHit = nameHit && (openRest || (remaining !== null && t.amountMinor < remaining));
       const dateHit = x.dueDate === null || Math.abs(daysBetween(t.occurredOn, x.dueDateMax ?? x.dueDate)) <= 10;
       if (!dateHit || !(amountHit || nameHit)) continue;
       if (!amountHit && !abonoHit && o.amountMinor !== null) continue; // a name alone with a larger amount: the variation flow handles it after linking
       out.push({ obligationId: o.id, name: o.name, period, transactionId: t.id, confidence: amountHit && nameHit ? 'high' : 'medium',
-        amountMinor: t.amountMinor, remainingMinor: remaining, partial: remaining !== null && t.amountMinor < remaining });
+        amountMinor: t.amountMinor, remainingMinor: remaining, partial: openRest || (remaining !== null && t.amountMinor < remaining) });
       used.add(t.id);
       break;
     }

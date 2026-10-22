@@ -163,7 +163,7 @@ export function timeline(
     for (const x of occurrencesBetween(o, from, to)) {
       if (input.settledObligations.get(o.id)?.has(x.period) || x.period < o.since.slice(0, 7) || (x.dueDate !== null && x.dueDate < o.since)) continue;
       const abono = input.partialPaid?.get(o.id)?.get(x.period) ?? 0;
-      const owed = remainingMinor(x.amountMinor, abono);
+      const owed = remainingMinor(x.amountMinor, abono, x.amountStatus);
       if (owed === 0) continue; // real abonos already cover it
       const last = x.dueDateMax ?? x.dueDate;
       const item: TimelineItem = {

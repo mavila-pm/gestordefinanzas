@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { financialEffect } from '../src/domain/financial-effect';
 import type { Currency } from '../src/domain/money';
 import type { TransactionType } from '../src/domain/types';
-import { abonosByOccurrence, remainingMinor, settlementStatus } from '../src/engine/planning';
+import { abonosByOccurrence, remainingMinor, settlementStatus, type AmountStatus } from '../src/engine/planning';
 import { isUuid } from '../src/web/transaction-input';
 import { logLearning } from './learning';
 
@@ -50,11 +50,13 @@ export async function settleObligation(
   const abonos = abonosByOccurrence(rows.map((r) => ({ obligationId, period, status: r.status, amountMinor: r.tx ? Number(r.tx.amount_minor) : null,
     currency: r.tx?.currency ?? null, txConfirmed: r.tx?.status === 'confirmed' })), new Map([[obligationId, currency]])).get(obligationId)?.get(period) ?? 0;
   const amount = Number(tx.amount_minor);
-  const status = settlementStatus(mode, planned, abonos, amount);
+  const amountStatus = ob.amount_status as AmountStatus;
+  // An estimated amount never closes on its own (the real bill may be higher): only "Pago completo" closes it.
+  const status = settlementStatus(mode, planned, abonos, amount, amountStatus);
   const { error } = await supabase.from('plan_settlements').insert({ user_id: userId, fixed_expense_id: obligationId, period, transaction_id: transactionId, status });
   if (error) return fromDb(error.code, 'not_payment');
   await logLearning(supabase, userId, 'settlement', 'accepted', obligationId, { period, transactionId, mode, status });
-  return { ok: true, status, currency, remainingMinor: status === 'paid' ? 0 : remainingMinor(planned, abonos + amount) };
+  return { ok: true, status, currency, remainingMinor: status === 'paid' ? 0 : remainingMinor(planned, abonos + amount, amountStatus) };
 }
 
 /** "Sí, es ese" on a deposit: a confirmed income movement in the same currency settles one expected income. */

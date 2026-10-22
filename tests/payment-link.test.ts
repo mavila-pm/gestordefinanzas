@@ -50,6 +50,18 @@ describe('confirming a payment', () => {
     expect((await markObligationPaidAction({}, form({ obligationId: UUID1, transactionId: UUID2, period: '2026-10', mode: 'partial' }))).message).toBe('Abono registrado. Faltan S/ 500.00.');
     expect(inserts.map((r) => (r as { status: string }).status)).toEqual(['partial', 'paid', 'partial']);
   });
+  it('review M3: "Fue un abono" on an ESTIMATED amount stays partial even at the estimate, so the rest can still be linked', async () => {
+    const { markObligationPaidAction } = await import('../app/app/plan/actions');
+    ob = { currency: 'PEN', amount_minor: 10000, amount_status: 'estimated' }; // Luz ≈ S/ 100; the real bill is S/ 150
+    tx = { type: 'expense', status: 'confirmed', currency: 'PEN', direction: 'outflow', amount_minor: 10000 };
+    expect((await markObligationPaidAction({}, form({ obligationId: UUID1, transactionId: UUID2, period: '2026-10', mode: 'partial' }))).message).toBe('Abono registrado. Falta confirmar el monto total.');
+    prior = [{ status: 'partial', tx: { amount_minor: 10000, currency: 'PEN', status: 'confirmed' } }];
+    tx = { ...tx, amount_minor: 5000 };
+    expect((await markObligationPaidAction({}, form({ obligationId: UUID1, transactionId: UUID2, period: '2026-10', mode: 'partial' }))).message).toBe('Abono registrado. Falta confirmar el monto total.');
+    // The person closes it: "Pago completo".
+    expect((await markObligationPaidAction({}, form({ obligationId: UUID1, transactionId: UUID2, period: '2026-10', mode: 'full' }))).message).toBe('Pago confirmado. El siguiente ya está en tus próximos pagos.');
+    expect(inserts.map((r) => (r as { status: string }).status)).toEqual(['partial', 'partial', 'paid']);
+  });
   it('an occurrence already closed takes nothing more; an unknown price keeps the abono partial', async () => {
     const { markObligationPaidAction } = await import('../app/app/plan/actions');
     tx = { type: 'expense', status: 'confirmed', currency: 'PEN', direction: 'outflow', amount_minor: 50000 };

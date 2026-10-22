@@ -199,6 +199,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
             const t = d.transactionsById.get(s.transactionId);
             const o = obligationsById.get(s.obligationId);
             const cur = o?.currency ?? 'PEN';
+            const paidSoFar = d.partialPaid.get(s.obligationId)?.get(s.period) ?? 0;
             const settleForm = (mode: 'full' | 'partial', label: string, text: string, cls: string) => (
               <ActionForm action={markObligationPaidAction} className="inline" label={label}>
                 <input type="hidden" name="obligationId" value={s.obligationId} />
@@ -212,7 +213,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
               <div key={s.transactionId} className="source row" data-testid="match-suggestion">
                 <span className="setting-text"><span>{t?.merchant ?? 'Movimiento'} · <Money v={t?.amountMinor ?? null} c={cur} /> · {t ? shortDate(t.occurredOn) : ''}</span>
                   <small className="muted">{s.partial
-                    ? <>Parece un pago de {s.name} ({d.partialPaid.get(s.obligationId)?.has(s.period) ? 'faltan ' : ''}<Money v={s.remainingMinor ?? null} c={cur} />). ¿Fue el pago completo o un abono?</>
+                    ? <>Parece un pago de {s.name} ({paidSoFar && s.remainingMinor === null ? <>ya pagaste <Money v={paidSoFar} c={cur} /></> : <>{paidSoFar ? 'faltan ' : ''}<Money v={s.remainingMinor ?? null} c={cur} /></>}). ¿Fue el pago completo o un abono?</>
                     : <>Parece el pago de {s.name}.</>}</small></span>
                 {s.partial
                   ? <div className="actions">

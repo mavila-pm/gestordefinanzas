@@ -162,6 +162,32 @@ describe('the write decision (server-side, from real amounts): "Pago completo" v
     expect(settlementStatus('partial', 150000, 50000, 99999)).toBe('partial');
     expect(settlementStatus('partial', null, 0, 900000)).toBe('partial'); // unknown price: never assumed covered
   });
+
+  it('review M3: an abono on an ESTIMATED amount never closes the month (estimated ≠ confirmed); "Pago completo" does', () => {
+    // Luz ≈ S/ 100, the real bill is S/ 150: "Fue un abono" of S/ 100 stays partial, so the S/ 50 can still be linked.
+    expect(settlementStatus('partial', 10000, 0, 10000, 'estimated')).toBe('partial');
+    expect(settlementStatus('partial', 10000, 10000, 5000, 'estimated')).toBe('partial');
+    expect(settlementStatus('full', 10000, 10000, 5000, 'estimated')).toBe('paid');
+    expect(settlementStatus('partial', 10000, 0, 10000, 'confirmed')).toBe('paid');
+  });
+
+  it('review M3: an estimate already reached by abonos owes an unknown rest (never 0): the plan asks, the S/ 50 is offered', () => {
+    const luz = ob({ id: 'luz', name: 'Luz Enel', amountMinor: 10000, amountStatus: 'estimated', dueDay: 10 });
+    expect(remainingMinor(10000, 10000, 'estimated')).toBeNull();
+    expect(remainingMinor(10000, 4000, 'estimated')).toBe(6000);
+    expect(remainingMinor(10000, 10000, 'confirmed')).toBe(0);
+    const p = buildPlan(input({ obligations: [luz], partialPaid: abonos('luz', '2026-10', 10000) }));
+    expect(p.lines.find((l) => l.obligationId === 'luz')).toMatchObject({ amountMinor: null, paidMinor: 10000, plannedMinor: 10000 });
+    expect(p.missing).toContainEqual({ code: 'amount', text: 'Falta el monto de Luz Enel: ya pagaste S/ 100.00.', obligationId: 'luz' });
+    expect(p.status).toBe('partial');
+    // The second movement (S/ 50, same name) is offered with both choices; a confirmed amount already covered is not.
+    const t = { id: 'b', occurredOn: '2026-10-09', amountMinor: 5000, currency: 'PEN' as const, merchant: 'ENEL PERU' };
+    expect(suggestMatches([luz], [t], new Map(), new Set(['a']), abonos('luz', '2026-10', 10000))).toEqual([
+      { obligationId: 'luz', name: 'Luz Enel', period: '2026-10', transactionId: 'b', confidence: 'medium', amountMinor: 5000, remainingMinor: null, partial: true }]);
+    expect(suggestMatches([{ ...luz, amountStatus: 'confirmed' }], [t], new Map(), new Set(['a']), abonos('luz', '2026-10', 10000))).toEqual([]);
+    expect(timeline({ today: '2026-10-01', obligations: [luz], incomes: [], settledObligations: new Map(), settledIncomes: new Map(), partialPaid: abonos('luz', '2026-10', 10000) }, 15)[0])
+      .toMatchObject({ label: 'Luz Enel', amountMinor: null, amountStatus: 'unknown', paidMinor: 10000 });
+  });
 });
 
 describe('Vels reads partial payments from the engine (deterministic, no model call)', () => {

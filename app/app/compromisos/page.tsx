@@ -43,7 +43,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
   // Skipped ≠ paid (ADR-0017): a debt installment is settled by its registered payment; a planned payment by its rows.
   const stateOf = (c: { kind: 'fixed' | 'debt'; id: string; dueDate: string; amountMinor: number | null }) => c.kind === 'debt'
     ? (plan.settledObligations.get(c.id)?.has(c.dueDate.slice(0, 7)) ? 'paid' : 'open')
-    : occurrenceState(plan.settlements, c.id, c.dueDate.slice(0, 7), c.amountMinor);
+    : occurrenceState(plan.settlements, c.id, c.dueDate.slice(0, 7), rows.get(c.id)?.amountStatus === 'confirmed' ? c.amountMinor : null);
   const strategies = compareDebtStrategies(plan.debts.filter((x) => x.currency === 'PEN'));
   // "¿En cuánto salgo de deudas?" — simulated for the monthly amount the person types (GET, nothing is written).
   const budgetMinor = cuota ? parseAmountToMinor(cuota) : null;
@@ -92,13 +92,13 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
               const done = state === 'paid' || state === 'skipped';
               // Abonos (real movements) vs the plan: "Pagaste S/ 500 de S/ 1,500" and what is still owed.
               const abono = state === 'partial' ? plan.partialPaid.get(c.id)?.get(period) ?? 0 : 0;
-              const left = state === 'partial' ? remainingMinor(c.amountMinor, abono) : null;
+              const left = state === 'partial' ? remainingMinor(c.amountMinor, abono, c.kind === 'fixed' ? rows.get(c.id)?.amountStatus : 'confirmed') : null;
               const m = (v: number) => formatMoney({ amountMinor: v, currency: c.currency });
               return (
                 <li key={`${c.kind}-${c.id}-${c.dueDate}`} data-state={state}>
                   <span className="next-day">{shortDate(c.dueDate)}</span>
                   <span className="setting-text"><span>{c.name}</span>
-                    {state === 'partial' && abono > 0 && <small className="muted">Pagaste {m(abono)}{c.amountMinor !== null ? ` de ${m(c.amountMinor)}` : ''}</small>}
+                    {state === 'partial' && abono > 0 && <small className="muted">Pagaste {m(abono)}{c.amountMinor !== null ? ` de ${c.kind === 'fixed' && rows.get(c.id)?.amountStatus === 'estimated' ? '≈ ' : ''}${m(c.amountMinor)}` : ''}</small>}
                     {!done && (c.daysUntil < 0 || c.daysUntil <= 3) && <small className={c.daysUntil < 0 ? 'error' : 'warn'}>
                       {c.daysUntil < 0 ? 'Venció' : c.daysUntil === 0 ? 'Vence hoy' : `Vence en ${plural(c.daysUntil, 'día', 'días')}`}</small>}</span>
                   <span className="actions" style={{ gap: 8 }}>
