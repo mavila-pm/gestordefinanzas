@@ -143,8 +143,12 @@ begin
     into v_debt from public.debts d where d.id = p_debt_id and d.user_id = v_uid for update;
   if not found then raise exception 'not_found' using errcode = 'P0002'; end if;
   if p_client_ref is not null then
-    select p.period, p.settles into v_prev from public.debt_payments p where p.user_id = v_uid and p.client_ref = p_client_ref;
+    select p.debt_id, p.amount_minor, p.period, p.settles into v_prev from public.debt_payments p where p.user_id = v_uid and p.client_ref = p_client_ref;
     v_replay := found;
+    -- A replay is the same submission: another debt or amount under the same ref is refused, never answered as done.
+    if v_replay and (v_prev.debt_id <> v_debt.id or v_prev.amount_minor <> p_amount_minor) then
+      raise exception 'client_ref_conflict' using errcode = '23505';
+    end if;
   end if;
   if v_replay then
     v_period := v_prev.period;

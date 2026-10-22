@@ -65,10 +65,15 @@ describe.skipIf(!DATABASE_URL)('debt payments (record_debt_payment)', () => {
 
   it('second review: the same client_ref twice lowers the balance once (retry, second tab)', async () => {
     const d = await debt(USER_A);
+    const other = await debt(USER_A, 100000);
     await asRole(pool, 'authenticated', USER_A, async (c) => {
       expect((await c.query(pay, [d, 10000, 'ref-retry-0001'])).rows[0].r).toMatchObject({ replay: false, balance_minor: 490000 });
       expect((await c.query(pay, [d, 10000, 'ref-retry-0001'])).rows[0].r).toMatchObject({ replay: true, balance_minor: 490000, period_paid_minor: 10000 });
       expect((await c.query('select count(*)::int as n from public.debt_payments')).rows[0].n).toBe(1);
+      // The same ref for another amount or another debt is not that submission: refused, nothing written.
+      expect(await errorMessage(c, pay, [d, 20000, 'ref-retry-0001'])).toBe('client_ref_conflict');
+      expect(await errorCode(c, pay, [other, 10000, 'ref-retry-0001'])).toBe('23505');
+      expect(await state(other, c)).toMatchObject({ balance: 100000 });
       // Above the balance: refused (never capped), nothing written.
       expect(await errorMessage(c, pay, [d, 490001, 'ref-over-00001'])).toBe('over_balance');
       expect(await errorCode(c, pay, [d, 490001, 'ref-over-00001'])).toBe('23514');
