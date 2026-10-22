@@ -1,6 +1,5 @@
-import { logout } from '../../auth/actions';
 import { SettingsNav } from '../../../components/settings-client';
-import { Avatar } from '../../../components/settings';
+import { Avatar, LogoutForm } from '../../../components/settings';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { preferredName } from '../../../src/domain/profile';
 import { loadProfileData } from './load-profile';
@@ -22,7 +21,7 @@ export default async function Settings() {
           <div><strong>{name ?? 'Tu cuenta'}</strong>{p.email && <p className="muted small">{maskEmail(p.email)}</p>}</div>
         </div>
         <SettingsNav variant="list" />
-        <form action={logout}><button type="submit" className="link" style={{ paddingLeft: 0 }}>Cerrar sesión</button></form>
+        <LogoutForm />
       </div>
       <div className="settings-desktop-only stack">
         <h1>Perfil</h1>

@@ -173,12 +173,3 @@ export async function changePassword(prev: ChangePasswordState, form: FormData):
   if (reauthError) console.warn(JSON.stringify({ event: 'password_reauth_failed', status: reauthError.status ?? null, code: reauthError.code ?? null }));
   return reauthRequestOutcome(reauthError);
 }
-
-/** "Cerrar sesión": this device only ('Cerrar otras sesiones' in Ajustes → Seguridad covers the rest). */
-export async function logout(): Promise<void> {
-  const supabase = await createSupabaseServerClient();
-  // auth-js clears this device's session cookies even when the revoke call fails; the failure is only logged.
-  const { error } = await supabase.auth.signOut({ scope: 'local' });
-  if (error) console.warn(JSON.stringify({ event: 'logout_failed', status: error.status ?? null, code: error.code ?? null }));
-  redirect('/login');
-}

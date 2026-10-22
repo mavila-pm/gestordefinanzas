@@ -69,3 +69,15 @@ export function SettingsPage({ title, children, testId }: { title: string; child
 export function Avatar({ name, size = 40 }: { name: string | null; size?: number }) {
   return <span className="avatar-initial" style={{ width: size, height: size, fontSize: size * 0.42 }} aria-hidden="true">{(name ?? '·').slice(0, 1).toLocaleUpperCase('es')}</span>;
 }
+
+/**
+ * "Cerrar sesión" (this device): a plain POST to app/auth/logout/route.ts, outside /app, so it still works when the
+ * proxy's registration gate refuses writes under /app because the status cannot be read (lib/supabase/proxy.ts).
+ */
+export function LogoutForm({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <form action="/auth/logout" method="post" className={className} style={style}>
+      <button type="submit" className="link" style={{ paddingLeft: 0 }}>Cerrar sesión</button>
+    </form>
+  );
+}

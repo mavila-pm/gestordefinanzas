@@ -90,5 +90,15 @@ describe('updateSession', () => {
       expect((await updateSession(req('/api/csp-report', 'POST'))).status).toBe(200);
       expect(rpc).not.toHaveBeenCalled();
     });
+
+    it('"Cerrar sesión" (POST /auth/logout) is outside the gate: signing out works while the status is unreadable', async () => {
+      const { updateSession } = await import('../lib/supabase/proxy');
+      signedIn();
+      rpc.mockResolvedValue({ data: null, error: { code: 'PGRST301' } });
+      const res = await updateSession(req('/auth/logout', 'POST'));
+      expect(res.status).toBe(200);
+      expect(res.headers.get('x-middleware-next')).toBe('1');
+      expect(rpc).not.toHaveBeenCalled();
+    });
   });
 });

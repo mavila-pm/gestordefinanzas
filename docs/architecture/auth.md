@@ -15,9 +15,11 @@
   expires (default 1 h): accepted.
 - Data access from the app uses the **publishable key + the user's session**: every query is subject to RLS.
   The service role key is not used by the web app and must never be.
-- Server actions (`app/auth/actions.ts`): login, signup, logout, password reset request, password update.
+- Server actions (`app/auth/actions.ts`): login, signup, password reset request, password update.
   Messages never reveal whether an email is registered. New passwords 12–72 bytes with letters and numbers (bcrypt limit; longer is refused, never truncated).
-  `logout` signs out this device only (`scope: 'local'`); a new password from a recovery link signs out the other
+  "Cerrar sesión" is a plain form POST to `/auth/logout` (`app/auth/logout/route.ts`, same-origin check, no GET), outside
+  `/app` so the proxy's fail-closed registration gate never blocks it; it signs out this device only
+  (`scope: 'local'`); a new password from a recovery link signs out the other
   devices (`scope: 'others'`). Login: Cap, then the lockout counter, then Supabase (ADR-0016; the lock text offers
   the email link and recovery).
 - Signed-in password change (Ajustes → Cuenta, `changePassword`, `src/web/password-change.ts`): same rules as new

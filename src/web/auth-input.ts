@@ -102,11 +102,31 @@ export function authCookieOptions(secure: boolean) {
 }
 
 /**
+ * Cross-site check for a plain-form POST route handler (server actions get the same check from Next.js). Refused
+ * when the browser marks the request as coming from another site (Sec-Fetch-Site) or sends an Origin of another host
+ * (or the opaque "null"); a request with neither header (old browser, curl) passes, as with Next.js server actions.
+ * `host` is the host the request reached (x-forwarded-host on Vercel, else host).
+ */
+export function sameOriginPost(origin: string | null, fetchSite: string | null, host: string | null): boolean {
+  if (fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none') return false;
+  if (!origin) return true;
+  if (!host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Where an email link continues at /crear-cuenta: the step a new account is on, or, for an account that already
  * existed (registration done), the app with a one-time notice. Only the inbox owner gets here (the link proves it),
  * so telling them is not enumeration; the signup screen itself answers the same for new and registered emails.
+ * 'unknown' (the step could not be read): the app without the notice; its layout reads the step again and sends an
+ * unfinished account back to /crear-cuenta.
  */
-export function registrationLanding(step: 'password' | 'profile' | 'done'): '/crear-cuenta/contrasena' | '/crear-cuenta/perfil' | '/app?cuenta=existente' {
+export function registrationLanding(step: 'password' | 'profile' | 'done' | 'unknown'): '/crear-cuenta/contrasena' | '/crear-cuenta/perfil' | '/app?cuenta=existente' | '/app' {
+  if (step === 'unknown') return '/app';
   return step === 'password' ? '/crear-cuenta/contrasena' : step === 'profile' ? '/crear-cuenta/perfil' : '/app?cuenta=existente';
 }
 
