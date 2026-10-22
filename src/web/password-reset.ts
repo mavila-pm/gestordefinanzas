@@ -55,7 +55,8 @@ export function newPasswordError(error: { status?: number; code?: string }): str
   return 'No pudimos guardar tu contraseña. Intenta de nuevo.';
 }
 
-export const REGISTRATION_TOO_MANY = 'Demasiados intentos. Intenta más tarde.';
+/** After 5 phone_taken answers in 24 h (migration 049): what happened, and when and how to try again. */
+export const REGISTRATION_TOO_MANY = 'Probaste varios números ya registrados. Intenta de nuevo mañana con otro número.';
 /** PostgREST: the function is not in the schema cache (finish_registration before migration 049 is applied). */
 export const REGISTRATION_RPC_MISSING = 'PGRST202';
 const REGISTRATION_FAILED = 'No pudimos guardar tus datos. Intenta de nuevo.';
@@ -63,13 +64,14 @@ const REGISTRATION_FAILED = 'No pudimos guardar tus datos. Intenta de nuevo.';
 /**
  * finish_registration answer (migration 049) → where the person goes, or the copy to show.
  * 'ok' and 'already_registered' (double tap, back button: nothing is rewritten) both continue to /bienvenida.
- * null is what the previous void complete_registration answered on success (fallback while 049 is not applied).
- * Any status this code does not know is refused (fail closed), never treated as success.
+ * An empty answer is success only from the previous void complete_registration (`legacy`: the fallback while 049 is
+ * not applied); from finish_registration it is refused like any status this code does not know (fail closed).
  */
 export type RegistrationOutcome = { next: '/bienvenida' } | { error: string };
-export function registrationOutcome(data: unknown, error: { message?: string } | null | undefined): RegistrationOutcome {
+export function registrationOutcome(data: unknown, error: { message?: string } | null | undefined, legacy = false): RegistrationOutcome {
   if (error) return { error: registrationError(error.message) };
-  if (data === null || data === undefined || data === '' || data === 'ok' || data === 'already_registered') return { next: '/bienvenida' };
+  if (data === 'ok' || data === 'already_registered') return { next: '/bienvenida' };
+  if (legacy && (data === null || data === undefined || data === '')) return { next: '/bienvenida' };
   if (data === 'phone_taken') return { error: registrationError('phone_taken') };
   if (data === 'too_many_attempts') return { error: REGISTRATION_TOO_MANY };
   return { error: REGISTRATION_FAILED };

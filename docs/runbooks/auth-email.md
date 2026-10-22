@@ -60,8 +60,8 @@ on the domain. Then raise Rate Limits → "emails per hour" (e.g. 30) and keep t
 - New password from a recovery link: other devices are signed out (`signOut({ scope: 'others' })`). "Cerrar sesión"
   signs out this device only (`scope: 'local'`); Ajustes → "Cerrar otras sesiones" signs out the rest.
 - Profile step (`finish_registration`, migration 049): a number already used by another account →
-  "Ese número ya está registrado…" at most 5 times per account in 24 h, then "Demasiados intentos. Intenta más
-  tarde."; a finished account submitting again goes on to `/bienvenida` and nothing is rewritten.
+  "Ese número ya está registrado…" at most 5 times per account in 24 h, then "Probaste varios números ya
+  registrados. Intenta de nuevo mañana con otro número."; a finished account submitting again goes on to `/bienvenida` and nothing is rewritten.
 - Logs never contain passwords, tokens or links.
 
 ## 5. Current state (2026-10-20) — what the code relies on, and who closes it

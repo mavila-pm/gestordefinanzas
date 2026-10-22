@@ -197,16 +197,32 @@ describe('completeProfile: finish_registration answers a status (migration 049)'
     authUser.mockResolvedValue({ id: 'u1', email: null });
   });
 
-  it('pure mapping: ok / already_registered / null (old void version) continue; refusals become copy; unknown fails closed', () => {
-    for (const ok of ['ok', 'already_registered', null, undefined, '']) expect(registrationOutcome(ok, null)).toEqual({ next: '/bienvenida' });
+  it('pure mapping: ok / already_registered continue; refusals become copy; unknown fails closed', () => {
+    for (const ok of ['ok', 'already_registered']) expect(registrationOutcome(ok, null)).toEqual({ next: '/bienvenida' });
     expect(registrationOutcome('phone_taken', null)).toEqual({ error: TAKEN });
     expect(registrationOutcome('too_many_attempts', null)).toEqual({ error: REGISTRATION_TOO_MANY });
-    expect(REGISTRATION_TOO_MANY).toBe('Demasiados intentos. Intenta más tarde.');
+    // Says what happened and when / how to try again (the window is 24 h; nothing sensitive in saying so).
+    expect(REGISTRATION_TOO_MANY).toBe('Probaste varios números ya registrados. Intenta de nuevo mañana con otro número.');
     expect(registrationOutcome('something_new', null)).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
     expect(registrationOutcome({ status: 'ok' }, null)).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
     // An error wins over any data, and still never shows the provider's text.
     expect(registrationOutcome('ok', { message: 'under_age' })).toEqual({ error: 'Velsuno es para personas mayores de 18 años.' });
     expect(registrationOutcome(null, { message: 'permission denied for function complete_registration' })).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
+  });
+
+  it('an empty answer is success only from the old void complete_registration (fallback), never from finish_registration', () => {
+    for (const empty of [null, undefined, '']) {
+      expect(registrationOutcome(empty, null)).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
+      expect(registrationOutcome(empty, null, true)).toEqual({ next: '/bienvenida' });
+    }
+  });
+
+  it('the action: an empty answer from finish_registration stays on the form (fail closed)', async () => {
+    const { completeProfile } = await import('../app/auth/actions');
+    rpc.mockResolvedValueOnce({ data: null, error: null });
+    expect(await completeProfile({}, profileForm())).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it('the action sends the normalized values once and redirects only on ok / already_registered', async () => {

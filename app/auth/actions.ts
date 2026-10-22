@@ -110,8 +110,9 @@ export async function completeProfile(_prev: FormState, form: FormData): Promise
   // previous complete_registration is used. Remove the fallback once 049 is live.
   const args = { p_given: given, p_family: family, p_phone: phone, p_birth: birth, p_terms: TERMS_VERSION, p_privacy: PRIVACY_VERSION };
   let { data, error } = await supabase.rpc('finish_registration', args);
-  if (error?.code === REGISTRATION_RPC_MISSING) ({ data, error } = await supabase.rpc('complete_registration', args));
-  const outcome = registrationOutcome(data, error);
+  const legacy = error?.code === REGISTRATION_RPC_MISSING;
+  if (legacy) ({ data, error } = await supabase.rpc('complete_registration', args));
+  const outcome = registrationOutcome(data, error, legacy);
   if ('error' in outcome) return { error: outcome.error };
   redirect(outcome.next);
 }
