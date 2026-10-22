@@ -23,6 +23,7 @@ Preconditions: every P0 in `docs/MVP.md` checked, CI green on the release commit
 | `SUPPORT_EMAIL` | config | contact mailbox |
 | `GEMINI_API_KEY` (+ `AI_PRICES` for the model) | secret / config | only if AI goes live (privacy decision: paid tier, no training on prompts); otherwise leave unset |
 | `DATABASE_URL`, `INBOUND_EMAIL_SECRET`, `INGEST_EMAIL_DOMAIN` | secret | only when the Email Bridge provider exists |
+| `CULQI_PUBLIC_KEY`, `CULQI_SECRET_KEY` (`pk_live_`/`sk_live_` only), `CULQI_PLAN_*` (six live plan ids), `CULQI_WEBHOOK_USER`, `CULQI_WEBHOOK_PASSWORD`, `CULQI_ENABLED`, `DATABASE_URL` | secret / config | only at the billing go-live: `docs/runbooks/billing-culqi.md` §6 (ADR-0018) |
 Do NOT set `AI_FIXTURE` on Vercel (ignored on Preview and production anyway).
 
 ## 4. Release

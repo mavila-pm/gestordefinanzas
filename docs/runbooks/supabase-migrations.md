@@ -65,6 +65,17 @@
 | 20261012000046_billing_checkout.sql | billing_price() (Mensual 400 → 900 from 2027-01-01 Lima, Anual 5900, Vitalicio 19800, USD minor) + billing_orders (RLS read own; writes only via billing_create_order / billing_simulate_payment (demo only) / billing_activate (service_role)) + subscriptions.billing_plan | 2026-10-12 |
 | 20261012000047_billing_hardening.sql | billing_create_order(plan, expected_minor) (price_changed; per-user advisory lock; supersedes pending orders) + billing_activate(order, provider, ref, amount, currency) (amount/currency/ref checked, 1 h TTL, re-checks subscription and trial at activation). Old signatures kept but EXECUTE revoked (no DROP) | 2026-10-12 |
 
+### Written, NOT applied yet (billing before Culqi goes live, ADR-0018)
+Apply in order after `npm run test:db` passes, then verify RLS + grants with one compact query (no anon/authenticated
+grants on `billing_events` / `billing_customers`; the new functions executable by `service_role` only, except
+`billing_plan_state`). Owner checklist: `docs/runbooks/billing-culqi.md`.
+
+| File | What | Contains DROP |
+|---|---|---|
+| 20261020000054_billing_ledger_rule.sql | order states processing/refunded + livemode/terms_version/processing_at; subscriptions cancel_at_period_end/canceled_at/livemode/billing amount+currency/provider_customer_ref + unique (provider, provider_ref); billing_events (append-only ledger, trigger) and billing_customers (server only); plan_config billing_grace_days = 3; billing_plan_state() = THE entitlement rule; ai_effective_plan uses it | replaces the two status CHECK constraints of 046 (`ALTER TABLE … DROP CONSTRAINT`, no data) |
+| 20261020000055_billing_order_flow.sql | one lock order (advisory first); billing_create_order never supersedes a processing order (payment_in_progress); billing_begin_charge (pending → processing, test mode only for demo accounts); billing_fail_order; billing_activate (Vitalicio; processing activates at any age) | no |
+| 20261020000056_billing_lifecycle.sql | billing_save_customer, billing_activate_subscription (provider dates, trial length checked), billing_record_renewal, billing_mark_past_due, billing_cancel (cancel at period end), billing_refund; each idempotent per provider reference | no |
+
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
 + `request.jwt.claims` (the PostgREST mechanism), records each result, and ends with `raise exception`

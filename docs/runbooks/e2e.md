@@ -130,6 +130,13 @@ from public.ai_calls where created_at > now() - interval '30 days' group by 1, 2
 select percentile_cont(array[.5,.9,.95]) within group (order by weighted_tokens) from public.ai_usage where bucket like 'm:%';
 ```
 
+## Billing (ADR-0018) — written 2026-10-22, NOT run yet
+New suite `billing` (`tests/e2e/billing.e2e.ts`, seed s18: s18a demo account, s18b real account). Demo path only, no
+Culqi call: plans with server prices → Vitalicio simulated (order `simulated`, real subscription untouched) → Mensual
+offers the trial; s18b sees "payments soon", cannot simulate or activate, no order created; the webhook answers
+503/401 to a forged event. With Culqi sandbox keys on the server the suite stops at the card button (the sandbox run
+is manual: `docs/runbooks/billing-culqi.md` §4). Run: `scripts/e2e.sh render-seed s18a s18b`, apply, `scripts/e2e.sh billing`.
+
 ## Perf probe
 `scripts/e2e.sh perf` (seed s11a): prints `PERF` rows (tap → first visible feedback, tap → result) measured in the page from `pointerdown`; fails if any feedback > 100 ms.
 

@@ -3,6 +3,7 @@
 -- seed never depends on a previous cleanup. It never deletes or updates anything: cleanup is tests/e2e/cleanup.sql.
 -- Probe users live on the non-deliverable .invalid domain; one A/B pair per suite, so suites never share data:
 --   s17* onboarding-real (the full real conversation, then the rows written)
+--   s18* billing (s18a demo account: simulated purchase; s18b a real account: nothing can be bought without Culqi)
 --   s3*  auth-dashboard   s4*  review-manual   s56* import-learning   s78* analysis-dashboard   s9* planning-account   s10* splits   s11* cashflow   s12* onboarding   s13* income-link   s14* vels   s16* registration
 -- __E2E_PASSWORD__ is replaced at run time (scripts/e2e.sh render) — the password is never committed.
 -- B rows attacked by id in the suites have fixed ids (see B_TX in tests/e2e/lib.ts).
@@ -21,7 +22,7 @@ declare r record; u uuid; ta uuid; em text;
 begin
   -- Namespace guard: refuse anything but the synthetic run format (never a real user).
   if run !~ '^[a-z0-9]{8,20}$' then raise exception 'e2e seed: invalid run id %', run; end if;
-  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b'),('s12a'),('s12b'),('s13a'),('s13b'),('s14a'),('s14b'),('s16a'),('s16b'),('s17a'),('s17b')) v(tag) loop
+  for r in select * from (values ('s3a'),('s3b'),('s4a'),('s4b'),('s56a'),('s56b'),('s78a'),('s78b'),('s9a'),('s9b'),('s10a'),('s10b'),('s11a'),('s11b'),('s12a'),('s12b'),('s13a'),('s13b'),('s14a'),('s14b'),('s16a'),('s16b'),('s17a'),('s17b'),('s18a'),('s18b')) v(tag) loop
     u := gen_random_uuid();
     em := 'e2e-' || r.tag || '-' || run || '@gestordefinanzas.invalid';
     if em !~ '^e2e-s[0-9]+[ab]-[a-z0-9]{8,20}@gestordefinanzas\.invalid$' then raise exception 'e2e seed: % is outside the synthetic namespace', em; end if;
@@ -167,7 +168,7 @@ begin
     end if;
     -- Every probe user has finished onboarding except s12a, the first-time user of the onboarding suite (ADR-0006).
     if r.tag not in ('s12a', 's16a', 's17a') then insert into public.onboarding_states (user_id, status, completed_at) values (u, 'completed', now()); end if;
-    if r.tag = 's12a' then insert into public.demo_access (user_id) values (u); end if;
+    if r.tag in ('s12a', 's18a') then insert into public.demo_access (user_id) values (u); end if;
     -- The first-use tour (migration 043) is already seen, except by s12a, who meets it after the conversation.
     if r.tag not in ('s12a', 's16a', 's17a') then insert into public.user_preferences (user_id, tour_completed_at) values (u, now()); end if;
   end loop;
