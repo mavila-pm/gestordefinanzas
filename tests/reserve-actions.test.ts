@@ -118,6 +118,9 @@ describe('reserveEntryAction / saveReserveAction / archiveReserveAction', () => 
     expect(inserts[0]).toEqual({ table: 'reserves', row: { user_id: 'u1', name: 'Viaje', currency: 'PEN', target_minor: 120000, target_date: '2099-12-20', client_ref: 'ref-reserve-0001' } });
     insertError = { code: '23505', message: 'duplicate key value violates unique constraint "reserves_active_name"' };
     expect((await saveReserveAction({}, form({ name: 'viaje', currency: 'PEN' }))).error).toBe('Ya tienes un apartado con ese nombre en esa moneda.');
+    // Review m3: the SQL cap of 50 active apartados (reserves_active_cap) → what happened + what to do.
+    insertError = { code: '23514', message: 'reserve_limit' };
+    expect((await saveReserveAction({}, form({ name: 'Otro', currency: 'PEN' }))).error).toBe('Llegaste a 50 apartados. Archiva uno vacío para crear otro.');
   });
 
   it('edit never sends the currency; archive with money is refused by the guard', async () => {

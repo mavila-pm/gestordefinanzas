@@ -4,7 +4,7 @@ import { financialEffect } from '../src/domain/financial-effect';
 import {
   abonosByOccurrence, buildPlan, detectVariations, isBalanceStale, suggestMatches, type ExpectedIncome, type Obligation, type PaidFact, type Plan, type PlanInput, type Reserve, type SettlementRow,
 } from '../src/engine/planning';
-import { toReserves } from './reserves';
+import { reserveReads, toReserves } from './reserves';
 import { addDays, limaToday } from '../src/domain/dates';
 import { debtInstallmentDue, debtMonths } from '../src/engine/commitments';
 import {
@@ -58,8 +58,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     supabase.from('planning_settings').select('currency,essentials_monthly_minor,essentials_status,cushion_minor,allow_zero_for_debt,savings_goal_minor'),
     supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed').gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(1000),
     loadDecisions(supabase),
-    supabase.from('reserves').select('id,name,currency,target_minor,target_date').eq('active', true).order('created_at').limit(50),
-    supabase.from('reserve_balances').select('reserve_id,saved_minor').limit(200),
+    ...reserveReads(supabase),
     // Debt abonos of the last ~2 months (ledger, migration 052): the plan reserves only what is left of an installment.
     supabase.from('debt_payments').select('debt_id,period,amount_minor,settles').gte('period', addDays(today, -62).slice(0, 7)).limit(1000),
   ]);

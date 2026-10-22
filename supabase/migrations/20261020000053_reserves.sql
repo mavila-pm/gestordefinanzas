@@ -112,14 +112,33 @@ revoke execute on function public.reserves_archive_guard() from public, anon, au
 create trigger reserves_archive_guard before update of active on public.reserves
   for each row execute function public.reserves_archive_guard();
 
--- Saved per apartado (Σ in − Σ out), read under the caller's RLS.
+-- At most 50 active apartados per person: the loaders read 50 (active apartados and their balances), so none is
+-- ever left out of the plan. Creates (and re-activations) of one person are serialized with an advisory lock, so two
+-- at once never pass the count together.
+create function public.reserves_active_cap() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if new.active and (tg_op = 'INSERT' or not old.active) then
+    perform pg_advisory_xact_lock(hashtextextended('reserves_active:' || new.user_id::text, 0));
+    if (select count(*) from public.reserves r where r.user_id = new.user_id and r.active and r.id <> new.id) >= 50 then
+      raise exception 'reserve_limit' using errcode = '23514';
+    end if;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.reserves_active_cap() from public, anon, authenticated;
+create trigger reserves_active_cap before insert or update of active on public.reserves
+  for each row execute function public.reserves_active_cap();
+
+-- Saved per apartado (Σ in − Σ out), read under the caller's RLS. `active` lets the loaders read only the balances of
+-- active apartados (an archived one is empty by the guard above).
 create view public.reserve_balances with (security_invoker = true) as
-  select r.id as reserve_id, r.user_id, r.currency,
+  select r.id as reserve_id, r.user_id, r.currency, r.active,
     coalesce(sum(case when e.direction = 'in' then e.amount_minor else -e.amount_minor end), 0)::bigint as saved_minor,
     max(e.created_at) as last_entry_at
   from public.reserves r
   left join public.reserve_entries e on e.reserve_id = r.id and e.user_id = r.user_id
-  group by r.id, r.user_id, r.currency;
+  group by r.id, r.user_id, r.currency, r.active;
 
 -- ── RLS + explicit grants: own rows only; entries append-only; currency and owner never change ───────────────
 alter table public.reserves enable row level security;

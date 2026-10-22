@@ -172,4 +172,44 @@ describe.skipIf(!DATABASE_URL)('reserves (Apartados)', () => {
     });
     expect(await saved(aR)).toBe(50000);
   });
+
+  it('review m3: at most 50 active apartados (the loaders read 50); balances can be read for active ones only', async () => {
+    await pool.query(`insert into public.reserves (user_id, name, currency) select $1, 'R' || g, 'PEN' from generate_series(1, 49) g`, [USER_A]);
+    const old = await reserve(USER_B, 'Otro'); // another person's apartados never count
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      const add = `insert into public.reserves (user_id, name, currency) values ($1, $2, 'USD') returning id`;
+      const last = (await c.query(add, [USER_A, 'Cincuenta'])).rows[0].id;
+      expect(await errorCode(c, add, [USER_A, 'Cincuenta y uno'])).toBe('23514');
+      await c.query(`update public.reserves set active = false where id = $1`, [last]);
+      const again = (await c.query(add, [USER_A, 'Otra vez'])).rows[0].id;
+      // Re-activating the archived one would make 51.
+      expect(await errorCode(c, `update public.reserves set active = true where id = $1`, [last])).toBe('23514');
+      expect((await c.query(`select count(*)::int as n from public.reserve_balances where active`)).rows[0].n).toBe(50);
+      expect((await c.query(`select active from public.reserve_balances where reserve_id = $1`, [again])).rows).toEqual([{ active: true }]);
+    });
+    expect(old).toBeTruthy();
+  });
+
+  it('review m3: 3 simultaneous creates when 49 are active → exactly one goes through', async () => {
+    await pool.query(`insert into public.reserves (user_id, name, currency) select $1, 'R' || g, 'PEN' from generate_series(1, 49) g`, [USER_A]);
+    const attempt = async (i: number) => {
+      const c = await pool.connect();
+      try {
+        await c.query('begin');
+        await c.query('set local role authenticated');
+        await c.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: USER_A, role: 'authenticated' })]);
+        await c.query(`insert into public.reserves (user_id, name, currency) values ($1, $2, 'PEN')`, [USER_A, `Nuevo ${i}`]);
+        await new Promise((res) => setTimeout(res, 30));
+        await c.query('commit');
+        return 'ok';
+      } catch (e) {
+        await c.query('rollback').catch(() => undefined);
+        return (e as { code?: string }).code ?? 'unknown';
+      } finally { c.release(); }
+    };
+    const out = await Promise.all([1, 2, 3].map(attempt));
+    expect(out.filter((x) => x === 'ok')).toHaveLength(1);
+    expect(out.filter((x) => x === '23514')).toHaveLength(2);
+    expect((await pool.query(`select count(*)::int as n from public.reserves where user_id = $1 and active`, [USER_A])).rows[0].n).toBe(50);
+  });
 });

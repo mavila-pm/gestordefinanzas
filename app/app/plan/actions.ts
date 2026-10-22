@@ -283,6 +283,7 @@ export async function skipOccurrenceAction(_p: ActionState, form: FormData): Pro
 
 // ── Apartados (ADR-0017): money set aside with a name. Internal allocations: never an income nor an expense ─────
 const RESERVE_DUP = 'Ya tienes un apartado con ese nombre en esa moneda.';
+const RESERVE_LIMIT = 'Llegaste a 50 apartados. Archiva uno vacío para crear otro.';
 
 /** Create (client_ref: a double submit stores one) or edit name, target and date. The currency never changes. */
 export async function saveReserveAction(_p: ActionState, form: FormData): Promise<ActionState> {
@@ -303,7 +304,9 @@ export async function saveReserveAction(_p: ActionState, form: FormData): Promis
   const { error } = await supabase.from('reserves').insert({
     user_id: user.id, name: v.name, currency: v.currency, target_minor: v.targetMinor, target_date: v.targetDate, client_ref: ref(form),
   });
-  if (error && !isReplay(error)) return { error: error.code === '23505' ? RESERVE_DUP : SAVE_ERROR };
+  if (error && !isReplay(error)) {
+    return { error: error.code === '23505' ? RESERVE_DUP : error.code === '23514' && /reserve_limit/.test(error.message) ? RESERVE_LIMIT : SAVE_ERROR };
+  }
   return done(`Listo, creaste el apartado ${v.name}.`);
 }
 

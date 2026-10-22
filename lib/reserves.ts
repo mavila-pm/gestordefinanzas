@@ -17,12 +17,20 @@ export type ReserveMoveResult =
 const CLIENT_REF = /^[A-Za-z0-9:_-]{8,120}$/;
 const MAX_MINOR = 100_000_000_000;
 
+/** Active apartados per person: the SQL cap (migration 053, reserves_active_cap), so these reads never leave one out. */
+export const MAX_ACTIVE_RESERVES = 50;
+
+/** The two reads of active apartados and their balances (loadReserves and loadPlanningData share them). */
+export function reserveReads(supabase: SupabaseClient) {
+  return [
+    supabase.from('reserves').select('id,name,currency,target_minor,target_date').eq('active', true).order('created_at').limit(MAX_ACTIVE_RESERVES),
+    supabase.from('reserve_balances').select('reserve_id,saved_minor').eq('active', true).limit(MAX_ACTIVE_RESERVES),
+  ] as const;
+}
+
 /** Active apartados with their saved amount (Σ in − Σ out of real entries), read under the person's RLS. */
 export async function loadReserves(supabase: SupabaseClient): Promise<Reserve[]> {
-  const [res, bal] = await Promise.all([
-    supabase.from('reserves').select('id,name,currency,target_minor,target_date').eq('active', true).order('created_at').limit(50),
-    supabase.from('reserve_balances').select('reserve_id,saved_minor').limit(200),
-  ]);
+  const [res, bal] = await Promise.all(reserveReads(supabase));
   return toReserves(res.data, bal.data);
 }
 
