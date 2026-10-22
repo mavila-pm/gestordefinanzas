@@ -233,6 +233,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                             <input type="hidden" name="id" value={d.id} />
                             <label className="stack-sm"><span>Monto pagado</span>
                               <input name="amount" required inputMode="decimal" autoComplete="off" defaultValue={d.installmentMinor ? (d.installmentMinor / 100).toFixed(2) : ''} /></label>
+                            {d.installmentMinor ? <small className="muted">Menos que la cuota queda como abono: la cuota sigue pendiente.</small> : null}
                             <button type="submit" className="wide">Registrar pago</button>
                           </ActionForm>
                         </div>

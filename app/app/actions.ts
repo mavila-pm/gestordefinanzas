@@ -7,7 +7,8 @@ import { isReplay, ref } from '../../lib/idempotency';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
-import { parseAmountToMinor } from '../../src/domain/money';
+import { formatMoney, parseAmountToMinor, type Currency } from '../../src/domain/money';
+import { debtPaymentEffect } from '../../src/engine/commitments';
 import { SPLIT_ERROR_TEXT } from '../../src/domain/allocations';
 import { parseProfileForm } from '../../src/domain/profile';
 import { ingestRawEvent } from '../../src/engine/ingest';
@@ -272,16 +273,23 @@ export async function debtPaymentAction(_prev: ActionState, form: FormData): Pro
   if (amount === null) return { error: errorText('invalid_amount') };
   const { supabase, user } = await session();
   if (!user) return { error: errorText('not_authenticated') };
-  const { data: d } = await supabase.from('debts').select('balance_minor,installments_paid,installments_total').eq('id', id).maybeSingle();
+  const { data: d } = await supabase.from('debts').select('currency,balance_minor,installment_minor,installments_paid,installments_total').eq('id', id).maybeSingle();
   if (!d) return { error: errorText('not_found') };
   const balance = Number(d.balance_minor);
-  const paid = (d.installments_paid as number) + 1;
-  const total = d.installments_total as number | null;
+  // Pure rule (ADR-0017): an abono lowers the balance but leaves the month's installment pending; above the balance → refused.
+  const effect = debtPaymentEffect({ balanceMinor: balance, installmentMinor: d.installment_minor == null ? null : Number(d.installment_minor),
+    installmentsPaid: d.installments_paid as number, installmentsTotal: d.installments_total as number | null }, amount);
+  if (!effect.ok) {
+    return { error: effect.error === 'over_balance' ? `El pago supera el saldo (${formatMoney({ amountMinor: balance, currency: d.currency as Currency })}).` : errorText('invalid_amount') };
+  }
+  const settle = effect.settlesInstallment
+    ? { installments_paid: effect.installmentsPaid, last_payment_on: new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10) } : {};
   // Optimistic concurrency: only applies if the balance did not change meanwhile.
   const { data, error } = await supabase.from('debts')
-    .update({ balance_minor: Math.max(0, balance - amount), installments_paid: total === null ? paid : Math.min(paid, total), last_payment_on: new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10) })
+    .update({ balance_minor: effect.balanceMinor, ...settle })
     .eq('id', id).eq('balance_minor', balance).select('id');
   if (error || !data?.length) return { error: 'El saldo cambió mientras registrabas. Recarga e intenta de nuevo.' };
+  if (!effect.settlesInstallment && d.installment_minor != null) return done('Abono registrado. La cuota de este mes sigue pendiente.');
   return done('Pago registrado. Bajó el saldo de la deuda; no se creó otro gasto.');
 }
 

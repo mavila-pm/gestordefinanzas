@@ -58,3 +58,26 @@ export function debtProgress(d: Pick<Debt, 'principalMinor' | 'balanceMinor'>): 
   const paid = Math.max(0, d.principalMinor - d.balanceMinor);
   return { paidMinor: paid, ratio: Math.min(1, paid / d.principalMinor) };
 }
+
+/**
+ * What one registered debt payment does (ADR-0017). Balance goes down by the real amount typed for THIS debt;
+ * the month's installment is settled only when the payment covers what is due (installment, or the balance when
+ * it is smaller). A smaller payment is an abono: the installment stays pending and the plan keeps reserving it.
+ * A payment above the balance is refused (never silently capped). Unknown installment → no installment counted.
+ */
+export type DebtPaymentEffect =
+  | { ok: true; balanceMinor: number; settlesInstallment: boolean; installmentsPaid: number }
+  | { ok: false; error: 'invalid_amount' | 'over_balance'; balanceMinor: number };
+export function debtPaymentEffect(
+  d: Pick<Debt, 'balanceMinor' | 'installmentMinor' | 'installmentsPaid' | 'installmentsTotal'>, amountMinor: number,
+): DebtPaymentEffect {
+  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) return { ok: false, error: 'invalid_amount', balanceMinor: d.balanceMinor };
+  if (amountMinor > d.balanceMinor) return { ok: false, error: 'over_balance', balanceMinor: d.balanceMinor };
+  const due = d.installmentMinor === null ? null : Math.min(d.installmentMinor, d.balanceMinor);
+  const settles = due !== null && amountMinor >= due;
+  const next = settles ? d.installmentsPaid + 1 : d.installmentsPaid;
+  return {
+    ok: true, balanceMinor: d.balanceMinor - amountMinor, settlesInstallment: settles,
+    installmentsPaid: d.installmentsTotal === null ? next : Math.min(next, d.installmentsTotal),
+  };
+}
