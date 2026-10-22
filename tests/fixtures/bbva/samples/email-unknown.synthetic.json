@@ -1,0 +1,13 @@
+{
+  "fixtureStatus": "SYNTHETIC_FIXTURE",
+  "evidence": "A BBVA-looking email with no known template: recognized bank, nothing invented (unresolved).",
+  "raw": {
+    "channel": "email",
+    "externalEventId": "<bbva-sample-unknown-1@bbva.test>",
+    "sender": "BBVA Notificaciones <avisos@bbva-sintetico.example>",
+    "subject": "BBVA: movimiento en tu cuenta",
+    "body": "Hola, CLIENTE DE PRUEBA\nSe registró un movimiento en tu cuenta.\nImporte: S/ 20.00\nBBVA Perú (texto sintético de prueba)",
+    "receivedAt": "2026-09-20T15:00:00Z"
+  },
+  "expected": { "outcome": "unresolved" }
+}

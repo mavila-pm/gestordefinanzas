@@ -18,6 +18,18 @@ export interface BankAdapter {
   readonly parserVersion: string;
   /** Evidence behind the templates. Only real anonymized fixtures can make this VERIFIED. */
   readonly templateVerification: TemplateVerification;
+  /**
+   * Scaffold: recognizes the bank (so its messages are never misrouted to another bank) but has no template yet and
+   * reads no movement. Not listed as a supported bank.
+   */
+  readonly scaffold?: boolean;
+  /**
+   * Real messages of this bank and channel have been observed (a REAL_ANONYMIZED sample in
+   * tests/fixtures/<bank>/samples routes to this parser), even if its movement templates are still synthetic. Only
+   * banks with an observed adapter are named in the UI as banks we read; the rest are "en prueba". The bank-samples
+   * test refuses an observed adapter without such a sample.
+   */
+  readonly observed?: boolean;
   /** Cheap routing check: does this raw event belong to this adapter? */
   canHandle(raw: RawFinancialEvent): boolean;
   /** Is the sender an observed official sender? Unverified senders can never be auto-confirmed. */

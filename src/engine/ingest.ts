@@ -1,14 +1,16 @@
-import type { CardKind, Direction, NormalizedFinancialEvent, RawFinancialEvent, SourceChannel, Transaction, TransactionSource, TransactionStatus, TransactionType } from '../domain/types';
+import { INSTITUTION_CODES, type CardKind, type Direction, type NormalizedFinancialEvent, type RawFinancialEvent, type SourceChannel, type Transaction, type TransactionSource, type TransactionStatus, type TransactionType } from '../domain/types';
 import type { AdapterRegistry } from '../ingestion/adapter-registry';
 import { defaultAdapterRegistry } from '../ingestion/adapter-registry';
 import { deriveExternalEventId, isWithinSizeLimit, toPlainText } from '../ingestion/sanitize';
 import { categorize, normalizeMerchant, type MerchantRule } from './categorizer';
 import { financialFingerprint } from './fingerprint';
-import { DuplicateSourceError, type EventOutcome, type TransactionRepository } from './repository';
+import { DuplicateSourceError, PlanLimitError, type EventOutcome, type TransactionRepository } from './repository';
 
 /** Cross-source window: email and SMS of the same operation arrive with slightly different times. */
 export const STRONG_MATCH_WINDOW_MIN = 10;
 export const WEAK_MATCH_WINDOW_MIN = 30;
+/** A deposit this close (either side) to a transfer sent from another bank may be the person's own money. */
+export const OWN_TRANSFER_WINDOW_MIN = 30;
 
 export interface UserCard {
   last4: string;
@@ -26,8 +28,14 @@ export interface UserContext {
   merchantRules: readonly MerchantRule[];
 }
 
+/**
+ * What happened to one raw event. `plan_limit`: read fine, but the plan allows no more automatic movements (or no
+ * other bank) this month; nothing was created and the trace is stored as 'rejected' with the limit code as detail.
+ */
+export type IngestOutcome = EventOutcome | 'plan_limit';
+
 export interface IngestResult {
-  outcome: EventOutcome;
+  outcome: IngestOutcome;
   transactionId: string | null;
   detail: string | null;
 }
@@ -76,6 +84,24 @@ export function sourceKind(s: Pick<TransactionSource, 'channel' | 'parserVersion
   return s.channel === 'import' ? `import:${s.parserVersion}` : s.channel;
 }
 
+/**
+ * Possible own transfer across banks (suggestion only): money that arrives at one bank while the same amount, in the
+ * same currency (PEN never matches USD), left another bank as an outgoing or internal transfer within
+ * ±OWN_TRANSFER_WINDOW_MIN. Uses only the existing findCandidates port (one query per other institution), so the
+ * in-memory, PostgreSQL and Supabase import repositories all support it. Never changes the type: the person decides.
+ */
+async function sentFromAnotherBank(userId: string, e: NormalizedFinancialEvent, repo: TransactionRepository): Promise<boolean> {
+  const from = shift(e.occurredAt, -minutes(OWN_TRANSFER_WINDOW_MIN));
+  const to = shift(e.occurredAt, minutes(OWN_TRANSFER_WINDOW_MIN));
+  for (const institution of INSTITUTION_CODES) {
+    if (institution === e.institution) continue;
+    const found = await repo.findCandidates({ userId, institution, amountMinor: e.amountMinor, currency: e.currency, from, to });
+    if (found.some((t) => t.institution === institution && t.currency === e.currency && t.status !== 'ignored'
+      && (t.type === 'internal_transfer' || (t.type === 'unknown' && t.direction === 'outflow')))) return true;
+  }
+  return false;
+}
+
 function isStrongMatch(kind: string, e: NormalizedFinancialEvent, type: TransactionType, merchant: string | null, t: Transaction): boolean {
   return t.type === type
     && !!e.cardLast4 && t.cardLast4 === e.cardLast4
@@ -87,6 +113,13 @@ function isStrongMatch(kind: string, e: NormalizedFinancialEvent, type: Transact
 export interface IngestOptions {
   /** Persist the source as a user import (pasted text) instead of a delivered bank notification. */
   persistAs?: 'import';
+  /**
+   * A template not yet calibrated on real samples (SYNTHETIC_UNVERIFIED) is read but never auto-confirmed
+   * ('template_unverified' -> review_required). ON BY DEFAULT for every delivered source (Email Bridge, Android SMS,
+   * any future channel), so a caller that forgets it stays safe. Imports are always reviewed anyway (user_import),
+   * so it does not apply to them. `false` is an explicit opt-out (engine tests that stand in for VERIFIED templates).
+   */
+  requireVerifiedTemplate?: boolean;
 }
 
 /**
@@ -113,18 +146,21 @@ export async function ingestRawEvent(
   const sameEvent = await repo.findBySource(ctx.userId, channel, externalEventId);
   if (sameEvent) return done('duplicate_same_event', sameEvent.id, null, null);
 
-  const adapter = registry.resolve(raw);
-  if (!adapter) return done('not_financial', null, 'no adapter for this message', null);
-
-  const parsed = adapter.parse(raw, toPlainText(raw.body));
+  // Every adapter that claims the message is tried (verified senders first); two banks reading it -> unresolved.
+  const parsed = registry.parse(raw, toPlainText(raw.body));
+  if (!parsed) return done('not_financial', null, 'no adapter for this message', null);
   if (!parsed.ok) {
     const outcome = parsed.reason === 'non_transactional' ? 'non_transactional' : 'unresolved';
     return done(outcome, null, `${parsed.reason}: ${parsed.detail}`, parsed.parserVersion);
   }
   const e = parsed.event;
   try {
-    return await persist(raw, e, externalEventId, channel, ctx, repo, done);
+    return await persist(raw, e, externalEventId, channel, ctx, repo, done, opts);
   } catch (err) {
+    if (err instanceof PlanLimitError) {
+      await done('rejected', null, err.code, e.parserVersion);
+      return { outcome: 'plan_limit', transactionId: null, detail: err.code };
+    }
     // A concurrent delivery of the same event won the race: still exactly one transaction.
     if (!(err instanceof DuplicateSourceError)) throw err;
     const winner = await repo.findBySource(ctx.userId, channel, externalEventId);
@@ -142,6 +178,7 @@ async function persist(
   ctx: UserContext,
   repo: TransactionRepository,
   done: Done,
+  opts: IngestOptions,
 ): Promise<IngestResult> {
 
   const source: TransactionSource = {
@@ -153,6 +190,10 @@ async function persist(
   const { type, direction, reasons } = resolveWithUserContext(e, ctx);
   // Pasted text cannot prove it came from the bank: an import is always reviewed by the user, never auto-confirmed.
   if (channel === 'import' && !reasons.includes('user_import')) reasons.push('user_import');
+  const requireVerified = opts.requireVerifiedTemplate ?? channel !== 'import';
+  if (requireVerified && e.templateVerification !== 'VERIFIED' && !reasons.includes('template_unverified')) {
+    reasons.push('template_unverified');
+  }
   const category = categorize(type, merchantNormalized, ctx.merchantRules);
 
   // Level 1b: the bank's own operation number identifies the same operation across forwards.
@@ -186,6 +227,8 @@ async function persist(
     });
     originalTransactionId = original?.id ?? null;
   }
+
+  if (type === 'deposit' && direction === 'inflow' && await sentFromAnotherBank(ctx.userId, e, repo)) reasons.push('possible_own_transfer');
 
   // Uncertainty always goes to review; weak similarity is flagged, never dropped.
   const weakMatch = strong.length > 1 ? strong[0]! : sameKind[0];

@@ -48,6 +48,25 @@ export const purchasePenSms = () => bcpSms(
   'BCP: Realizaste un consumo de S/ 100.00 con tu Tarjeta de Credito *4821 en RESTAURANTE EL EJEMPLO el 15/09/2026 20:31.',
 );
 
+export const purchaseDebitEmail = () => bcpEmail({
+  id: '<purchase-debit-1@mail.test>',
+  subject: 'Realizaste un consumo con tu Tarjeta de Débito BCP',
+  lines: [
+    'Realizaste un consumo con tu Tarjeta de Débito BCP.',
+    'Monto: S/ 25.50',
+    'Empresa: BOTICA EL EJEMPLO',
+    'Número de Tarjeta de Débito: ************5678',
+    'Fecha y hora: 14 de septiembre de 2026 - 06:15 PM',
+    'Número de operación: 000123',
+  ],
+});
+
+export const purchaseDebitSms = () => bcpSms(
+  'BCP: Realizaste un consumo de S/ 25.50 con tu Tarjeta de Debito *5678 en BOTICA EL EJEMPLO el 14/09/2026 18:16.',
+);
+
+export const cardPaymentSms = () => bcpSms('BCP: Realizaste un pago de S/ 100.00 a tu Tarjeta de Credito *4821 el 25/09/2026 09:01.');
+
 export const purchaseUsdEmail = () => bcpEmail({
   id: '<purchase-usd-1@mail.test>',
   subject: 'Realizaste un consumo con tu Tarjeta de Crédito BCP',

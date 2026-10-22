@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ingestRawEvent, type UserContext } from '../src/engine/ingest';
-import { InMemoryTransactionRepository } from '../src/engine/repository';
+import { ingestRawEvent as ingestWithProductionDefaults, type UserContext } from '../src/engine/ingest';
+import { ingestAsVerifiedTemplate as ingestRawEvent } from './fixtures/engine';
+import { InMemoryTransactionRepository, PlanLimitError } from '../src/engine/repository';
 import { monthlySummary } from '../src/engine/monthly-summary';
+import { parseIngestionCodes, reviewReasons } from '../src/engine/review-reasons';
+import { AdapterRegistry } from '../src/ingestion/adapter-registry';
+import type { BankAdapter } from '../src/ingestion/bank-adapter';
+import { bcpEmailV1 } from '../src/ingestion/adapters/bcp/bcp-email-v1';
 import * as fx from './fixtures/bcp';
 
 const USER_A: UserContext = { userId: 'user-a', ownAccountLast4: ['9001'], cards: [{ last4: '4821', kind: 'credit' }], merchantRules: [] };
@@ -176,5 +181,60 @@ describe('robustness', () => {
     const ctx = { ...USER_A, merchantRules: [{ contains: 'Restaurante el Ejemplo', category: 'Personal' as const }] };
     await ingestRawEvent(fx.purchasePenEmail(), ctx, repo);
     expect((await repo.listTransactions('user-a'))[0]!.category).toBe('Personal');
+  });
+});
+
+describe('delivered channels never auto-confirm an unverified template', () => {
+  const verifiedBcpEmail: BankAdapter = {
+    ...bcpEmailV1,
+    templateVerification: 'VERIFIED',
+    parse(raw, text) {
+      const r = bcpEmailV1.parse(raw, text);
+      return r.ok ? { ok: true, event: { ...r.event, templateVerification: 'VERIFIED' } } : r;
+    },
+  };
+
+  it('verified sender + SYNTHETIC_UNVERIFIED template -> review_required with a plain-language reason', async () => {
+    const r = await ingestRawEvent(fx.purchasePenEmail(), USER_A, repo, undefined, { requireVerifiedTemplate: true });
+    expect(r).toMatchObject({ outcome: 'created', detail: 'template_unverified' });
+    const [tx] = await repo.listTransactions('user-a');
+    expect(tx).toMatchObject({ status: 'review_required', confidence: 'medium', type: 'credit_card_purchase', amountMinor: 10000 });
+    const reasons = reviewReasons(tx!, { ingestionCodes: parseIngestionCodes(r.detail), registeredCardLast4: ['4821'], cardId: 'c1' });
+    expect(reasons.map((x) => x.code)).toEqual(['template_unverified']);
+    expect(reasons[0]!.text).toMatch(/aún no validamos/);
+  });
+
+  it('SMS too; a caller that forgets the option is still safe (on by default); only an explicit opt-out confirms', async () => {
+    await ingestRawEvent(fx.purchasePenSms(), USER_A, repo, undefined, { requireVerifiedTemplate: true });
+    expect((await repo.listTransactions('user-a'))[0]!.status).toBe('review_required');
+    const forgot = new InMemoryTransactionRepository();
+    expect(await ingestWithProductionDefaults(fx.purchasePenEmail(), USER_A, forgot)).toMatchObject({ outcome: 'created', detail: 'template_unverified' });
+    expect((await forgot.listTransactions('user-a'))[0]!.status).toBe('review_required');
+    const optedOut = new InMemoryTransactionRepository();
+    await ingestWithProductionDefaults(fx.purchasePenEmail(), USER_A, optedOut, undefined, { requireVerifiedTemplate: false });
+    expect((await optedOut.listTransactions('user-a'))[0]!.status).toBe('confirmed');
+  });
+
+  it('imports do not get template_unverified (they are always reviewed as user_import)', async () => {
+    const imported = new InMemoryTransactionRepository();
+    const r = await ingestWithProductionDefaults({ ...fx.purchasePenSms(), sender: 'user-import:sms' }, USER_A, imported, undefined, { persistAs: 'import' });
+    expect(r.detail?.split(',')).toEqual(['sender_not_verified', 'user_import']);
+  });
+
+  it('plan limit from the repository -> outcome plan_limit, nothing created, traced as rejected with the code', async () => {
+    class LimitedRepo extends InMemoryTransactionRepository {
+      override async insert(): Promise<never> { throw new PlanLimitError('plan_auto_limit'); }
+    }
+    const limited = new LimitedRepo();
+    const r = await ingestRawEvent(fx.purchasePenEmail(), USER_A, limited, undefined, { requireVerifiedTemplate: true });
+    expect(r).toEqual({ outcome: 'plan_limit', transactionId: null, detail: 'plan_auto_limit' });
+    expect(await limited.listTransactions('user-a')).toHaveLength(0);
+    expect(limited.events).toEqual([expect.objectContaining({ outcome: 'rejected', detail: 'plan_auto_limit', parserVersion: 'BCP_EMAIL_V1' })]);
+  });
+
+  it('a VERIFIED template from a verified sender can still be confirmed', async () => {
+    const reg = new AdapterRegistry([verifiedBcpEmail]);
+    await ingestRawEvent(fx.purchasePenEmail(), USER_A, repo, reg, { requireVerifiedTemplate: true });
+    expect((await repo.listTransactions('user-a'))[0]).toMatchObject({ status: 'confirmed', confidence: 'high' });
   });
 });

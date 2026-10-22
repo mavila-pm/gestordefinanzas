@@ -6,12 +6,14 @@ src/
   ingestion/
     sources/         FinancialEventSource: provider payload -> RawFinancialEvent (validation only)
     adapters/<bank>/ BankAdapter per bank/channel/version: RawFinancialEvent -> NormalizedFinancialEvent
-    adapter-registry.ts   The only place that lists banks
+    adapter-registry.ts   The only place that lists banks; routes (verified sender > header > body) and parses
+    parse-helpers.ts      Bank-agnostic readers (money, last4, labels, dates); adapters keep only templates/senders
   engine/            Dedupe, categorization, confidence, manual entry, calculations
                      Persistence via TransactionRepository port
   infrastructure/postgres/  PgTransactionRepository (server-side, explicit user_id filters)
 tests/
   fixtures/bcp/      SYNTHETIC_FIXTURE builders + samples/ (golden, REAL_ANONYMIZED or SYNTHETIC)
+  fixtures/bbva/     SYNTHETIC_FIXTURE only (no BBVA message observed yet) + samples/
 supabase/migrations/ Versioned SQL schema + RLS (supabase/tests/: local-only shim)
 scripts/test-db.sh   Throwaway PostgreSQL for DB tests
   domain/dates.ts    Lima calendar days + date labels (one place for engine, Vels and screens)
@@ -47,7 +49,7 @@ Swapping a synthetic template for a real one touches only `adapters/<bank>/` and
 |---|---|---|
 | Money, transaction model, `financialEffect()` | `src/domain/` | `money`, `financial-model` |
 | Plans / entitlements | `src/domain/entitlements.ts` | `entitlements`, `db/plans` |
-| Bank parsers (per bank/channel/version) | `src/ingestion/adapters/` | `bcp-adapters`, `bcp-samples`, `sources` |
+| Bank parsers (per bank/channel/version) | `src/ingestion/adapters/`, `adapter-registry.ts`, `parse-helpers.ts` | `bcp-adapters`, `bbva-adapters`, `interbank-scaffold`, `bank-samples`, `adapter-registry`, `parse-helpers`, `sanitize`, `sources` |
 | Ingestion, dedupe L1/L1b/L2/L3, import | `src/engine/ingest.ts` | `ingest-pipeline`, `import-pipeline`, `db/import`, `db/pg-repository` |
 | Analysis, insights, alerts, data health, budgets, commitments | `src/engine/*.ts` | `analysis`, `insights`, `user-context` |
 | Form/input validation (server-side) | `src/web/` | `transaction-input`, `web-auth-input`, `password-reset`, `site-url` |

@@ -1,8 +1,9 @@
 import type { BankAdapter, ParseResult } from '../../bank-adapter';
 import type { CardKind, Direction, RawFinancialEvent, TransactionType } from '../../../domain/types';
 import { parseNumericDate } from '../../lima-time';
+import { cleanMerchant, parseMoneyExpr } from '../../parse-helpers';
 import { deriveExternalEventId } from '../../sanitize';
-import { BCP_SMS_SENDERS, cleanMerchant, parseMoneyExpr } from './common';
+import { BCP_SMS_SENDERS } from './common';
 
 const VERSION = 'BCP_SMS_V1';
 
@@ -45,6 +46,8 @@ export const bcpSmsV1: BankAdapter = {
   institution: 'BCP',
   parserVersion: VERSION,
   templateVerification: 'SYNTHETIC_UNVERIFIED',
+  /** Real anonymized samples observed (sender and a non-movement notice); see bcp/common.ts. */
+  observed: true,
 
   canHandle(raw: RawFinancialEvent) {
     return raw.channel === 'sms' && (bcpSmsV1.verifySource(raw) || /^BCP(?: Alertas)?:/i.test(raw.body.trim()));

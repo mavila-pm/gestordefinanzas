@@ -12,6 +12,12 @@ inbound email provider → `POST /api/inbound/email` → FinancialEventSource �
   per-address rate limit (120/hour), Message-ID Level-1 dedupe, body never stored, hostile text never executed.
 - Processing uses a privileged server connection (`DATABASE_URL`, server-only) with explicit `user_id` filters
   (`PgTransactionRepository`), same pipeline as every source.
+- Unverified templates never auto-confirm (`requireVerifiedTemplate` → `template_unverified`, review_required).
+- Free plan limits (spec §81): `PgTransactionRepository.insert` calls `public.assert_auto_allowance` in the same
+  transaction as the insert, behind a per-user advisory lock (parallel deliveries cannot both take the last slot), with
+  `request.jwt.claim.sub` set transaction-locally so the app_writer function sees that person's rows/subscription.
+  Over the limit → ingest outcome `plan_limit`, no transaction, `financial_events` row `rejected` + limit code;
+  the delivery still answers 202 (`processed`). A new source for an existing movement is never limited.
 
 ## BLOCKED — needs Product Owner decisions/secrets (spec §78 "Proveedor inbound email", "Dominio")
 1. Choose the inbound provider (Postmark / Mailgun / SendGrid Inbound Parse / Cloudflare Email Workers). Each needs

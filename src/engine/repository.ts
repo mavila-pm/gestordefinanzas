@@ -35,6 +35,14 @@ export class DuplicateSourceError extends Error {
   constructor() { super('duplicate source event'); this.name = 'DuplicateSourceError'; }
 }
 
+/**
+ * Thrown by `insert` when the person's plan does not allow one more automatic movement (spec §81, enforced in SQL by
+ * public.assert_auto_allowance). Nothing was written. Adding a source to an existing movement is never limited.
+ */
+export class PlanLimitError extends Error {
+  constructor(readonly code: 'plan_auto_limit' | 'plan_institution_limit') { super(code); this.name = 'PlanLimitError'; }
+}
+
 /** Persistence port. The in-memory version backs unit tests; PostgreSQL implements it next. */
 export interface TransactionRepository {
   findBySource(userId: string, channel: SourceChannel, externalEventId: string): Promise<Transaction | null>;

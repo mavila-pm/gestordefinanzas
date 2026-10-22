@@ -21,3 +21,7 @@ Only what is observed in real (anonymized) samples is a fact. Everything else is
 ## Needed to reach VERIFIED
 One real anonymized sample per transactional template (credit purchase, debit purchase, card payment,
 transfer, deposit, withdrawal; refund/reversal when available). Procedure: `tests/fixtures/bcp/samples/README.md`.
+
+## Known gaps (expected until real samples)
+- `BCP_SMS_V1` matches "Tarjeta de Credito/Debito" without accent only: an SMS spelled "Crédito" is `unknown_template`
+  (unresolved, nothing invented). Fix = new parser version from a REAL_ANONYMIZED SMS, not a guess (`tests/bcp-adapters`).

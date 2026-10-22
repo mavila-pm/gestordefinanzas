@@ -33,6 +33,8 @@ export type TransactionStatus =
   | 'ignored';
 
 export type InstitutionCode = 'BCP' | 'BBVA' | 'INTERBANK';
+/** Every institution code (public.institutions). */
+export const INSTITUTION_CODES: readonly InstitutionCode[] = ['BCP', 'BBVA', 'INTERBANK'];
 
 export type CardKind = 'credit' | 'debit';
 

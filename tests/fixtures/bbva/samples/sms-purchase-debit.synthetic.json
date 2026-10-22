@@ -1,0 +1,14 @@
+{
+  "fixtureStatus": "SYNTHETIC_FIXTURE",
+  "evidence": "Invented 'BBVA:' prefix and wording; no BBVA SMS sender id observed (allowlist empty).",
+  "raw": {
+    "channel": "sms",
+    "sender": "SINTETICO",
+    "body": "BBVA: Compra de S/ 80.00 con Tarjeta de Debito *5678 en PLAZA VEA SURCO el 14/09/2026 18:05.",
+    "receivedAt": "2026-09-14T23:06:00Z"
+  },
+  "expected": {
+    "outcome": "created",
+    "transaction": { "institution": "BBVA", "type": "expense", "amountMinor": 8000, "cardLast4": "5678", "category": "Alimentación", "status": "review_required" }
+  }
+}

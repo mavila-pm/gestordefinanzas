@@ -1,0 +1,11 @@
+{
+  "fixtureStatus": "SYNTHETIC_FIXTURE",
+  "evidence": "Invented one-time-code SMS with the code masked: never a movement, the code is never kept.",
+  "raw": {
+    "channel": "sms",
+    "sender": "SINTETICO",
+    "body": "BBVA: Tu clave digital para confirmar la operacion es ******. No la compartas con nadie.",
+    "receivedAt": "2026-09-14T23:06:00Z"
+  },
+  "expected": { "outcome": "non_transactional" }
+}

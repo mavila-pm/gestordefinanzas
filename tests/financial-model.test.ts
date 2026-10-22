@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { financialEffect } from '../src/domain/financial-effect';
 import { createManualTransaction } from '../src/engine/manual';
-import { ingestRawEvent, type UserContext } from '../src/engine/ingest';
+import type { UserContext } from '../src/engine/ingest';
+import { ingestAsVerifiedTemplate as ingestRawEvent } from './fixtures/engine';
 import { monthlySummary } from '../src/engine/monthly-summary';
 import { InMemoryTransactionRepository } from '../src/engine/repository';
 import { bcpAdapters } from '../src/ingestion/adapter-registry';

@@ -109,6 +109,7 @@ export async function handleInboundEmail(
   ]);
   const ctx = buildUserContext(userId, { cards: cards.rows, accounts: accounts.rows, rules: rules.rows });
   // Privileged connection: every repository query filters by this user_id explicitly (PgTransactionRepository).
-  await ingestRawEvent(raw.event, ctx, new PgTransactionRepository(deps.pool));
+  // A delivered email whose template is not VERIFIED is read but always waits for the person's review.
+  await ingestRawEvent(raw.event, ctx, new PgTransactionRepository(deps.pool), undefined, { requireVerifiedTemplate: true });
   return finish('processed', userId);
 }

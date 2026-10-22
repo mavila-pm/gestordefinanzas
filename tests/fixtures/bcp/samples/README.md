@@ -1,6 +1,6 @@
 # BCP sample bank (golden fixtures)
 
-Each `*.json` file is one message run through the full pipeline by `tests/bcp-samples.test.ts`.
+Each `*.json` file is one message run through the full pipeline by `tests/bank-samples.test.ts` (all banks).
 
 | Field | Meaning |
 |---|---|
@@ -16,6 +16,7 @@ Each `*.json` file is one message run through the full pipeline by `tests/bcp-sa
 3. `npm test`. If it fails, the template is wrong: create a new parser version (e.g. `BCP_EMAIL_V2`)
    instead of editing the old one, and keep old samples passing.
 4. A parser may be marked `VERIFIED` only when every template it declares has a passing real sample.
+   `bank-samples` enforces the minimum: a VERIFIED adapter without any REAL_ANONYMIZED `created` sample fails.
 
 The sensitive-data guard in the test rejects files containing 13–19 digit card numbers, 8-digit DNI
 labels, or OTP-like content.
