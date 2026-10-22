@@ -216,11 +216,16 @@ export async function unlinkSettlementAction(_p: ActionState, form: FormData): P
   if (!isUuid(id)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
-  const { data, error } = await supabase.from('plan_settlements').delete().eq('id', id).select('id,period,fixed_expense_id,expected_income_id,transaction_id');
+  const { data, error } = await supabase.from('plan_settlements').delete().eq('id', id).select('id,period,status,fixed_expense_id,expected_income_id,transaction_id');
   if (error || !data?.length) return { error: SAVE_ERROR };
   const r = data[0]!;
   await logLearning(supabase, user.id, 'settlement', 'invalidated', r.id, { period: r.period, obligationId: r.fixed_expense_id, incomeId: r.expected_income_id, transactionId: r.transaction_id });
-  return done('Deshecho. Vuelve a estar pendiente.');
+  // Review m5: "pendiente" only when nothing of that month is left; other abonos keep it partly paid.
+  if (r.status === 'partial') return done('Quitamos ese abono.');
+  const { data: left } = r.fixed_expense_id
+    ? await supabase.from('plan_settlements').select('id').eq('fixed_expense_id', r.fixed_expense_id).eq('period', r.period).eq('status', 'partial').limit(1)
+    : { data: [] };
+  return done(left?.length ? 'Deshecho. Quedan los abonos que ya hiciste ese mes.' : 'Deshecho. Vuelve a estar pendiente.');
 }
 
 /** "Ahora no" / "Descartar" / "No es ese" on a suggestion: hides it (the data behind it stays as it is). */

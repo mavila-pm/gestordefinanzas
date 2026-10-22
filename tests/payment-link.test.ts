@@ -7,6 +7,9 @@ let ob: Record<string, unknown> | null = null;
 let prior: unknown[] = [];
 const inserts: unknown[] = [];
 const updates: unknown[] = [];
+/** Rows a delete returns ("Deshacer"), and the error an insert returns (the SQL guard). */
+let deleted: unknown[] = [];
+let insertError: { code: string; message: string } | null = null;
 vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('../lib/learning', () => ({ logLearning: vi.fn(), decide: vi.fn() }));
@@ -16,8 +19,9 @@ vi.mock('../lib/supabase/server', () => ({
       const q: Record<string, unknown> = {};
       for (const m of ['select', 'eq', 'neq', 'limit']) q[m] = () => q;
       q.maybeSingle = async () => ({ data: table === 'transactions' ? tx : ob, error: null });
-      q.then = (resolve: (v: unknown) => void) => resolve({ data: table === 'plan_settlements' ? prior : [], error: null });
-      q.insert = async (row: unknown) => { inserts.push(row); return { error: null }; };
+      q.then = (resolve: (v: unknown) => void) => resolve({ data: q.deleting ? deleted : table === 'plan_settlements' ? prior : [], error: null });
+      q.delete = () => { q.deleting = true; return q; };
+      q.insert = async (row: unknown) => { inserts.push(row); return { error: insertError }; };
       q.update = (row: unknown) => { updates.push(row); return { eq: () => ({ neq: () => ({ select: async () => ({ data: [{ id: 'x' }], error: null }) }) }) }; };
       return q;
     },
@@ -99,5 +103,26 @@ describe('converting a payment into a subscription', () => {
       expect((await convertToSubscriptionAction({}, form({ id: UUID1 }))).error).toBeTruthy();
     }
     expect(updates).toHaveLength(1);
+  });
+});
+
+describe('"Deshacer" and "No lo pago" (review m5, m2)', () => {
+  beforeEach(() => { inserts.length = 0; prior = []; deleted = []; insertError = null; });
+  const row = (status: string) => ({ id: UUID1, period: '2026-10', status, fixed_expense_id: UUID2, expected_income_id: null, transaction_id: UUID2 });
+  it('undoing an abono says so; undoing the closing payment says whether abonos remain', async () => {
+    const { unlinkSettlementAction } = await import('../app/app/plan/actions');
+    deleted = [row('partial')];
+    expect((await unlinkSettlementAction({}, form({ id: UUID1 }))).message).toBe('Quitamos ese abono.');
+    deleted = [row('paid')]; prior = [{ id: 'abono' }];
+    expect((await unlinkSettlementAction({}, form({ id: UUID1 }))).message).toBe('Deshecho. Quedan los abonos que ya hiciste ese mes.');
+    deleted = [row('paid')]; prior = [];
+    expect((await unlinkSettlementAction({}, form({ id: UUID1 }))).message).toBe('Deshecho. Vuelve a estar pendiente.');
+  });
+  it('an abono committed meanwhile: the database refuses the skip and the person sees why', async () => {
+    const { skipOccurrenceAction } = await import('../app/app/plan/actions');
+    insertError = { code: '23514', message: 'occurrence_has_abonos' };
+    expect((await skipOccurrenceAction({}, form({ obligationId: UUID1, period: '2026-10' }))).error).toBe('Ese mes ya tiene un abono. Deshazlo o completa el pago.');
+    insertError = { code: '23505', message: 'occurrence_closed' };
+    expect((await skipOccurrenceAction({}, form({ obligationId: UUID1, period: '2026-10' }))).error).toBe('Ese mes ya estaba resuelto.');
   });
 });
