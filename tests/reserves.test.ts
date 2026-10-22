@@ -25,6 +25,11 @@ describe('Apartados in Dinero libre', () => {
     expect(planBreakdown(p)).toMatchObject({ committedMinor: 0, setAsideMinor: 80000 });
   });
 
+  it('distributing an income that just arrived does not subtract the apartado again (it lives in the balance)', () => {
+    const p = buildPlan(input({ base: { kind: 'income', amountMinor: 400000, date: '2026-10-01' }, reserves: [trip({ targetMinor: 120000, targetDate: '2026-11-30' })] }));
+    expect(p.lines.map((l) => l.kind)).toEqual(['reserve']); // only this horizon's planned contribution
+  });
+
   it('saved money is real: never rounded (S/ 800.55 stays 80055)', () => {
     expect(buildPlan(input({ reserves: [trip({ savedMinor: 80055 })] })).lines[0]!.amountMinor).toBe(80055);
   });

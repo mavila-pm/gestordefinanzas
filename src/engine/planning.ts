@@ -323,8 +323,9 @@ export function buildPlan(input: PlanInput): Plan {
   }
   // Apartados of this currency only (PEN ≠ USD): what is saved is set aside (real money, never rounded); a dated
   // target adds this horizon's planned contribution. No target or no date: nothing is planned (never invented).
+  // Saved money is part of the declared BALANCE: a plan that distributes a new income does not subtract it again.
   for (const r of (input.reserves ?? []).filter((x) => x.currency === currency)) {
-    if (r.savedMinor > 0) lines.push({ kind: 'fund', label: `Apartado: ${r.name}`, amountMinor: r.savedMinor, date: null, dateMax: null, note: 'Ya separado: no es dinero libre', reserveId: r.id });
+    if (r.savedMinor > 0 && input.base?.kind !== 'income') lines.push({ kind: 'fund', label: `Apartado: ${r.name}`, amountMinor: r.savedMinor, date: null, dateMax: null, note: 'Ya separado: no es dinero libre', reserveId: r.id });
     const c = until ? reserveContribution(r, from, until) : null;
     if (c) lines.push({ kind: 'reserve', label: `Para ${r.name}`, amountMinor: c, date: null, dateMax: null,
       note: `Meta ${formatMoney({ amountMinor: r.targetMinor!, currency })} al ${fmtDay(r.targetDate!)}`, reserveId: r.id });

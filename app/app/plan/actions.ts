@@ -11,7 +11,8 @@ import { isReplay, ref } from '../../../lib/idempotency';
 import { loadPlanningData } from '../../../lib/planning';
 import { addDays, limaToday } from '../../../src/domain/dates';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
-import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSavingsGoalForm, parseSettingsForm } from '../../../src/web/planning-input';
+import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseReserveEntryForm, parseReserveForm, parseSavingsGoalForm, parseSettingsForm } from '../../../src/web/planning-input';
+import { moveReserve, reserveMoveText } from '../../../lib/reserves';
 import { isUuid } from '../../../src/web/transaction-input';
 import { settleIncome, settleObligation, type SettleError } from '../../../lib/settlements';
 import { formatMoney } from '../../../src/domain/money';
@@ -276,4 +277,52 @@ export async function skipOccurrenceAction(_p: ActionState, form: FormData): Pro
   if (error) return { error: error.code === '23505' ? 'Ese mes ya estaba resuelto.' : SAVE_ERROR };
   await logLearning(supabase, user.id, 'settlement', 'dismissed', obligationId, { period, status: 'skipped' });
   return done('Listo. Este mes no cuenta.');
+}
+
+// ── Apartados (ADR-0017): money set aside with a name. Internal allocations: never an income nor an expense ─────
+const RESERVE_DUP = 'Ya tienes un apartado con ese nombre en esa moneda.';
+
+/** Create (client_ref: a double submit stores one) or edit name, target and date. The currency never changes. */
+export async function saveReserveAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const editing = isUuid(id);
+  const parsed = parseReserveForm((k) => form.get(k), editing ? null : limaToday());
+  if (!parsed.ok) return { error: parsed.error };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const v = parsed.value;
+  if (editing) {
+    const { data, error } = await supabase.from('reserves')
+      .update({ name: v.name, target_minor: v.targetMinor, target_date: v.targetDate, updated_at: new Date().toISOString() })
+      .eq('id', id).eq('active', true).select('id');
+    if (error) return { error: error.code === '23505' ? RESERVE_DUP : SAVE_ERROR };
+    return data?.length ? done('Apartado actualizado.') : { error: SAVE_ERROR };
+  }
+  const { error } = await supabase.from('reserves').insert({
+    user_id: user.id, name: v.name, currency: v.currency, target_minor: v.targetMinor, target_date: v.targetDate, client_ref: ref(form),
+  });
+  if (error && !isReplay(error)) return { error: error.code === '23505' ? RESERVE_DUP : SAVE_ERROR };
+  return done(`Listo, creaste el apartado ${v.name}.`);
+}
+
+/** "Apartar" / "Usar": the amount is parsed here; the SQL guard refuses taking out more than is saved. */
+export async function reserveEntryAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const parsed = parseReserveEntryForm((k) => form.get(k));
+  if (!parsed.ok) return { error: parsed.error };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const r = await moveReserve(supabase, user.id, { ...parsed.value, clientRef: ref(form) });
+  const text = reserveMoveText(r, parsed.value.direction, parsed.value.amountMinor);
+  return 'error' in text ? { error: text.error } : done(text.message);
+}
+
+/** Archive an empty apartado (history kept). With money in it the SQL guard refuses: use it first. */
+export async function archiveReserveAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  if (!isUuid(id)) return { error: SAVE_ERROR };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const { data, error } = await supabase.from('reserves').update({ active: false, updated_at: new Date().toISOString() }).eq('id', id).eq('active', true).select('id');
+  if (error) return { error: error.code === '23514' ? 'Todavía tiene dinero apartado. Úsalo primero y luego archívalo.' : SAVE_ERROR };
+  return data?.length ? done('Apartado archivado.') : { error: SAVE_ERROR };
 }

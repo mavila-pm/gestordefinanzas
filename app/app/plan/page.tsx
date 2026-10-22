@@ -9,6 +9,7 @@ import type { Plan, PlanLine } from '../../../src/engine/planning';
 import { addDays } from '../../../src/domain/dates';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
 import { SavingsGoal } from '../../../components/savings-goal';
+import { Reserves } from '../../../components/reserves';
 import { loadCatalog } from '../../../lib/queries';
 import { loadPreferences } from '../../../lib/preferences';
 import { monthlySummary } from '../../../src/engine/monthly-summary';
@@ -80,7 +81,7 @@ function Headline({ p, testId }: { p: Plan; testId: string }) {
       <p className="figure" data-testid={`${testId}-amount`}>{negative ? 'Faltan ' : ''}<Money v={Math.abs(p.freeMinor)} c={c} /></p>
       <small style={{ opacity: .85 }}>
         {p.nextIncome ? `Hasta tu próximo ingreso, el ${shortDate(p.nextIncome.date)}${p.nextIncome.dateMax ? `–${shortDate(p.nextIncome.dateMax)}` : ''}. ` : ''}
-        Ya separamos <strong><Money v={p.reservedMinor} c={c} /></strong> para tus pagos.
+        Ya separamos <strong><Money v={p.reservedMinor} c={c} /></strong> para tus pagos{p.lines.some((l) => l.reserveId) ? ' y apartados' : ''}.
       </small>
       {p.status !== 'confirmed' && p.missing.length > 0 && <small style={{ opacity: .85 }}>{p.missing.length === 1 ? 'Falta 1 dato por confirmar.' : `Faltan ${p.missing.length} datos por confirmar.`}</small>}
     </section>
@@ -189,6 +190,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       })}
 
       <SavingsGoal netMinor={pen.netCashFlowMinor} goalMinor={d.settings.PEN?.savingsGoalMinor ?? null} estimated={pen.savingsLabel === 'estimated'} />
+      <Reserves reserves={d.reserves} today={d.today} />
 
       {d.suggestions.length > 0 && (
         <section className="stack-sm" aria-label="Pagos detectados" data-testid="match-suggestions">
