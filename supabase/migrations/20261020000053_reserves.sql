@@ -28,6 +28,8 @@ create table public.reserves (
 );
 create unique index reserves_active_name on public.reserves (user_id, currency, lower(btrim(name))) where active;
 create unique index reserves_client_ref on public.reserves (user_id, client_ref) where client_ref is not null;
+-- The person's apartados in creation order (loader), and the FK user_id → auth.users (no predicate).
+create index reserves_user on public.reserves (user_id, created_at);
 
 create table public.reserve_entries (
   id uuid primary key default gen_random_uuid(),
@@ -45,7 +47,13 @@ create table public.reserve_entries (
   -- Only money taken out can point to the real movement it paid; putting money in is never a movement.
   constraint reserve_entries_link_out check (direction = 'out' or transaction_id is null)
 );
-create index reserve_entries_reserve on public.reserve_entries (reserve_id, created_at desc);
+-- Each FK has an index with no predicate that starts with its own columns (a parent delete never scans every person):
+--   (reserve_id, user_id): the guard's and reserve_balances' sums per apartado, newest first;
+--   (transaction_id, user_id): ON DELETE SET NULL when a movement is deleted (the unique below is partial);
+--   (user_id): the FK to auth.users.
+create index reserve_entries_reserve on public.reserve_entries (reserve_id, user_id, created_at desc);
+create index reserve_entries_tx on public.reserve_entries (transaction_id, user_id);
+create index reserve_entries_user on public.reserve_entries (user_id);
 create unique index reserve_entries_transaction on public.reserve_entries (transaction_id) where transaction_id is not null;
 create unique index reserve_entries_client_ref on public.reserve_entries (user_id, client_ref) where client_ref is not null;
 

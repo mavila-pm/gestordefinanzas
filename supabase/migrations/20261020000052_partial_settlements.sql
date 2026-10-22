@@ -6,8 +6,9 @@
 -- One real movement still settles at most one item (plan_settlements_transaction is kept), incomes stay one row per
 -- period (plan_settlements_income_period is kept), and a partial is only ever a payment linked to a movement.
 -- Debt abonos (ADR-0017 §D) get a small ledger (debt_payments) written only through record_debt_payment().
--- Contains DROP (a CHECK expression and a unique index cannot be changed in place; both only remove metadata and
--- every new constraint holds on existing rows): paste it in the Supabase SQL Editor, see the runbook.
+-- Contains two DROPs with no DROP-free equivalent: a CHECK expression cannot be changed in place (DROP CONSTRAINT),
+-- and a partial unique index cannot change its predicate nor become a constraint (DROP INDEX). Both only remove
+-- metadata and every new constraint holds on existing rows: paste it in the Supabase SQL Editor, see the runbook.
 
 alter table public.plan_settlements drop constraint plan_settlements_status_check;
 alter table public.plan_settlements add constraint plan_settlements_status_check check (status in ('paid', 'partial', 'skipped'));
@@ -18,9 +19,9 @@ alter table public.plan_settlements add constraint plan_settlements_partial_link
 drop index public.plan_settlements_obligation_period;
 create unique index plan_settlements_obligation_closed on public.plan_settlements (fixed_expense_id, period)
   where fixed_expense_id is not null and status in ('paid', 'skipped');
--- Every row of an occurrence (abonos included): the guard's and settleObligation's reads by (payment, month), and
--- the composite FK (fixed_expense_id, user_id) on a cascade delete of a payment.
-create index plan_settlements_occurrence on public.plan_settlements (fixed_expense_id, period) where fixed_expense_id is not null;
+-- Every row of an occurrence (abonos included), no predicate: the composite FK (fixed_expense_id, user_id) on a cascade
+-- delete of a payment (the dropped index served it), and the guard's / settleObligation's reads by (payment, month).
+create index plan_settlements_obligation on public.plan_settlements (fixed_expense_id, user_id, period);
 
 -- Guard (migration 051) + the occurrence rules. Writes for the same (payment, month) are serialized with a
 -- transaction-scoped advisory lock, so a request that waited sees a row committed meanwhile:
@@ -35,7 +36,7 @@ begin
   if new.fixed_expense_id is not null then
     perform pg_advisory_xact_lock(hashtextextended('plan_settlement:' || new.fixed_expense_id::text || ':' || new.period, 0));
     if exists (select 1 from public.plan_settlements s
-               where s.fixed_expense_id = new.fixed_expense_id and s.period = new.period
+               where s.fixed_expense_id = new.fixed_expense_id and s.user_id = new.user_id and s.period = new.period
                  and s.status in ('paid', 'skipped') and s.id <> new.id) then
       raise exception 'occurrence_closed' using errcode = '23505';
     end if;
@@ -43,7 +44,7 @@ begin
       raise exception 'skipped_with_movement' using errcode = '23514'; -- a real movement is an abono or the payment
     end if;
     if new.status = 'skipped' and exists (select 1 from public.plan_settlements s
-               where s.fixed_expense_id = new.fixed_expense_id and s.period = new.period
+               where s.fixed_expense_id = new.fixed_expense_id and s.user_id = new.user_id and s.period = new.period
                  and s.status = 'partial' and s.id <> new.id) then
       raise exception 'occurrence_has_abonos' using errcode = '23514';
     end if;
