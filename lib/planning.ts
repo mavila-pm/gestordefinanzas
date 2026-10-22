@@ -5,7 +5,8 @@ import {
   abonosByOccurrence, buildPlan, detectVariations, isBalanceStale, suggestMatches, type ExpectedIncome, type Obligation, type PaidFact, type Plan, type PlanInput, type Reserve, type SettlementRow,
 } from '../src/engine/planning';
 import { toReserves } from './reserves';
-import { limaToday } from '../src/domain/dates';
+import { addDays, limaToday } from '../src/domain/dates';
+import { debtInstallmentDue, debtMonths } from '../src/engine/commitments';
 import {
   essentialSpendByMonth, essentialsSuggestion, isSuppressed, observedAmountsForUnknown, suggestIncomeMatches, timeline,
   type Decision,
@@ -47,7 +48,7 @@ export interface PlanningData {
 export async function loadPlanningData(supabase: SupabaseClient, now = new Date()): Promise<PlanningData> {
   const today = limaToday(now);
   const since = new Date(now.getTime() - 45 * 86_400_000).toISOString();
-  const [fx, debts, inc, settle, bal, set, txs, decided, res, resBal] = await Promise.all([
+  const [fx, debts, inc, settle, bal, set, txs, decided, res, resBal, debtPay] = await Promise.all([
     supabase.from('fixed_expenses').select('id,name,kind,currency,amount_minor,amount_status,frequency,anchor_month,due_day,due_day_max,target_day,notes,active,created_at,paused_until,ended_on'),
     supabase.from('debts').select('id,name,currency,balance_minor,annual_rate_bp,installment_minor,installments_total,installments_paid,due_day,active,created_at,last_payment_on'),
     supabase.from('expected_incomes').select('id,name,currency,amount_minor,amount_status,frequency,day_of_month,day_max,second_day,anchor_date,paused_until,ended_on').eq('active', true),
@@ -59,6 +60,8 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     loadDecisions(supabase),
     supabase.from('reserves').select('id,name,currency,target_minor,target_date').eq('active', true).order('created_at').limit(50),
     supabase.from('reserve_balances').select('reserve_id,saved_minor').limit(200),
+    // Debt abonos of the last ~2 months (ledger, migration 052): the plan reserves only what is left of an installment.
+    supabase.from('debt_payments').select('debt_id,period,amount_minor,settles').gte('period', addDays(today, -62).slice(0, 7)).limit(1000),
   ]);
 
   const obligationRows = (fx.data ?? []).map((r) => ({
@@ -69,10 +72,16 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     pausedUntil: r.paused_until as string | null, endedOn: r.ended_on as string | null,
   }));
   const debtRows = debts.data ?? [];
+  // Debt installments (ADR-0017 §D): settled months and this month's abonos come from the ledger (plus the legacy
+  // last_payment_on month); the installment due is the installment, or what was owed at the start of the month.
+  const debtLedger = debtMonths((debtPay.data ?? []).map((p) => ({ debtId: p.debt_id as string, period: p.period as string, amountMinor: Number(p.amount_minor), settles: p.settles === true })),
+    debtRows.map((d) => ({ debtId: d.id as string, lastPaymentOn: d.last_payment_on ? String(d.last_payment_on) : null })));
+  const month = today.slice(0, 7);
   const debtObligations: Obligation[] = debtRows
     .filter((d) => d.active && d.installment_minor && Number(d.balance_minor) > 0 && (d.installments_total === null || d.installments_paid < d.installments_total))
     .map((d) => ({
-      id: d.id, source: 'debt', name: d.name, kind: 'loan', currency: d.currency, amountMinor: Math.min(Number(d.installment_minor), Number(d.balance_minor)),
+      id: d.id, source: 'debt', name: d.name, kind: 'loan', currency: d.currency,
+      amountMinor: debtInstallmentDue(Number(d.installment_minor), Number(d.balance_minor), debtLedger.abonos.get(d.id)?.get(month) ?? 0).dueMinor,
       amountStatus: 'confirmed', frequency: 'monthly', anchorMonth: null, dueDay: d.due_day, dueDayMax: null, targetDay: null, since: limaDate(d.created_at),
     }));
 
@@ -99,8 +108,10 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     if (s.expected_income_id) add(settledIncomes, s.expected_income_id, s.period);
   }
   const partialPaid = abonosByOccurrence(abonoRows, currencyOf);
-  // A debt payment registered in Próximos pagos settles that month's installment.
-  for (const d of debtRows) if (d.last_payment_on) add(settledObligations, d.id, String(d.last_payment_on).slice(0, 7));
+  // A debt payment registered in Próximos pagos settles that month's installment once the month's payments add up
+  // to it; before that, they are abonos and the plan keeps only what is left (a debt's id never collides with a payment's).
+  for (const [id, periods] of debtLedger.settled) for (const p of periods) add(settledObligations, id, p);
+  for (const [id, periods] of debtLedger.abonos) partialPaid.set(id, new Map(periods));
 
   const transactions = ((txs.data ?? []) as unknown as TransactionRow[]).map(rowToTransaction);
   const balances: PlanningData['balances'] = {};

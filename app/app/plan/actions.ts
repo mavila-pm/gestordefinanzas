@@ -272,9 +272,11 @@ export async function skipOccurrenceAction(_p: ActionState, form: FormData): Pro
   if (!user) return { error: SAVE_ERROR };
   // A month with an abono was partly paid: "Omitido" would hide real money. Undo the abono first, or complete it.
   const { data: abonos } = await supabase.from('plan_settlements').select('id').eq('fixed_expense_id', obligationId).eq('period', period).eq('status', 'partial').limit(1);
-  if (abonos?.length) return { error: 'Ese mes ya tiene un abono. Deshazlo o completa el pago.' };
+  const HAS_ABONO = 'Ese mes ya tiene un abono. Deshazlo o completa el pago.';
+  if (abonos?.length) return { error: HAS_ABONO };
   const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, fixed_expense_id: obligationId, period, status: 'skipped' });
-  if (error) return { error: error.code === '23505' ? 'Ese mes ya estaba resuelto.' : SAVE_ERROR };
+  // The database refuses it too (migration 052: an abono committed meanwhile, another tab) → same message.
+  if (error) return { error: error.code === '23505' ? 'Ese mes ya estaba resuelto.' : error.code === '23514' && /occurrence_has_abonos/.test(error.message) ? HAS_ABONO : SAVE_ERROR };
   await logLearning(supabase, user.id, 'settlement', 'dismissed', obligationId, { period, status: 'skipped' });
   return done('Listo. Este mes no cuenta.');
 }

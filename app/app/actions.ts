@@ -8,7 +8,6 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { toLimaIso } from '../../src/ingestion/lima-time';
 import { formatMoney, parseAmountToMinor, type Currency } from '../../src/domain/money';
-import { debtPaymentEffect } from '../../src/engine/commitments';
 import { SPLIT_ERROR_TEXT } from '../../src/domain/allocations';
 import { parseProfileForm } from '../../src/domain/profile';
 import { ingestRawEvent } from '../../src/engine/ingest';
@@ -265,7 +264,12 @@ export async function saveDebtAction(_prev: ActionState, form: FormData): Promis
   return done('Deuda registrada.');
 }
 
-/** Updates the debt balance only: the payment itself arrives (or is registered) as a movement, never twice. */
+/**
+ * "Registrar pago" of a debt: lowers the balance only (the payment itself arrives, or is registered, as a movement:
+ * never twice). One SQL function (migration 052) writes the ledger row and the debt atomically: the month's
+ * installment is settled when that month's payments add up to it (S/ 300 + S/ 200 settle S/ 500); a retried or
+ * duplicated submission (same client_ref) changes nothing; above the balance is refused, never capped.
+ */
 export async function debtPaymentAction(_prev: ActionState, form: FormData): Promise<ActionState> {
   const id = form.get('id');
   const amount = parseAmountToMinor(typeof form.get('amount') === 'string' ? (form.get('amount') as string) : '');
@@ -273,23 +277,19 @@ export async function debtPaymentAction(_prev: ActionState, form: FormData): Pro
   if (amount === null) return { error: errorText('invalid_amount') };
   const { supabase, user } = await session();
   if (!user) return { error: errorText('not_authenticated') };
-  const { data: d } = await supabase.from('debts').select('currency,balance_minor,installment_minor,installments_paid,installments_total').eq('id', id).maybeSingle();
-  if (!d) return { error: errorText('not_found') };
-  const balance = Number(d.balance_minor);
-  // Pure rule (ADR-0017): an abono lowers the balance but leaves the month's installment pending; above the balance → refused.
-  const effect = debtPaymentEffect({ balanceMinor: balance, installmentMinor: d.installment_minor == null ? null : Number(d.installment_minor),
-    installmentsPaid: d.installments_paid as number, installmentsTotal: d.installments_total as number | null }, amount);
-  if (!effect.ok) {
-    return { error: effect.error === 'over_balance' ? `El pago supera el saldo (${formatMoney({ amountMinor: balance, currency: d.currency as Currency })}).` : errorText('invalid_amount') };
+  const { data, error } = await supabase.rpc('record_debt_payment', { p_debt_id: id, p_amount_minor: amount, p_client_ref: ref(form) });
+  if (error) {
+    if (/over_balance/.test(error.message)) {
+      const { data: d } = await supabase.from('debts').select('currency,balance_minor').eq('id', id).maybeSingle();
+      return { error: d ? `El pago supera el saldo registrado (${formatMoney({ amountMinor: Number(d.balance_minor), currency: d.currency as Currency })}). Revisa el monto.` : errorText('not_found') };
+    }
+    return { error: errorText(/not_found/.test(error.message) ? 'not_found' : /invalid_amount/.test(error.message) ? 'invalid_amount' : null) };
   }
-  const settle = effect.settlesInstallment
-    ? { installments_paid: effect.installmentsPaid, last_payment_on: new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10) } : {};
-  // Optimistic concurrency: only applies if the balance did not change meanwhile.
-  const { data, error } = await supabase.from('debts')
-    .update({ balance_minor: effect.balanceMinor, ...settle })
-    .eq('id', id).eq('balance_minor', balance).select('id');
-  if (error || !data?.length) return { error: 'El saldo cambió mientras registrabas. Recarga e intenta de nuevo.' };
-  if (!effect.settlesInstallment && d.installment_minor != null) return done('Abono registrado. La cuota de este mes sigue pendiente.');
+  const r = data as { currency: Currency; settles: boolean; period_settled: boolean; due_minor: number | null; period_paid_minor: number } | null;
+  if (r && !r.period_settled && r.due_minor !== null) {
+    const left = Math.max(0, Number(r.due_minor) - Number(r.period_paid_minor));
+    return done(`Abono registrado. De la cuota de este mes faltan ${formatMoney({ amountMinor: left, currency: r.currency })}.`);
+  }
   return done('Pago registrado. Bajó el saldo de la deuda; no se creó otro gasto.');
 }
 

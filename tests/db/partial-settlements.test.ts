@@ -56,6 +56,49 @@ describe.skipIf(!DATABASE_URL)('partial settlements', () => {
     });
   });
 
+  it('review m2: a month with abonos is never skipped; a row is never moved into a closed month', async () => {
+    const r = await rent(USER_A);
+    const [t1, t2, t3] = [await tx(USER_A), await tx(USER_A, 150000), await tx(USER_A, 20000)];
+    const skip = `insert into public.plan_settlements (user_id, fixed_expense_id, period, status) values ($1, $2, $3, 'skipped')`;
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      await c.query(ins, [USER_A, r, t1, 'partial']);
+      expect(await errorCode(c, skip, [USER_A, r, '2026-10'])).toBe('23514');
+      // 2026-09 is closed (paid); 2026-11 has an abono: moving it into 2026-09 (or turning it into a skip) is refused.
+      await c.query(ins.replace("'2026-10'", "'2026-09'"), [USER_A, r, t2, 'paid']);
+      const p = (await c.query(`${ins.replace("'2026-10'", "'2026-11'")} returning id`, [USER_A, r, t3, 'partial'])).rows[0].id;
+      expect(await errorCode(c, `update public.plan_settlements set period = '2026-09' where id = $1`, [p])).toBe('23505');
+      expect(await errorCode(c, `update public.plan_settlements set period = '2026-10' where id = $1`, [p])).toBeNull();
+      expect(await errorCode(c, `update public.plan_settlements set status = 'skipped' where id = $1`, [p])).toBe('23514');
+      const { rows } = await c.query(`select period, status from public.plan_settlements order by period, status`);
+      expect(rows).toEqual([{ period: '2026-09', status: 'paid' }, { period: '2026-10', status: 'partial' }, { period: '2026-10', status: 'partial' }]);
+    });
+  });
+
+  it('review m2: "Fue un abono" and "No lo pago" at the same time never both commit', async () => {
+    const r = await rent(USER_A);
+    const t = await tx(USER_A);
+    const run = async (sql: string, params: unknown[]) => {
+      const c = await pool.connect();
+      try {
+        await c.query('begin');
+        await c.query('set local role authenticated');
+        await c.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: USER_A, role: 'authenticated' })]);
+        await c.query(sql, params);
+        await new Promise((res) => setTimeout(res, 50));
+        await c.query('commit');
+        return 'ok';
+      } catch (e) {
+        await c.query('rollback').catch(() => undefined);
+        return (e as { code?: string }).code ?? 'unknown';
+      } finally { c.release(); }
+    };
+    const out = await Promise.all([run(ins, [USER_A, r, t, 'partial']),
+      run(`insert into public.plan_settlements (user_id, fixed_expense_id, period, status) values ($1, $2, '2026-10', 'skipped')`, [USER_A, r])]);
+    expect(out.filter((x) => x === 'ok')).toHaveLength(1);
+    expect(['23505', '23514']).toContain(out.find((x) => x !== 'ok'));
+    expect((await pool.query(`select count(*)::int as n from public.plan_settlements where fixed_expense_id = $1`, [r])).rows[0].n).toBe(1);
+  });
+
   it('5 simultaneous "pago completo" with different movements: exactly one closes the occurrence', async () => {
     const r = await rent(USER_A);
     const txs = await Promise.all(Array.from({ length: 5 }, () => tx(USER_A, 150000)));

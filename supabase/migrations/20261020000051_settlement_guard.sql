@@ -6,7 +6,8 @@
 --   · an expected income is settled by an income movement in the income's own currency.
 -- A parent that is not visible here (another person's obligation or movement) is left to the composite FKs and RLS,
 -- which reject it with their own codes (23503 / 42501). Existing rows are not re-checked (live check 2026-10-20: 0
--- rows would violate it); updates re-check only when the link itself changes (variance_ack edits do not).
+-- rows would violate it); updates re-check only when the link itself changes (variance_ack edits do not). `period` is
+-- part of the link: moving a row to another month is a new settlement of that month.
 create function public.plan_settlements_guard() returns trigger
 language plpgsql set search_path = '' as $$
 declare
@@ -38,5 +39,5 @@ end $$;
 revoke execute on function public.plan_settlements_guard() from public, anon, authenticated;
 
 create trigger plan_settlements_guard
-  before insert or update of transaction_id, fixed_expense_id, expected_income_id, status, user_id on public.plan_settlements
+  before insert or update of transaction_id, fixed_expense_id, expected_income_id, status, user_id, period on public.plan_settlements
   for each row execute function public.plan_settlements_guard();

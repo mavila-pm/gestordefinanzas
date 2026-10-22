@@ -6,7 +6,7 @@ import { Sheet } from '../../../components/ui/sheet';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { loadCatalog, loadCommitmentData, loadEntitlements, loadRecurring } from '../../../lib/queries';
 import { formatMoney } from '../../../src/domain/money';
-import { debtProgress, monthCommitments, totalsByCurrency } from '../../../src/engine/commitments';
+import { debtInstallmentDue, debtProgress, monthCommitments, totalsByCurrency } from '../../../src/engine/commitments';
 import { limaMonth } from '../../../src/web/auth-input';
 import { monthLabel } from '../../../src/web/labels';
 import { formatLimaDateTime } from '../../../src/web/transaction-input';
@@ -40,9 +40,12 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
     history.set(h.obligationId, list);
   }
   const rows = new Map(plan.obligationRows.map((o) => [o.id, o]));
-  // Skipped ≠ paid (ADR-0017): a debt installment is settled by its registered payment; a planned payment by its rows.
+  // A debt's installment due this month (the installment, or what was owed at the start of the month), from the plan.
+  const debtDue = new Map(plan.obligations.filter((o) => o.source === 'debt').map((o) => [o.id, o.amountMinor]));
+  // Skipped ≠ paid (ADR-0017): a debt installment is settled once that month's registered payments add up to it
+  // (before that they are abonos); a planned payment by its settlement rows.
   const stateOf = (c: { kind: 'fixed' | 'debt'; id: string; dueDate: string; amountMinor: number | null }) => c.kind === 'debt'
-    ? (plan.settledObligations.get(c.id)?.has(c.dueDate.slice(0, 7)) ? 'paid' : 'open')
+    ? (plan.settledObligations.get(c.id)?.has(c.dueDate.slice(0, 7)) ? 'paid' : plan.partialPaid.get(c.id)?.has(c.dueDate.slice(0, 7)) ? 'partial' : 'open')
     : occurrenceState(plan.settlements, c.id, c.dueDate.slice(0, 7), rows.get(c.id)?.amountStatus === 'confirmed' ? c.amountMinor : null);
   const strategies = compareDebtStrategies(plan.debts.filter((x) => x.currency === 'PEN'));
   // "¿En cuánto salgo de deudas?" — simulated for the monthly amount the person types (GET, nothing is written).
@@ -92,13 +95,14 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
               const done = state === 'paid' || state === 'skipped';
               // Abonos (real movements) vs the plan: "Pagaste S/ 500 de S/ 1,500" and what is still owed.
               const abono = state === 'partial' ? plan.partialPaid.get(c.id)?.get(period) ?? 0 : 0;
-              const left = state === 'partial' ? remainingMinor(c.amountMinor, abono, c.kind === 'fixed' ? rows.get(c.id)?.amountStatus : 'confirmed') : null;
+              const planned = c.kind === 'debt' && period === month ? debtDue.get(c.id) ?? c.amountMinor : c.amountMinor;
+              const left = state === 'partial' ? remainingMinor(planned, abono, c.kind === 'fixed' ? rows.get(c.id)?.amountStatus : 'confirmed') : null;
               const m = (v: number) => formatMoney({ amountMinor: v, currency: c.currency });
               return (
                 <li key={`${c.kind}-${c.id}-${c.dueDate}`} data-state={state}>
                   <span className="next-day">{shortDate(c.dueDate)}</span>
                   <span className="setting-text"><span>{c.name}</span>
-                    {state === 'partial' && abono > 0 && <small className="muted">Pagaste {m(abono)}{c.amountMinor !== null ? ` de ${c.kind === 'fixed' && rows.get(c.id)?.amountStatus === 'estimated' ? '≈ ' : ''}${m(c.amountMinor)}` : ''}</small>}
+                    {state === 'partial' && abono > 0 && <small className="muted">Pagaste {m(abono)}{planned !== null ? ` de ${c.kind === 'fixed' && rows.get(c.id)?.amountStatus === 'estimated' ? '≈ ' : ''}${m(planned)}` : ''}</small>}
                     {!done && (c.daysUntil < 0 || c.daysUntil <= 3) && <small className={c.daysUntil < 0 ? 'error' : 'warn'}>
                       {c.daysUntil < 0 ? 'Venció' : c.daysUntil === 0 ? 'Vence hoy' : `Vence en ${plural(c.daysUntil, 'día', 'días')}`}</small>}</span>
                   <span className="actions" style={{ gap: 8 }}>
@@ -218,6 +222,9 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
             {activeDebts.map((d) => {
               const p = debtProgress(d);
               const m = (v: number) => formatMoney({ amountMinor: v, currency: d.currency });
+              // What is left of this month's installment after its abonos (prefilled; the person can type any amount).
+              const monthPaid = plan.settledObligations.get(d.id)?.has(month) ? 0 : plan.partialPaid.get(d.id)?.get(month) ?? 0;
+              const left = d.installmentMinor ? debtInstallmentDue(d.installmentMinor, d.balanceMinor, monthPaid).leftMinor : null;
               return (
                 <li key={d.id} className="budget" data-testid="debt">
                   <div className="row" style={{ alignItems: 'baseline' }}><strong>{d.name}{d.lender ? ` · ${d.lender}` : ''}</strong><span className="amount">Saldo {m(d.balanceMinor)}</span></div>
@@ -232,8 +239,8 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                           <ActionForm action={debtPaymentAction} label={`Pago ${d.name}`} closeOnSuccess>
                             <input type="hidden" name="id" value={d.id} />
                             <label className="stack-sm"><span>Monto pagado</span>
-                              <input name="amount" required inputMode="decimal" autoComplete="off" defaultValue={d.installmentMinor ? (d.installmentMinor / 100).toFixed(2) : ''} /></label>
-                            {d.installmentMinor ? <small className="muted">Menos que la cuota queda como abono: la cuota sigue pendiente.</small> : null}
+                              <input name="amount" required inputMode="decimal" autoComplete="off" defaultValue={left !== null ? (left / 100).toFixed(2) : ''} /></label>
+                            {d.installmentMinor ? <small className="muted">{monthPaid > 0 ? `Ya abonaste ${m(monthPaid)} a la cuota de este mes. ` : ''}Si pagas menos que la cuota, queda como abono hasta completarla.</small> : null}
                             <button type="submit" className="wide">Registrar pago</button>
                           </ActionForm>
                         </div>

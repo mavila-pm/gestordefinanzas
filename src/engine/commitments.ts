@@ -60,24 +60,35 @@ export function debtProgress(d: Pick<Debt, 'principalMinor' | 'balanceMinor'>): 
 }
 
 /**
- * What one registered debt payment does (ADR-0017). Balance goes down by the real amount typed for THIS debt;
- * the month's installment is settled only when the payment covers what is due (installment, or the balance when
- * it is smaller). A smaller payment is an abono: the installment stays pending and the plan keeps reserving it.
- * A payment above the balance is refused (never silently capped). Unknown installment → no installment counted.
+ * Debt abonos (ADR-0017 §D). The SQL function record_debt_payment (migration 052) writes each payment to a ledger and
+ * settles the month's installment when that month's payments ADD UP to what was due; this is the same rule for the
+ * plan. Due = the installment, or what was owed at the start of the month (balance + this month's payments) when that
+ * is smaller. Left = due − this month's payments, never below 0. Unknown installment → unknown (never 0).
  */
-export type DebtPaymentEffect =
-  | { ok: true; balanceMinor: number; settlesInstallment: boolean; installmentsPaid: number }
-  | { ok: false; error: 'invalid_amount' | 'over_balance'; balanceMinor: number };
-export function debtPaymentEffect(
-  d: Pick<Debt, 'balanceMinor' | 'installmentMinor' | 'installmentsPaid' | 'installmentsTotal'>, amountMinor: number,
-): DebtPaymentEffect {
-  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) return { ok: false, error: 'invalid_amount', balanceMinor: d.balanceMinor };
-  if (amountMinor > d.balanceMinor) return { ok: false, error: 'over_balance', balanceMinor: d.balanceMinor };
-  const due = d.installmentMinor === null ? null : Math.min(d.installmentMinor, d.balanceMinor);
-  const settles = due !== null && amountMinor >= due;
-  const next = settles ? d.installmentsPaid + 1 : d.installmentsPaid;
-  return {
-    ok: true, balanceMinor: d.balanceMinor - amountMinor, settlesInstallment: settles,
-    installmentsPaid: d.installmentsTotal === null ? next : Math.min(next, d.installmentsTotal),
-  };
+export function debtInstallmentDue(installmentMinor: number | null, balanceMinor: number, monthPaidMinor: number): { dueMinor: number | null; leftMinor: number | null } {
+  if (installmentMinor === null) return { dueMinor: null, leftMinor: null };
+  const due = Math.min(installmentMinor, balanceMinor + monthPaidMinor);
+  return { dueMinor: due, leftMinor: Math.max(0, due - monthPaidMinor) };
+}
+
+/**
+ * Per debt, from the ledger rows: the months whose installment is settled (a row that settled it, or the legacy
+ * last_payment_on month of payments registered before the ledger), and the abonos of the months still open
+ * (debtId → period → Σ real amounts). An abono of a settled month is not subtracted again.
+ */
+export function debtMonths(
+  payments: ReadonlyArray<{ debtId: string; period: string; amountMinor: number; settles: boolean }>,
+  legacy: ReadonlyArray<{ debtId: string; lastPaymentOn: string | null }> = [],
+): { settled: Map<string, Set<string>>; abonos: Map<string, Map<string, number>> } {
+  const settled = new Map<string, Set<string>>();
+  const mark = (id: string, period: string) => (settled.get(id) ?? settled.set(id, new Set()).get(id)!).add(period);
+  for (const l of legacy) if (l.lastPaymentOn) mark(l.debtId, l.lastPaymentOn.slice(0, 7));
+  for (const p of payments) if (p.settles) mark(p.debtId, p.period);
+  const abonos = new Map<string, Map<string, number>>();
+  for (const p of payments) {
+    if (settled.get(p.debtId)?.has(p.period) || !Number.isSafeInteger(p.amountMinor) || p.amountMinor <= 0) continue;
+    const m = abonos.get(p.debtId) ?? abonos.set(p.debtId, new Map()).get(p.debtId)!;
+    m.set(p.period, (m.get(p.period) ?? 0) + p.amountMinor);
+  }
+  return { settled, abonos };
 }
