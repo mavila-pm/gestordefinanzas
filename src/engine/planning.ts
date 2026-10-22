@@ -7,6 +7,8 @@
  */
 import { formatMoney, type Currency } from '../domain/money';
 import { addDays, daysBetween } from '../domain/dates';
+import { financialEffect } from '../domain/financial-effect';
+import type { TransactionType } from '../domain/types';
 
 export type AmountStatus = 'confirmed' | 'estimated' | 'unknown';
 export type ObligationKind = 'rent' | 'car' | 'loan' | 'card' | 'internet' | 'phone' | 'insurance' | 'education' | 'services' | 'taxes' | 'subscription' | 'other';
@@ -187,6 +189,24 @@ export function nextIncome(incomes: readonly ExpectedIncome[], currency: Currenc
   const candidates = incomes.filter((i) => i.currency === currency)
     .flatMap((i) => incomeOccurrencesBetween(i, after, addDays(after, 62)).filter((o) => !settled.get(i.id)?.has(o.period) && o.date > after));
   return candidates.sort((a, b) => a.date.localeCompare(b.date))[0] ?? null;
+}
+
+// ── Declared balance freshness ────────────────────────────────────────────────────────────────────────────
+export const STALE_BALANCE_DAYS = 7;
+/**
+ * A declared balance is stale (the plan says "Actualízalo") when it is older than 7 days, or when money moved in
+ * the account after it in the SAME currency: an income, an expense, cash taken out, a refund. A credit card
+ * purchase does not move the account (it is paid later); own transfers and other internal movements do not change
+ * what the person has. An Apartado entry is not a movement at all. Pure: the loader passes the confirmed movements.
+ */
+export function isBalanceStale(
+  snapshot: { currency: Currency; asOf: string }, now: Date,
+  txs: ReadonlyArray<{ currency: Currency; occurredAt: string; type: TransactionType }>,
+): boolean {
+  const asOf = Date.parse(snapshot.asOf);
+  if (!Number.isFinite(asOf) || asOf < now.getTime() - STALE_BALANCE_DAYS * 86_400_000) return true;
+  return txs.some((t) => t.currency === snapshot.currency && Date.parse(t.occurredAt) > asOf && t.type !== 'credit_card_purchase'
+    && ['income', 'expense', 'transfer_to_cash', 'expense_reduction'].includes(financialEffect(t.type)));
 }
 
 // ── Safe-to-spend ("Dinero libre") ────────────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Currency } from '../src/domain/money';
 import { financialEffect } from '../src/domain/financial-effect';
 import {
-  abonosByOccurrence, buildPlan, detectVariations, suggestMatches, type ExpectedIncome, type Obligation, type PaidFact, type Plan, type PlanInput, type Reserve, type SettlementRow,
+  abonosByOccurrence, buildPlan, detectVariations, isBalanceStale, suggestMatches, type ExpectedIncome, type Obligation, type PaidFact, type Plan, type PlanInput, type Reserve, type SettlementRow,
 } from '../src/engine/planning';
 import { toReserves } from './reserves';
 import { limaToday } from '../src/domain/dates';
@@ -15,7 +15,6 @@ import { loadDecisions } from './learning';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../src/infrastructure/supabase/transaction-row';
 
 const limaDate = (iso: string) => new Date(Date.parse(iso) - 5 * 3600_000).toISOString().slice(0, 10);
-const STALE_DAYS = 7;
 
 export interface PlanningData {
   today: string;
@@ -109,10 +108,8 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     const cur = b.currency as Currency;
     if (balances[cur]) continue;
     const asOf = b.as_of as string;
-    // Stale: old, or money moved in the account after it (credit card purchases don't move the account).
-    const moved = transactions.some((t) => t.currency === cur && Date.parse(t.occurredAt) > Date.parse(asOf) && t.type !== 'credit_card_purchase'
-      && ['income', 'expense', 'transfer_to_cash', 'expense_reduction'].includes(financialEffect(t.type)));
-    balances[cur] = { amountMinor: Number(b.amount_minor), asOf, stale: moved || Date.parse(asOf) < now.getTime() - STALE_DAYS * 86_400_000,
+    // Stale: old, or money moved in the account after it (pure rule, tested: isBalanceStale).
+    balances[cur] = { amountMinor: Number(b.amount_minor), asOf, stale: isBalanceStale({ currency: cur, asOf }, now, transactions),
       bankMinor: b.bank_minor == null ? null : Number(b.bank_minor), cashMinor: b.cash_minor == null ? null : Number(b.cash_minor) };
   }
   const settings: PlanningData['settings'] = {};
