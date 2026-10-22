@@ -8,7 +8,7 @@ import { checkImage, sniff, stripJpeg, stripPng } from '../src/ai/image';
 import { interpret } from '../src/ai/interpreter';
 import { estimateCostMicroUsd, ratesFrom } from '../src/ai/pricing';
 import { gemini } from '../src/ai/gemini';
-import { minor, validateInterpretation, validateVision } from '../src/ai/schema';
+import { mergeReadings, minor, validateInterpretation, validateVision } from '../src/ai/schema';
 import { emptyDraft } from '../src/ai/types';
 import { proposalFrom } from '../src/ai/vision';
 import { buildPlan } from '../src/engine/planning';
@@ -51,6 +51,55 @@ describe('provider output is untrusted (§58)', () => {
     expect(r?.patches).toEqual([{ t: 'income', amountMinor: 570000, day: 5 }, { t: 'obligation', kind: 'other', name: 'Luz', amountMinor: 1250 }]);
     expect(validateInterpretation('no json')).toBeNull();
     expect(validateInterpretation('{"patches":"x"}')).toBeNull();
+  });
+
+  it('grounded in the message: an amount, day, last 4, bank, removal or "unknown" the person did not say is dropped', () => {
+    const read = (json: unknown, msg: string) => validateInterpretation(JSON.stringify(json), msg)!;
+    const msg = 'mi tarjeta bbva terminada en 4821, debo 2,430 y vence el 19';
+    expect(read({ patches: [{ t: 'debt', kind: 'card', name: 'Tarjeta BBVA', institution: 'BBVA', last4: '4821', balance: '2430', minimum: '9999', dueDay: 19 }], bare: null }, msg).patches)
+      .toEqual([{ t: 'debt', kind: 'card', name: 'Tarjeta BBVA', institution: 'BBVA', last4: '4821', balanceMinor: 243000, dueDay: 19 }]);
+    expect(read({ patches: [{ t: 'debt', kind: 'card', name: 'Tarjeta 1234', institution: 'BCP', last4: '1234', balance: '2430', dueDay: 20 }], bare: null }, msg).patches)
+      .toEqual([{ t: 'debt', kind: 'card', name: 'Tarjeta', balanceMinor: 243000 }]);
+    // Accounts only for banks the person named; "unknown" only when they said they do not know.
+    expect(read({ patches: [{ t: 'account', institution: 'BCP', kind: 'bank' }, { t: 'account', institution: 'BBVA', kind: 'card' }], bare: null }, msg).patches)
+      .toEqual([{ t: 'account', institution: 'BBVA', kind: 'card' }]);
+    expect(read({ patches: [{ t: 'income', unknownAmount: true }], bare: { unknown: true } }, 'me pagan el 5')).toEqual({ patches: [], bare: null });
+    expect(read({ patches: [{ t: 'income', unknownAmount: true, day: 5 }], bare: null }, 'me pagan el 5, no sé cuánto').patches).toEqual([{ t: 'income', unknownAmount: true, day: 5 }]);
+    // A removal needs the person to say so, about something they named; a closing needs a "no / nada / todo".
+    expect(read({ patches: [{ t: 'remove', name: 'Luz' }, { t: 'done', group: 'debts' }], bare: null }, 'pago luz 120').patches).toEqual([]);
+    expect(read({ patches: [{ t: 'remove', name: 'Luz' }, { t: 'remove', name: 'Agua' }], bare: null }, 'quita la luz').patches).toEqual([{ t: 'remove', name: 'Luz' }]);
+    // Bare answers too; days said as "15 y 30" are readable, "15 mil" is not a day.
+    expect(read({ patches: [], bare: { amount: '950', day: 12 } }, 'como 950')).toEqual({ patches: [], bare: { amountMinor: 95000 } });
+    expect(read({ patches: [{ t: 'income', day: 15, secondDay: 30 }], bare: null }, 'cobro 15 y 30').patches).toEqual([{ t: 'income', day: 15, secondDay: 30 }]);
+    expect(read({ patches: [{ t: 'income', day: 15 }], bare: null }, 'me prestaron 15 mil').patches).toEqual([]);
+  });
+
+  it('grounded currency (PEN ≠ USD): the currency written next to the amount wins; dollars are never assumed', () => {
+    const read = (json: unknown, msg: string) => validateInterpretation(JSON.stringify(json), msg)!.patches;
+    const sub = (amount: string, currency?: string) => ({ patches: [{ t: 'obligation', kind: 'subscription', name: 'Notion', amount, ...(currency ? { currency } : {}) }], bare: null });
+    expect(read(sub('24'), 'notion 24 dólares')).toEqual([{ t: 'obligation', kind: 'subscription', name: 'Notion', amountMinor: 2400, currency: 'USD' }]);
+    expect(read(sub('24', 'PEN'), 'notion 24 dólares')).toEqual([{ t: 'obligation', kind: 'subscription', name: 'Notion' }]);
+    expect(read(sub('24', 'USD'), 'notion 24 soles')).toEqual([{ t: 'obligation', kind: 'subscription', name: 'Notion' }]);
+    expect(read(sub('24', 'USD'), 'pago notion 24 al mes')).toEqual([{ t: 'obligation', kind: 'subscription', name: 'Notion' }]);
+    expect(read(sub('24', 'USD'), 'pago notion 24 al mes, en dólares')).toEqual([{ t: 'obligation', kind: 'subscription', name: 'Notion', amountMinor: 2400, currency: 'USD' }]);
+    // Spelled-out amounts cannot be checked: never guessed.
+    expect(read({ patches: [{ t: 'income', amount: '3500', day: 15 }], bare: null }, 'me pagan tres mil quinientos el quince')).toEqual([]);
+  });
+
+  it('merge: the model completes a partial rules reading; on the same subject the rules win field group by field group', () => {
+    const local = { patches: [{ t: 'debt' as const, kind: 'card' as const, name: 'Tarjeta BCP', institution: 'BCP', balanceMinor: 120000 }], bare: null };
+    const model = { patches: [
+      { t: 'debt' as const, kind: 'card' as const, name: 'Tarjeta de crédito BCP', institution: 'BCP', balanceMinor: 80000, approx: true, dueDay: 5 },
+      { t: 'debt' as const, kind: 'personal' as const, name: 'Deuda con mamá', lender: 'mamá', balanceMinor: 80000 },
+      { t: 'remove' as const, name: 'Tarjeta BCP' },
+    ], bare: { amountMinor: 80000 } };
+    expect(mergeReadings(local, model)).toEqual({ patches: [
+      { t: 'debt', kind: 'card', name: 'Tarjeta BCP', institution: 'BCP', balanceMinor: 120000, dueDay: 5 },
+      { t: 'debt', kind: 'personal', name: 'Deuda con mamá', lender: 'mamá', balanceMinor: 80000 },
+    ], bare: { amountMinor: 80000 } });
+    // A model reading that omits a local fact never removes it.
+    expect(mergeReadings(local, { patches: [], bare: null })).toEqual(local);
+    expect(mergeReadings({ patches: [], bare: { amountMinor: 100 } }, { patches: [], bare: { amountMinor: 999 } }).bare).toEqual({ amountMinor: 100 });
   });
 
   it('vision contract: dates, last4 only, confidence; empty reads are low confidence', () => {

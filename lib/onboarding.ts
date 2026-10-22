@@ -3,15 +3,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { domainWrites, validPatches } from '../src/ai/apply';
 import { isReplay } from './idempotency';
 import type { ChatMessage, MessageCard } from '../src/ai/conversation';
-import { agendaLine, answerFromDraft, canStart, clarify, compactState, finalSummary, hasFacts, mergePatches, nextQuestion, pendingReply, setWork, shortReply, unreadNumbers, upcomingFromDraft, workIn, WORK_HELP, yesNoReply, type Changed } from '../src/ai/draft';
+import { agendaLine, answerFromDraft, canStart, clarify, compactState, finalSummary, hasFacts, mergePatches, nextQuestion, pendingReply, setWork, shortReply, unplacedAmounts, unplacedKey, unplacedQuestion, unreadNumbers, upcomingFromDraft, workIn, WORK_HELP, yesNoReply, type Changed } from '../src/ai/draft';
 import { limaToday, shortDate } from '../src/domain/dates';
 import { formatMoney } from '../src/domain/money';
 import { checkImage, IMAGE_ERROR_TEXT, imageReadKey, READ_REUSE_MINUTES } from '../src/ai/image';
 import { interpret, isSmallTalk } from '../src/ai/interpreter';
-import { fold } from '../src/ai/text';
-import { EXTRACT_SYSTEM, VISION_SYSTEM } from '../src/ai/prompts';
+import { fold, type Amount } from '../src/ai/text';
+import { EXTRACT_SYSTEM, extractUserMessage, VISION_SYSTEM } from '../src/ai/prompts';
 import { sanitizeUserText } from '../src/ai/sanitize';
-import { validateInterpretation, validateVision } from '../src/ai/schema';
+import { EXTRACT_SCHEMA, mergeReadings, validateInterpretation, validateVision } from '../src/ai/schema';
 import { emptyDraft, type Draft } from '../src/ai/types';
 import { proposalFrom, type VisionProposal } from '../src/ai/vision';
 import { preferredName } from '../src/domain/profile';
@@ -98,7 +98,8 @@ const REVIEW_ACTIONS: MessageCard['actions'] = [{ kind: 'correct', label: 'Corre
  * complete, the next ones in calendar order (planning engine, Lima date). At the end, what comes until the next
  * income and today's balance — all from the person's facts and the engine, never from a model.
  */
-export function followUp(draft: Draft, changed: Changed[], today: string = limaToday(), answered: string | null = null, name: string | null = null, said = ''): { body: string; card: MessageCard; draft: Draft } {
+export function followUp(draft: Draft, changed: Changed[], today: string = limaToday(), answered: string | null = null, name: string | null = null, said = '',
+  unplaced: Pick<Amount, 'minor' | 'currency'> | null = null): { body: string; card: MessageCard; draft: Draft } {
   const q = nextQuestion(draft);
   const card: MessageCard = {};
   const facts = changed.filter((c) => c.ref !== 'removed');
@@ -114,6 +115,17 @@ export function followUp(draft: Draft, changed: Changed[], today: string = limaT
     const ids = new Set(draft.obligations.map((o) => o.name));
     const agenda = upcomingFromDraft(draft, today).items.filter((x) => ids.has(x.name));
     if (agenda.length >= 2) lead = `${lead} Entonces lo próximo sería: ${agendaLine(agenda)}.`.trim();
+  }
+  // "¿A qué corresponde S/ 800?": the ONE question of this turn (the next one waits, it is not marked asked).
+  if (unplaced) {
+    const key = unplacedKey(unplaced);
+    const text = unplacedQuestion(unplaced);
+    if (!draft.asked.includes(key)) draft.asked.push(key);
+    draft.pending = key;
+    card.question = text;
+    card.replies = ['Omitir'];
+    card.actions = canStart(draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [];
+    return { body: lead ? `${lead} ${text}` : text, card, draft };
   }
   if (q) {
     draft.asked.push(q.key);
@@ -186,14 +198,14 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   }
   const partial = unreadNumbers(fold(text), read) > 0;
   if ((!read.patches.length && !read.bare) || partial) {
-    const pendingQ = state.draft.pending ? `Pregunta pendiente: ${state.draft.pending}` : 'Sin pregunta pendiente';
-    const r = await infer(supabase, { operation: 'onboarding_extract', system: EXTRACT_SYSTEM,
-      messages: [{ role: 'user', content: `${pendingQ}\nDatos ya registrados:\n${compactState(state.draft) || '(ninguno)'}\n\nMensaje:\n${text}` }] },
-    (t) => validateInterpretation(t) !== null);
+    const r = await infer(supabase, { operation: 'onboarding_extract', system: EXTRACT_SYSTEM, schema: EXTRACT_SCHEMA,
+      messages: [{ role: 'user', content: extractUserMessage(state.draft.pending, compactState(state.draft), text) }] },
+    (t) => validateInterpretation(t, text) !== null);
     if (r.ok) {
-      // A Gemini answer that read nothing never replaces a partial deterministic reading.
-      const ai = validateInterpretation(r.text)!;
-      if (ai.patches.length || ai.bare || !partial) read = ai;
+      // Grounded in the message (an amount, day, last 4 or bank it does not contain is dropped). On a partial reading
+      // Gemini only completes it: the rules' facts win on the same subject (rule > inference).
+      const ai = validateInterpretation(r.text, text)!;
+      read = partial ? mergeReadings(read, ai) : ai;
     }
     else if (partial) { /* provider off, failed or out of quota: keep the deterministic reading (never lose a turn) */ }
     else if (r.reason !== 'unavailable' && r.reason !== 'failed') {
@@ -209,7 +221,9 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
     return;
   }
   const merged = mergePatches(state.draft, read.patches, read.bare, text);
-  const next = followUp(merged.draft, merged.changed, limaToday(), state.draft.pending, name, text);
+  // A number nobody could place (no Gemini, or Gemini did not place it either) is asked about, never stored or dropped silently.
+  const unplaced = partial ? unplacedAmounts(fold(text), read)[0] ?? null : null;
+  const next = followUp(merged.draft, merged.changed, limaToday(), state.draft.pending, name, text, unplaced);
   await save(supabase, userId, next.draft);
   await say(supabase, userId, 'onboarding', 'velsuno', next.body, next.card);
 }
