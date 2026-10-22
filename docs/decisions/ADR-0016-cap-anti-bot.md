@@ -12,12 +12,13 @@ first, before the lockout counter or Supabase Auth, so a bot using the app's for
 real person's email. Cap guards the forms only, not the endpoints behind them: see "Limits" below.
 
 ## How a request is verified
-1. `POST /api/cap/<login|signup|recovery>/challenge` → capjs-core signed challenge (HS256 with `CAP_SECRET`, scope bound, 5 min).
+1. `POST /api/cap/<login|signup|recovery>/challenge` → capjs-core signed challenge (HS256 with the Cap key: `CAP_SECRET`,
+   else derived, see the 2026-10-10 update; scope bound, 5 min).
 2. The widget solves it (on first interaction, so the tap answers at once) and `POST …/redeem` → capjs-core checks the
    proof of work, signature, scope and expiry, and spends the challenge signature once (`cap_spend('c:…')`).
-   Answer: our redeem token `v1.<scope>.<id>.<exp>.<HMAC>` (key derived from `CAP_SECRET`, 10 min).
+   Answer: our redeem token `v1.<scope>.<id>.<exp>.<HMAC>` (key derived from the Cap key, 10 min).
 3. The action verifies MAC (timing-safe), scope, expiry and spends `r:<id>` once. Any failure — missing, malformed,
-   forged, other scope, expired, reused, store error, `CAP_SECRET` absent — refuses with
+   forged, other scope, expired, reused, store error, no Cap key (`source: missing`) — refuses with
    "No pudimos verificarte. Intenta otra vez." (fail closed). Logs carry the reason code only.
 
 Replay store: `cap_spent` (migration 040) keeps SHA-256 hashes + expiry; RLS on, no table grants; `cap_spend()` is
@@ -28,7 +29,8 @@ on a schedule, together with the pending login_throttle purge (…035). The PoW 
 friction and stops email sending by scripts; the login lockout remains the brute-force control.
 
 ## Consequences
-- `CAP_SECRET` must exist in every environment, or nobody can sign in, sign up or recover a password.
+- Every environment needs a Cap key — `CAP_SECRET`, or `GEMINI_API_KEY` to derive one (2026-10-10 update) — or
+  nobody can sign in, sign up or recover a password.
 - The widget shows a small "Cap" attribution (the library enforces it); its troubleshooting link is hidden.
 - `capjs-core` is a server external package (it lazily imports esbuild only for instrumentation, which is not used).
 
@@ -60,3 +62,10 @@ Cap protects the app's forms. It does not protect what the publishable key can r
 - `cap_spend` is executable by `anon`: table growth only (no token can be minted without the secret); expired rows
   still need the purge above.
 - `CAP_SECRET`: still not set on Preview; Cap runs on the derived key (`GET /api/cap/status` → `"source":"derived"`).
+
+## Update 2026-10-20 — state after FRONT A (single statement; PO to confirm the Dashboard parts)
+- Cap key source: `derived` on Preview (`CAP_SECRET` not set); `cap_secret` once the PO sets it; `missing` = fail closed.
+- Function grants are now guarded (`tests/db/rls.test.ts`, migration 049, live once applied): anon may execute only
+  `cap_spend` and `login_attempt`, both listed with their reason; trigger functions are executable by no client role.
+- Still open: the server-only lockout gate (owner decision above), the `login_throttle` (035) and `cap_spent` purges
+  (contain DELETE, PO), and the Supabase Auth rate limits (`docs/runbooks/auth-email.md` §2, §5).
