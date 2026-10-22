@@ -1,0 +1,32 @@
+{
+  "fixtureStatus": "SYNTHETIC_UNVERIFIED",
+  "evidence": "Invented Culqi API answers shaped after the official culqi-php SDK (ids, paths, plan/subscription fields) and the unofficial @jibaru/culqi types (outcome, subscription dates). No real Culqi response has been captured yet: replace with REAL_ANONYMIZED sandbox answers during the acceptance run (docs/runbooks/billing-culqi.md).",
+  "charge_ok": {
+    "object": "charge", "id": "chr_test_A1b2C3d4E5f6G7h8", "amount": 19800, "currency_code": "USD", "email": "persona@example.test",
+    "capture": true, "amount_refunded": 0,
+    "outcome": { "type": "venta_exitosa", "code": "AUT0000", "merchant_message": "La operación de venta ha sido autorizada exitosamente" },
+    "metadata": { "order_id": "11111111-1111-4111-8111-111111111111" },
+    "source": { "object": "token", "id": "tkn_test_Z9y8X7w6V5u4T3s2", "card_number": "411111******1111" }
+  },
+  "charge_declined": {
+    "object": "error", "type": "card_error", "charge_id": "chr_test_D1e2C3l4I5n6E7d8", "code": "card_declined",
+    "decline_code": "insufficient_funds", "merchant_message": "La tarjeta no tiene fondos suficientes.", "user_message": "Su tarjeta no tiene fondos suficientes."
+  },
+  "charge_3ds": { "action_code": "REVIEW", "user_message": "Se requiere autenticación 3DS" },
+  "refund_ok": { "object": "refund", "id": "ref_test_R1e2F3u4N5d6O7k8", "charge_id": "chr_test_A1b2C3d4E5f6G7h8", "amount": 19800, "reason": "solicitud_comprador" },
+  "customer_ok": { "object": "customer", "id": "cus_test_C1u2S3t4O5m6E7r8", "email": "persona@example.test" },
+  "card_ok": { "object": "card", "id": "crd_test_C1a2R3d4O5k6A7b8", "customer_id": "cus_test_C1u2S3t4O5m6E7r8" },
+  "plan_monthly_trial": {
+    "id": "pln_test_M1o2N3t4H5l6Y7t8", "name": "Velsuno Plus Mensual", "amount": 400, "currency": "USD", "interval_unit_time": 3, "interval_count": 1,
+    "initial_cycles": { "count": 14, "has_initial_charge": false, "amount": 0, "interval_unit_time": 1 }
+  },
+  "plan_monthly": {
+    "id": "pln_test_M1o2N3t4H5l6Y7n8", "name": "Velsuno Plus Mensual sin prueba", "amount": 400, "currency": "USD", "interval_unit_time": 3, "interval_count": 1,
+    "initial_cycles": { "count": 0, "has_initial_charge": false, "amount": 0, "interval_unit_time": 3 }
+  },
+  "subscription_trial": {
+    "id": "sxn_test_S1u2B3s4C5r6I7p8", "status": 1, "customer_id": "cus_test_C1u2S3t4O5m6E7r8", "plan_id": "pln_test_M1o2N3t4H5l6Y7t8",
+    "active_card": "crd_test_C1a2R3d4O5k6A7b8", "metadata": { "order_id": "11111111-1111-4111-8111-111111111111" }
+  },
+  "webhook_charge_succeeded": { "object": "event", "id": "evt_test_E1v2E3n4T5o6K7a8", "type": "charge.creation.succeeded", "creation_date": 1792540800000 }
+}

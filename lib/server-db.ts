@@ -4,8 +4,9 @@ import pg from 'pg';
 let pool: pg.Pool | null | undefined;
 
 /**
- * Privileged PostgreSQL pool for server-side ingestion ONLY (webhooks). Requires DATABASE_URL, a server-only secret.
- * Never imported by client components; every query through it must filter by user_id explicitly.
+ * Privileged PostgreSQL pool for server-side ingestion (webhooks) and billing (lib/culqi.ts: only the service-only
+ * SQL billing functions). Requires DATABASE_URL, a server-only secret. Never imported by client components; every
+ * query through it must filter by user_id (or the order / provider reference) explicitly.
  */
 export function getServerPool(): pg.Pool | null {
   if (pool !== undefined) return pool;

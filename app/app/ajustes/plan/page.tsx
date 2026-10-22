@@ -3,11 +3,14 @@ import { SettingsPage, SettingsRow, SettingsSection, UsageMeter } from '../../..
 import { createSupabaseServerClient } from '../../../../lib/supabase/server';
 import { loadEntitlements } from '../../../../lib/queries';
 import { aiPlanFrom, allowance, velsUsage, type AIPlan } from '../../../../src/ai/entitlements';
+import { billingDate, paidPlanView, PLAN_INFO } from '../../../../src/domain/billing';
 import { longDate } from '../../../../src/domain/dates';
-import { formatLimaDateTime } from '../../../../src/web/transaction-input';
+import { SUBSCRIPTION_COLUMNS } from '../../../../src/domain/entitlements';
+import { formatMoney } from '../../../../src/domain/money';
 import { limaMonth, limaMonthRange } from '../../../../src/web/auth-input';
 import { startTrialAction } from '../../actions';
 import { resetDemoOnboardingAction, setDemoPlanAction } from '../demo-actions';
+import { cancelRenewalAction } from './actions';
 
 const PLAN_NAME: Record<AIPlan, string> = { free: 'Free', trial: 'Prueba Plus', plus: 'Plus' };
 
@@ -25,35 +28,66 @@ export default async function PlanSettings() {
     supabase.from('transaction_sources').select('id', { count: 'exact', head: true }).in('channel', ['email', 'sms', 'import']).gte('received_at', range.from).lt('received_at', range.to),
     supabase.from('ai_usage').select('bucket,weighted_tokens,camera_reads'),
     supabase.from('plan_config').select('key,value').like('key', 'ai_%'),
-    supabase.from('subscriptions').select('plan,status,trial_ends_at,current_period_end').maybeSingle(),
+    supabase.from('subscriptions').select(`${SUBSCRIPTION_COLUMNS},billing_amount_minor,billing_currency,provider_ref`).maybeSingle(),
     supabase.from('demo_access').select('simulated_plan').maybeSingle(),
     supabase.from('onboarding_states').select('status').maybeSingle(),
   ]);
   const now = new Date();
   const simulated = (demo.data?.simulated_plan ?? null) as AIPlan | null;
-  const plan = aiPlanFrom(sub.data, simulated, now);
+  const plan = aiPlanFrom(sub.data, simulated, now, config.billing_grace_days);
   const ai = allowance(plan, !!simulated, Object.fromEntries((cfg.data ?? []).map((r) => [r.key, Number(r.value)])), usage.data ?? [], onb.data?.status === 'active', now);
   const meter = velsUsage(ai, now, sub.data?.trial_ends_at ?? null);
   const plus = e.plan === 'plus';
   const limit = e.limits.autoMovementsPerMonth;
   const resetLabel = meter.resetAt ? (meter.renews === 'trial_end' ? `Tu prueba termina el ${longDate(meter.resetAt)}.` : `Se reinicia el ${longDate(meter.resetAt)}. Tu uso se renueva automáticamente cada mes.`) : null;
+  // A paid plan (Culqi): its phase, the provider's dates and the next charge. null for Free, card-less trial, by hand.
+  const paid = plus ? paidPlanView(sub.data) : null;
+  const usd = (m: number) => formatMoney({ amountMinor: m, currency: sub.data?.billing_currency === 'PEN' ? 'PEN' : 'USD' });
+  const graceEnd = paid?.phase === 'past_due' && paid.until ? new Date(Date.parse(paid.until) + config.billing_grace_days * 86_400_000).toISOString() : null;
 
   return (
     <SettingsPage title="Plan y uso" testId="settings-plan">
       <SettingsSection title="Plan actual" testId="plan">
         <div className="settings-row">
           <span className="settings-row-text">
-            <span className="settings-row-label" data-testid="plan-name" style={{ fontSize: 20 }}>{plus ? 'Plus' : 'Free'}{e.source === 'trial' ? ' · prueba' : ''}</span>
+            <span className="settings-row-label" data-testid="plan-name" style={{ fontSize: 20 }}>{plus ? 'Plus' : 'Free'}{paid ? ` ${PLAN_INFO[paid.plan].name}` : ''}{e.source === 'trial' ? ' · prueba' : ''}</span>
             <small className="muted">{plus ? 'Todo Velsuno, con más uso de Vels e historial completo.' : 'Las herramientas esenciales para organizar tu dinero.'}</small>
           </span>
           {simulated && <span className="tag">Simulación {PLAN_NAME[ai.plan]}</span>}
         </div>
-        {e.source === 'trial' && e.trialEndsAt && (
-          <SettingsRow label="Tu prueba termina" value={<span data-testid="trial-end">{longDate(formatLimaDateTime(e.trialEndsAt).slice(0, 10))}</span>} hint="Después sigues en Free, sin cargos, con todos tus datos." />
+        {e.source === 'trial' && e.trialEndsAt && !paid && (
+          <SettingsRow label="Tu prueba termina" value={<span data-testid="trial-end">{billingDate(e.trialEndsAt)}</span>} hint="Después sigues en Free, sin cargos, con todos tus datos." />
         )}
-        {plus && sub.data && e.source !== 'trial' && (
+        {paid?.phase === 'trial' && paid.until && (
+          <SettingsRow label="Tu prueba termina" value={<span data-testid="trial-end">{billingDate(paid.until)}</span>}
+            hint={paid.nextCharge ? `El primer cobro de ${usd(paid.nextCharge.amountMinor)} será el ${billingDate(paid.nextCharge.at)}. Si cancelas antes, no se cobra nada.` : undefined} />
+        )}
+        {paid?.phase === 'active' && (
+          <SettingsRow label="Estado" value={<span data-testid="plan-status">Activo</span>}
+            hint={paid.nextCharge ? `Se renueva el ${billingDate(paid.nextCharge.at)} por ${usd(paid.nextCharge.amountMinor)}.` : undefined} />
+        )}
+        {paid?.phase === 'past_due' && (
+          <SettingsRow label="Estado" value={<span data-testid="plan-status">Pago pendiente</span>}
+            hint={graceEnd ? `No pudimos cobrar la renovación. Conservas Plus hasta el ${billingDate(graceEnd)}; después pasas a Free con todos tus datos.` : 'No pudimos cobrar la renovación.'} />
+        )}
+        {paid?.phase === 'ending' && (
+          <SettingsRow label="Renovación" value={<span data-testid="plan-status">Cancelada</span>}
+            hint={paid.until ? `Conservas Plus hasta el ${billingDate(paid.until)}. No se hará ningún otro cobro.` : 'No se hará ningún otro cobro.'} />
+        )}
+        {paid?.phase === 'lifetime' && <SettingsRow label="Estado" value={<span data-testid="plan-status">Vitalicio</span>} hint="Un solo pago. Sin renovaciones ni cobros." />}
+        {plus && !paid && sub.data && e.source !== 'trial' && (
           <SettingsRow label="Estado" value={sub.data.status === 'past_due' ? 'Pago pendiente' : 'Activo'}
-            hint={sub.data.current_period_end ? `Se renueva el ${longDate(sub.data.current_period_end.slice(0, 10))}` : undefined} />
+            hint={sub.data.current_period_end ? `Hasta el ${billingDate(sub.data.current_period_end)}` : undefined} />
+        )}
+        {paid?.canCancel && paid.until && (
+          <details className="settings-row stack-sm" data-testid="cancel-renewal">
+            <summary className="button secondary">Cancelar renovación</summary>
+            <ActionForm action={cancelRenewalAction} label="Cancelar renovación" className="stack-sm">
+              <input type="hidden" name="confirm" value="yes" />
+              <p className="small">Conservas Plus hasta el {billingDate(paid.until)}. No se hará ningún otro cobro. Después pasas a Free con todos tus datos.</p>
+              <button type="submit" className="secondary" data-testid="confirm-cancel">Sí, cancelar renovación</button>
+            </ActionForm>
+          </details>
         )}
         {!plus && (e.trialAvailable ? (
           <div className="settings-row">
@@ -63,7 +97,7 @@ export default async function PlanSettings() {
             <small className="muted">Sin tarjeta. Al terminar sigues en Free con todos tus datos.</small>
           </div>
         ) : null)}
-        {(!plus || e.source === 'trial') && (
+        {(!plus || (e.source === 'trial' && !paid)) && (
           <div className="settings-row"><a href="/app/planes" className="button secondary" data-testid="see-plans">Ver planes: Mensual, Anual y Vitalicio</a></div>
         )}
       </SettingsSection>

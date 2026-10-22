@@ -38,3 +38,42 @@ export function annualSavingPercent(monthlyMinor: number, annualMinor: number): 
 export function limaDatePlus(now: Date, days: number): string {
   return new Date(now.getTime() + days * 86_400_000 - 5 * 3_600_000).toISOString().slice(0, 10);
 }
+
+/** "22 de octubre de 2027": a billing date (ISO timestamp) in Lima, with the year (annual renewals). */
+export function billingDate(iso: string): string {
+  const d = new Date(Date.parse(iso) - 5 * 3_600_000).toISOString().slice(0, 10);
+  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  return `${Number(d.slice(8, 10))} de ${months[Number(d.slice(5, 7)) - 1]} de ${d.slice(0, 4)}`;
+}
+
+/**
+ * What Ajustes → Plan y uso says about a paid plan (pure; the dates are the provider's, stored by SQL).
+ * `until` is the last moment with Plus when nothing else is charged; `nextCharge` the date + amount of the next one.
+ */
+export interface PaidPlanView {
+  plan: PlanCode;
+  phase: 'trial' | 'active' | 'past_due' | 'ending' | 'lifetime';
+  until: string | null;
+  nextCharge: { at: string; amountMinor: number } | null;
+  canCancel: boolean;
+}
+
+export function paidPlanView(sub: {
+  status: string; billing_plan: string | null; trial_ends_at: string | null; current_period_end: string | null;
+  cancel_at_period_end: boolean | null; billing_amount_minor: number | string | null; provider_ref: string | null;
+} | null): PaidPlanView | null {
+  if (!sub || !isPlanCode(sub.billing_plan)) return null;
+  if (sub.billing_plan === 'lifetime') return sub.status === 'active' ? { plan: 'lifetime', phase: 'lifetime', until: null, nextCharge: null, canCancel: false } : null;
+  if (!['trialing', 'active', 'past_due'].includes(sub.status)) return null;
+  const trial = sub.status === 'trialing';
+  const end = trial ? sub.trial_ends_at : sub.current_period_end;
+  const amount = Number(sub.billing_amount_minor);
+  const cancel = sub.cancel_at_period_end === true;
+  return {
+    plan: sub.billing_plan,
+    phase: cancel ? 'ending' : trial ? 'trial' : sub.status === 'past_due' ? 'past_due' : 'active',
+    until: end,
+    nextCharge: !cancel && sub.status !== 'past_due' && end && Number.isSafeInteger(amount) && amount > 0 ? { at: end, amountMinor: amount } : null,
+    canCancel: !cancel && !!sub.provider_ref,
+  };
+}

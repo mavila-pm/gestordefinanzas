@@ -1,26 +1,41 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { planKey, type PlanKey } from '../src/billing/config';
 import { PLAN_CODES, type PlanCode } from '../src/domain/billing';
+import { DEFAULT_PLAN_CONFIG, planState, SUBSCRIPTION_COLUMNS, type SubscriptionRow } from '../src/domain/entitlements';
+import { culqiCheckout } from './culqi';
 
 /**
- * How a purchase is completed (BillingProvider, spec §77):
+ * How a purchase is completed (BillingProvider, spec §77/§85, ADR-0018):
  * - 'demo': demo accounts complete the order without any charge (billing_simulate_payment); the real
- *   subscription never changes.
+ *   subscription never changes. Used when Culqi is off or in live mode.
  * - 'culqi': Culqi Checkout tokenizes the card in Culqi's own window (Velsuno never sees card data) and the
- *   server charges with the secret key, then billing_activate grants Plus. Enabled only with CULQI_PUBLIC_KEY,
- *   CULQI_SECRET_KEY and the plan ids configured — not yet: until then real accounts see that payments are coming.
+ *   server charges the stored order amount with the secret key; SQL grants Plus. Live mode (production keys) for
+ *   real accounts; test mode (sandbox keys, Preview) ONLY for demo accounts — the database is shared.
  * - 'disabled': nothing can be bought; the page says so (never a fake success).
  */
-export type BillingMode = 'demo' | 'culqi' | 'disabled';
+export type BillingMode =
+  | { kind: 'demo' }
+  | { kind: 'culqi'; livemode: boolean; publicKey: string; plans: Partial<Record<PlanKey, string>> }
+  | { kind: 'disabled' };
 
+/** True when CULQI_ENABLED=true and the keys pass the test/live guard (see src/billing/config.ts). */
 export function culqiConfigured(env: Record<string, string | undefined> = process.env): boolean {
-  return !!(env.CULQI_PUBLIC_KEY && env.CULQI_SECRET_KEY && env.CULQI_PLAN_MONTHLY && env.CULQI_PLAN_ANNUAL && env.CULQI_ENABLED === 'true');
+  return culqiCheckout(env).ok;
 }
 
 export async function billingMode(supabase: SupabaseClient): Promise<BillingMode> {
   const { data: demo } = await supabase.from('demo_access').select('user_id').maybeSingle();
-  if (demo) return 'demo';
-  return culqiConfigured() ? 'culqi' : 'disabled';
+  const c = culqiCheckout();
+  const culqi = c.ok ? { kind: 'culqi' as const, livemode: c.keys.livemode, publicKey: c.keys.publicKey, plans: c.plans } : null;
+  if (demo) return culqi && !culqi.livemode ? culqi : { kind: 'demo' };
+  return culqi && culqi.livemode ? culqi : { kind: 'disabled' };
+}
+
+/** A Culqi purchase is possible only when its exact plan (amount + trial) is configured: never a wrong price. */
+export function purchasable(mode: BillingMode, plan: PlanCode, amountMinor: number, trial: boolean): boolean {
+  if (mode.kind !== 'culqi') return mode.kind === 'demo';
+  return plan === 'lifetime' || !!mode.plans[planKey(plan, amountMinor, trial)];
 }
 
 /** Prices from the database (billing_price), plus the monthly price from 2027 for the notice. */
@@ -32,8 +47,22 @@ export async function loadPrices(supabase: SupabaseClient): Promise<{ prices: Re
   return { prices: { monthly: Number(m!.data), annual: Number(a!.data), lifetime: Number(l!.data) }, monthly2027: Number(m27!.data) };
 }
 
-/** The person's paid state: what a page needs to decide whether buying makes sense. */
-export async function loadBillingState(supabase: SupabaseClient): Promise<{ billingPlan: PlanCode | null; status: string | null; trialUsed: boolean }> {
-  const { data } = await supabase.from('subscriptions').select('billing_plan,status,trial_started_at').maybeSingle();
-  return { billingPlan: (data?.billing_plan ?? null) as PlanCode | null, status: data?.status ?? null, trialUsed: !!data?.trial_started_at };
+export interface BillingState {
+  billingPlan: PlanCode | null;
+  status: string | null;
+  trialUsed: boolean;
+  /** A paid plan that still gives Plus (renewing, in grace, or cancelled but not ended): nothing else to buy. */
+  paid: boolean;
+}
+
+/** The person's paid state, through THE entitlement rule (planState ≡ SQL billing_plan_state). */
+export async function loadBillingState(supabase: SupabaseClient, now = new Date()): Promise<BillingState> {
+  const [{ data }, { data: grace }] = await Promise.all([
+    supabase.from('subscriptions').select(SUBSCRIPTION_COLUMNS).maybeSingle(),
+    supabase.from('plan_config').select('value').eq('key', 'billing_grace_days').maybeSingle(),
+  ]);
+  const sub = (data as SubscriptionRow | null) ?? null;
+  const billingPlan = (sub?.billing_plan ?? null) as PlanCode | null;
+  const graceDays = Number(grace?.value ?? DEFAULT_PLAN_CONFIG.billing_grace_days);
+  return { billingPlan, status: sub?.status ?? null, trialUsed: !!sub?.trial_started_at, paid: billingPlan !== null && planState(sub, graceDays, now) !== 'free' };
 }
