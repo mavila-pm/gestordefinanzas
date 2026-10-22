@@ -71,8 +71,10 @@ export async function moveReserve(
 }
 
 /** The person's words for a result (same copy for the sheets and Vels; amounts from the server, never the form). */
-export function reserveMoveText(r: ReserveMoveResult, direction: 'in' | 'out', amountMinor: number): { message: string } | { error: string } {
-  const m = (v: number, c: Currency) => formatMoney({ amountMinor: v, currency: c });
+export function reserveMoveText(
+  r: ReserveMoveResult, direction: 'in' | 'out', amountMinor: number,
+  m: (v: number, c: Currency) => string = (v, c) => formatMoney({ amountMinor: v, currency: c }),
+): { message: string } | { error: string } {
   if (r.ok) {
     return { message: direction === 'in'
       ? `Apartaste ${m(amountMinor, r.currency)} para ${r.name}. Llevas ${m(r.savedMinor, r.currency)}.`

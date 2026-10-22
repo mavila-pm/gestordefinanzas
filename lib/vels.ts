@@ -20,6 +20,7 @@ import { logLearning } from './learning';
 import { isReplay } from './idempotency';
 import { applyPlan } from './plan-applications';
 import { settleIncome, settleObligation } from './settlements';
+import { moveReserve, reserveMoveText } from './reserves';
 import { loadCardViews } from './cards';
 import { loadMessages, readImages } from './onboarding';
 import { loadPlanningData, planFor, planInputFor, planTimeline } from './planning';
@@ -63,6 +64,7 @@ async function view(supabase: SupabaseClient): Promise<View> {
       return { id: x.id, name: x.name, currency: x.currency, amountMinor: x.amountMinor, monthlyMinor: monthlyEquivalentMinor(x),
         nextDate: nextCharge(x, d.today, settledBy.get(x.id) ?? new Set())?.date ?? null, paidYearMinor: paid.reduce((n, p) => n + p.amountMinor!, 0), paidYearCount: paid.length };
     }),
+    reserves: d.reserves,
     debtLinks: d.debts.map((x) => ({ ...x, obligationId: d.obligationRows.find((o) => o.active && o.kind === 'card' && o.currency === x.currency && fold(o.name) === fold(x.name))?.id ?? null })),
   };
 }
@@ -74,7 +76,7 @@ function toCard(a: Answer): MessageCard | null {
   const links = (a.actions ?? []).filter((x) => x.type === 'link') as Array<{ label: string; href: string }>;
   // Writes proposed by Vels carry a one-time reference: two tabs / a replayed request store the row once (ADR-0012).
   const acts = (a.actions ?? []).filter((x) => x.type === 'act')
-    .map((x) => (x.type === 'act' && (x.act === 'create_debt' || x.act === 'apply_plan') ? { ...x, fields: { ...x.fields, ref: `vels:${crypto.randomUUID()}` } } : x)) as unknown as MessageCard['acts'];
+    .map((x) => (x.type === 'act' && (x.act === 'create_debt' || x.act === 'apply_plan' || x.act === 'reserve_in' || x.act === 'reserve_out') ? { ...x, fields: { ...x.fields, ref: `vels:${crypto.randomUUID()}` } } : x)) as unknown as MessageCard['acts'];
   const replies = (a.actions ?? []).filter((x) => x.type === 'reply').map((x) => x.label);
   if (links.length) card.links = links;
   if (acts?.length) card.acts = acts;
@@ -232,6 +234,17 @@ export async function velsAct(supabase: SupabaseClient, userId: string, act: str
     if (r.ok && r.status === 'partial') return r.remainingMinor === null ? 'Listo, registré el abono. Falta confirmar el monto total.' : `Listo, registré el abono. Te faltan ${money(r.remainingMinor, r.currency)}.`;
     if (r.ok) return 'Listo, marcado como pagado.';
     return r.error === 'not_payment' ? 'Ese movimiento no es un pago confirmado en la misma moneda.' : r.error === 'duplicate' ? 'Ya estaba enlazado.' : 'No pude marcarlo.';
+  }
+  if (act === 'reserve_in' || act === 'reserve_out') {
+    // Apartar / Usar (ADR-0017): fields come from the button's JSON (client), so the amount and the apartado are
+    // re-checked by the shared write path and the SQL guard; it is an internal allocation, never income or expense.
+    const direction = act === 'reserve_in' ? 'in' : 'out';
+    const amount = /^\d{1,12}$/.test(fields.amount ?? '') ? Number(fields.amount) : NaN;
+    const r = await moveReserve(supabase, userId, { reserveId: fields.reserveId, direction, amountMinor: amount,
+      clientRef: /^vels:[0-9a-f-]{36}$/.test(fields.ref ?? '') ? fields.ref! : null });
+    if (!r.ok && r.error === 'invalid') return 'No pude hacerlo.';
+    const t = reserveMoveText(r, direction, amount, money);
+    return 'message' in t ? `Listo. ${t.message}` : t.error;
   }
   if (act === 'create_debt') {
     // Confirmation required (ADR-0011 class D): a debt the person owes — pending, never marked paid.
