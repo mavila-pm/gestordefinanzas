@@ -22,7 +22,7 @@ export type Intent =
   | { k: 'estimate_basics'; amountMinor: number } | { k: 'apply_plan' }
   | { k: 'subs_total' } | { k: 'subs_paid'; name: string } | { k: 'subs_pause'; name: string }
   | { k: 'pref_zero_debt'; on: boolean } | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number }
-  | { k: 'reserve_status'; name: string; explicit: boolean } | { k: 'reserve_move'; name: string; direction: 'in' | 'out'; amountMinor: number; currency: Currency | null };
+  | { k: 'reserve_status'; name: string; explicit: boolean } | { k: 'reserve_move'; name: string; direction: 'in' | 'out'; amountMinor: number; currency: Currency | null; explicit: boolean };
 
 const NAMES = ['carro', 'auto', 'alquiler', 'internet', 'luz', 'agua', 'gas', 'celular', 'telefono', 'tarjeta', 'seguro', 'colegio', 'universidad', 'netflix', 'spotify', 'gimnasio', 'prestamo', 'cable'];
 const nameIn = (t: string) => NAMES.find((n) => new RegExp(`\\b${n}\\b`).test(t)) ?? null;
@@ -39,23 +39,33 @@ const RESERVE_IN = new RegExp(String.raw`^(?:aparta|apartame|separa|separame|gua
 const RESERVE_OUT = new RegExp(String.raw`^(?:saca|sacame|usa|uso|retira|retirame|toma) ${AMOUNT_TOKEN} (?:del?|de la|de mi|de los|de las) ${RESERVE_WORD}?(?:(?:del?|para) ${ART})?([a-z0-9ñ][a-z0-9ñ ]{1,39})$`);
 const RESERVE_STATUS = new RegExp(String.raw`^(?:y )?cuanto (?:llevo|tengo|he juntado|junte|ahorre|he ahorrado|he apartado|aparte|he separado|separe|hay)(?: (apartado|ahorrado|juntado|separado))? (?:para|en|del?) ${ART}${RESERVE_WORD}?(?:(?:del?|para) ${ART})?([a-z0-9ñ][a-z0-9ñ ]{1,39})$`);
 const RESERVE_HOW = new RegExp(String.raw`^(?:y )?como (?:va|vamos con|voy con) ${ART}(?:apartado|ahorro|fondo) (?:del?|para) ${ART}([a-z0-9ñ][a-z0-9ñ ]{1,39})$`);
-// "¿Cuánto tengo para gastar / en mi cuenta?" are other questions (free money, balance): never an apartado name.
-const NOT_A_RESERVE = /^(gastar|comer|vivir|pagar|llegar|el mes|fin de mes|cuenta|banco|efectivo|total|libre|disponible|hoy|ahora|mano)$/;
+// "¿Cuánto tengo para gastar hoy / de deuda / en la tarjeta?", "saca 200 del cajero", "ahorra 200 al mes" are other
+// questions (free money, balance, debts, cash): a name that STARTS with one of these words is never an apartado.
+const NOT_A_RESERVE = /^(?:gastar|comer|vivir|pagar|llegar|mes|fin de mes|semana|fin de semana|quincena|cuenta|cuentas|banco|bcp|interbank|bbva|scotiabank|yape|plin|efectivo|cajero|tarjeta|tarjetas|deuda|deudas|saldo|total|libre|disponible|hoy|ahora|mano)\b/;
+const EXPLICIT_RESERVE = /\b(apartado|ahorro|fondo)\b/;
+const notAReserve = (name: string) => NOT_A_RESERVE.test(name.replace(/^(?:el|la|los|las|mi|mis) /, ''));
 
-function reserveIntent(t: string): Intent | null {
+/**
+ * Explicit apartado questions ("cuánto tengo apartado para…", "aparta 200 para…", "saca 50 del apartado…") are
+ * read before the other detectors; the generic shapes ("cuánto tengo para X", "usa 100 de X") only when nothing else
+ * matched, and answer() replies to them only when X is one of the person's apartados (otherwise not ours: null).
+ */
+type ReserveIntent = Extract<Intent, { k: 'reserve_status' | 'reserve_move' }>;
+function reserveIntent(t: string): ReserveIntent | null {
   const q = t.replace(/[¿?¡!]/g, '').replace(/[.,;\s]+$/, '').replace(/[,\s]+(por favor|porfa|pls|plis)$/, '').replace(/[.,;]+$/, '').trim();
   const move = q.match(RESERVE_IN) ?? q.match(RESERVE_OUT);
   if (move) {
     const a = findAmounts(move[1]!)[0];
     const name = move[2]!.trim();
-    if (!a || a.minor <= 0 || NOT_A_RESERVE.test(name)) return null;
-    return { k: 'reserve_move', name, direction: RESERVE_IN.test(q) ? 'in' : 'out', amountMinor: a.minor, currency: a.currency };
+    if (!a || a.minor <= 0 || notAReserve(name)) return null;
+    return { k: 'reserve_move', name, direction: RESERVE_IN.test(q) ? 'in' : 'out', amountMinor: a.minor, currency: a.currency,
+      explicit: EXPLICIT_RESERVE.test(q) || /^apart/.test(q) };
   }
   const st = q.match(RESERVE_STATUS);
   if (st) {
     const name = st[2]!.trim();
-    if (NOT_A_RESERVE.test(name)) return null;
-    return { k: 'reserve_status', name, explicit: !!st[1] || /\b(apartado|ahorro|fondo)\b/.test(q) };
+    if (notAReserve(name)) return null;
+    return { k: 'reserve_status', name, explicit: !!st[1] || EXPLICIT_RESERVE.test(q) };
   }
   const how = q.match(RESERVE_HOW);
   return how ? { k: 'reserve_status', name: how[1]!.trim(), explicit: true } : null;
@@ -64,7 +74,12 @@ function reserveIntent(t: string): Intent | null {
 export function detectIntent(message: string): Intent {
   const t = fold(message);
   const reserve = reserveIntent(t);
-  if (reserve) return reserve;
+  if (reserve?.explicit) return reserve;
+  const other = detectOther(t);
+  return other.k === 'unknown' && reserve ? reserve : other;
+}
+
+function detectOther(t: string): Intent {
   const amount = findAmounts(t)[0];
   const name = nameIn(t);
   // Mis suscripciones: totals, what was paid for one service, and pausing (only in Velsuno; never cancels the service).
@@ -149,12 +164,16 @@ export interface Answer { title?: string; text: string; rows?: Array<{ label: st
 
 const primary = (v: View) => v.plans.find((p) => p.base) ?? v.plans[0] ?? null;
 const RESERVES_LINK: Action = { type: 'link', label: 'Ver apartados', href: '/app/plan' };
-/** The person's apartado by name: exact (accents and case folded) first, then the closest containing match. */
+/**
+ * The person's apartado by name: exact (accents and case folded) first, then one whose name contains the asked words
+ * or is contained in them, whole words only ("viaje" ↔ "viaje a cusco"; an apartado "a" never matches "gastar").
+ */
 function findReserves(v: View, name: string, currency: Currency | null = null): Reserve[] {
-  const n = fold(name);
+  const words = (s: string) => ` ${fold(s).replace(/[^a-z0-9ñ]+/g, ' ').trim()} `;
+  const n = words(name);
   const all = (v.reserves ?? []).filter((r) => currency === null || r.currency === currency);
-  const exact = all.filter((r) => fold(r.name) === n);
-  return exact.length ? exact : all.filter((r) => fold(r.name).includes(n) || n.includes(fold(r.name)));
+  const exact = all.filter((r) => words(r.name) === n);
+  return exact.length ? exact : all.filter((r) => n.trim() !== '' && words(r.name).trim() !== '' && (words(r.name).includes(n) || n.includes(words(r.name))));
 }
 const PLAN_LINK: Action = { type: 'link', label: 'Ver Dinero disponible', href: '/app/plan' };
 /** Confirmation button for "Aplicar plan": carries what the person saw so a changed plan is not saved blindly. */
@@ -418,7 +437,7 @@ export function answer(intent: Intent, v: View): Answer | null {
       const found = findReserves(v, intent.name);
       if (!found.length) {
         // Not one of the person's apartados: only say so when the question was clearly about one; otherwise not ours.
-        return intent.explicit || v.reserves?.length ? { text: `No tengo un apartado para ${intent.name}. ¿Lo creas en Dinero disponible?`, actions: [{ type: 'link', label: 'Crear apartado', href: '/app/plan' }] } : null;
+        return intent.explicit ? { text: `No tengo un apartado para ${intent.name}. ¿Lo creas en Dinero disponible?`, actions: [{ type: 'link', label: 'Crear apartado', href: '/app/plan' }] } : null;
       }
       if (found.length > 1) return { text: `Tienes ${found.length} apartados con ese nombre: ${found.map((r) => `${r.name} (${money(r.savedMinor, r.currency)})`).join(', ')}.`, actions: [RESERVES_LINK] };
       const r = found[0]!;
@@ -434,7 +453,8 @@ export function answer(intent: Intent, v: View): Answer | null {
     }
     case 'reserve_move': {
       const found = findReserves(v, intent.name);
-      if (!found.length) return { text: `No tengo un apartado para ${intent.name}. Créalo en Dinero disponible y luego me dices cuánto apartar.`, actions: [{ type: 'link', label: 'Crear apartado', href: '/app/plan' }] };
+      // "usa 100 de X" / "guarda 500 para X" without the word apartado and no apartado X: another question, not ours.
+      if (!found.length) return intent.explicit ? { text: `No tengo un apartado para ${intent.name}. Créalo en Dinero disponible y luego me dices cuánto apartar.`, actions: [{ type: 'link', label: 'Crear apartado', href: '/app/plan' }] } : null;
       const same = intent.currency ? found.filter((r) => r.currency === intent.currency) : found;
       if (!same.length) return { text: `Tu apartado ${found[0]!.name} es en ${found[0]!.currency === 'PEN' ? 'soles' : 'dólares'}: no mezclo monedas.`, actions: [RESERVES_LINK] };
       if (same.length > 1) return { text: `Tienes ${same.length} apartados con ese nombre. Hazlo desde Dinero disponible para elegir cuál.`, actions: [RESERVES_LINK] };

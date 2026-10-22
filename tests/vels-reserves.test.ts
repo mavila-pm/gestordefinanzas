@@ -77,10 +77,10 @@ describe('detectIntent: Apartados, without stealing other questions', () => {
     expect(detectIntent('¿Cuánto llevo para el viaje?')).toEqual({ k: 'reserve_status', name: 'viaje', explicit: false });
     expect(detectIntent('cuánto tengo apartado para el viaje a Cusco')).toEqual({ k: 'reserve_status', name: 'viaje a cusco', explicit: true });
     expect(detectIntent('¿Cómo va mi apartado del SOAT?')).toEqual({ k: 'reserve_status', name: 'soat', explicit: true });
-    expect(detectIntent('aparta 200 para el viaje')).toEqual({ k: 'reserve_move', name: 'viaje', direction: 'in', amountMinor: 20000, currency: null });
-    expect(detectIntent('Sepárame S/ 150.50 para el viaje, por favor')).toMatchObject({ k: 'reserve_move', direction: 'in', amountMinor: 15050, currency: 'PEN' });
-    expect(detectIntent('usa 100 del viaje')).toEqual({ k: 'reserve_move', name: 'viaje', direction: 'out', amountMinor: 10000, currency: null });
-    expect(detectIntent('saca 50 dólares del apartado del viaje')).toMatchObject({ k: 'reserve_move', name: 'viaje', direction: 'out', amountMinor: 5000, currency: 'USD' });
+    expect(detectIntent('aparta 200 para el viaje')).toEqual({ k: 'reserve_move', name: 'viaje', direction: 'in', amountMinor: 20000, currency: null, explicit: true });
+    expect(detectIntent('Sepárame S/ 150.50 para el viaje, por favor')).toMatchObject({ k: 'reserve_move', direction: 'in', amountMinor: 15050, currency: 'PEN', explicit: false });
+    expect(detectIntent('usa 100 del viaje')).toEqual({ k: 'reserve_move', name: 'viaje', direction: 'out', amountMinor: 10000, currency: null, explicit: false });
+    expect(detectIntent('saca 50 dólares del apartado del viaje')).toMatchObject({ k: 'reserve_move', name: 'viaje', direction: 'out', amountMinor: 5000, currency: 'USD', explicit: true });
   });
   it('other questions keep their meaning', () => {
     expect(detectIntent('¿Cuánto tengo en mi cuenta?').k).not.toMatch(/^reserve/);
@@ -88,6 +88,29 @@ describe('detectIntent: Apartados, without stealing other questions', () => {
     expect(detectIntent('aparta la plata').k).toBe('apply_plan');
     expect(detectIntent('guarda el plan').k).toBe('apply_plan');
     expect(detectIntent('¿Puedo gastar 200 en el viaje?').k).toBe('can_spend');
+  });
+  it('review M1: free-money, balance, debt and cash questions are never read as an apartado', () => {
+    // Same intent as before Apartados existed (the week questions stay local, 0 AI quota).
+    expect(detectIntent('¿cuánto tengo para gastar esta semana?')).toEqual({ k: 'upcoming', range: 'week' });
+    expect(detectIntent('cuanto tengo para comer esta semana')).toEqual({ k: 'upcoming', range: 'week' });
+    for (const q of ['¿cuánto tengo para gastar hoy?', 'cuanto tengo para gastar hasta fin de mes', 'cuanto tengo de deuda', 'cuanto tengo de saldo',
+      '¿cuánto tengo en la tarjeta?', '¿cuánto tengo en mi cuenta bcp?', 'cuanto tengo en efectivo', 'cuanto tengo en total', 'cuanto tengo para pagar el alquiler',
+      'saca 200 del cajero', 'usa 100 de la tarjeta', 'ahorra 200 al mes', 'cuanto tengo en mi cuenta de ahorros']) {
+      expect(detectIntent(q).k, q).not.toMatch(/^reserve/);
+    }
+  });
+  it('review M1: a generic shape is answered only when it names one of the person\'s apartados', () => {
+    const generic = detectIntent('cuanto tengo para el viaje');
+    expect(generic).toEqual({ k: 'reserve_status', name: 'viaje', explicit: false });
+    // Someone with apartados, none called like that: not ours (null → the normal flow), never "No tengo un apartado".
+    expect(answer({ k: 'reserve_status', name: 'gastar hoy', explicit: false }, view())).toBeNull();
+    expect(answer({ k: 'reserve_status', name: 'el fin de semana', explicit: false }, view())).toBeNull();
+    expect(answer({ k: 'reserve_move', name: 'alquiler', direction: 'in', amountMinor: 50000, currency: null, explicit: false }, view())).toBeNull();
+    expect(answer({ k: 'reserve_move', name: 'boda', direction: 'in', amountMinor: 50000, currency: null, explicit: true }, view())!.text)
+      .toBe('No tengo un apartado para boda. Créalo en Dinero disponible y luego me dices cuánto apartar.');
+    // Whole words only: an apartado called "a" never matches "gastar".
+    expect(answer({ k: 'reserve_status', name: 'gastar', explicit: false }, view([trip({ name: 'a' })]))).toBeNull();
+    expect(answer({ k: 'reserve_status', name: 'viaje a cusco', explicit: false }, view())!.text).toMatch(/^Llevas S\/ 300 de S\/ 1,200 para Viaje/);
   });
 });
 
@@ -103,12 +126,12 @@ describe('answer(): engine numbers only', () => {
     expect(answer({ k: 'reserve_status', name: 'boda', explicit: false }, view([]))).toBeNull();
   });
   it('"aparta 200 para el viaje" → a confirmation card (nothing written); "usa" more than saved → refused; PEN ≠ USD', () => {
-    expect(answer({ k: 'reserve_move', name: 'viaje', direction: 'in', amountMinor: 20000, currency: null }, view())).toEqual({
+    expect(answer({ k: 'reserve_move', name: 'viaje', direction: 'in', amountMinor: 20000, currency: null, explicit: true }, view())).toEqual({
       text: '¿Aparto S/ 200 para Viaje? No es un gasto: sigue en tu saldo, pero deja de estar disponible.',
       actions: [{ type: 'act', label: 'Sí, apartar', act: 'reserve_in', fields: { reserveId: RID, amount: '20000' } }],
     });
-    expect(answer({ k: 'reserve_move', name: 'viaje', direction: 'out', amountMinor: 40000, currency: null }, view())!.text).toBe('Solo tienes S/ 300 apartados en Viaje.');
-    expect(answer({ k: 'reserve_move', name: 'viaje', direction: 'in', amountMinor: 5000, currency: 'USD' }, view())!.text).toBe('Tu apartado Viaje es en soles: no mezclo monedas.');
+    expect(answer({ k: 'reserve_move', name: 'viaje', direction: 'out', amountMinor: 40000, currency: null, explicit: false }, view())!.text).toBe('Solo tienes S/ 300 apartados en Viaje.');
+    expect(answer({ k: 'reserve_move', name: 'viaje', direction: 'in', amountMinor: 5000, currency: 'USD', explicit: true }, view())!.text).toBe('Tu apartado Viaje es en soles: no mezclo monedas.');
   });
 });
 
