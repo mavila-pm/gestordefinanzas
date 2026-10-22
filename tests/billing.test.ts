@@ -28,7 +28,7 @@ describe('billing (pure)', () => {
   });
 });
 
-describe('billing display and input (pure, ADR-0018)', () => {
+describe('billing display and input (pure, ADR-0019)', () => {
   it('billing dates in Lima with the year', async () => {
     const { billingDate } = await import('../src/domain/billing');
     expect(billingDate('2027-10-22T04:59:00Z')).toBe('21 de octubre de 2027');

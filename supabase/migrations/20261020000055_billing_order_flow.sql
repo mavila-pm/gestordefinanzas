@@ -1,4 +1,4 @@
--- Billing before Culqi goes live (ADR-0018), part 2 of 3: one lock order and a protected charge in flight.
+-- Billing before Culqi goes live (ADR-0019), part 2 of 3: one lock order and a protected charge in flight.
 --
 -- Defects fixed (reproduced in a throwaway Postgres, audit F-billing):
 -- (a) lock-order inversion: billing_activate locked the order row and then the per-person advisory lock, while

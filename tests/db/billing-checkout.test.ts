@@ -19,7 +19,7 @@ const PW = 'p'.repeat(32);
 const auth = `Basic ${Buffer.from(`culqi-hook:${PW}`).toString('base64')}`;
 const hook = (type: string, id: string, eventId: string) => JSON.stringify({ object: 'event', id: eventId, type, data: { id } });
 
-describe.skipIf(!DATABASE_URL)('billing checkout + webhook over the real SQL (ADR-0018)', () => {
+describe.skipIf(!DATABASE_URL)('billing checkout + webhook over the real SQL (ADR-0019)', () => {
   let pool: pg.Pool;
   let store: PgBillingStore;
   beforeAll(() => { pool = makePool(); store = new PgBillingStore(pool); });

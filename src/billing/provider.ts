@@ -1,5 +1,5 @@
 /**
- * BillingProvider (spec §85, ADR-0018): the only shape the billing flows know. Culqi is the first implementation
+ * BillingProvider (spec §85, ADR-0019): the only shape the billing flows know. Culqi is the first implementation
  * (src/billing/culqi-client.ts); the domain never imports a provider. Every method returns a typed result, never
  * throws for a provider answer, and every returned object was validated against a fixed schema (provider responses
  * are untrusted input). Money in integer minor units.

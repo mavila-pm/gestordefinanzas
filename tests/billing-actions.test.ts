@@ -3,7 +3,7 @@ import { billingDate } from '../src/domain/billing';
 import { FakeProvider, MemoryStore, ORDER, USER } from './billing-fakes';
 
 /**
- * Billing server actions (ADR-0018) with Supabase and Culqi stubbed: the subscription reference always comes from the
+ * Billing server actions (ADR-0019) with Supabase and Culqi stubbed: the subscription reference always comes from the
  * person's own row, never from the form; a Culqi failure changes nothing; with Culqi off nothing can be bought.
  */
 const rows: Record<string, Record<string, unknown> | null> = {};

@@ -73,7 +73,7 @@ describe.skipIf(!DATABASE_URL)('billing: plans, orders, demo purchase, server-on
       expect(await errorMessage(c, `select public.billing_create_order('monthly', public.billing_price('monthly'))`)).toBe('already_lifetime');
     });
     const monthly = await orderFor(pool, USER_B, 'monthly');
-    // Recurring plans are activated only with the provider's subscription and dates (ADR-0018).
+    // Recurring plans are activated only with the provider's subscription and dates (ADR-0019).
     await expect(pool.query(`select public.billing_activate($1, 'culqi', 'sxn_1', (select amount_minor from public.billing_orders where id = $1), 'USD')`, [monthly])).rejects.toThrow('recurring_needs_subscription');
     await beginCharge(pool, monthly, USER_B);
     expect(await activateSub(pool, monthly, { sub: 'sxn_test_b1' })).toBe('trialing');

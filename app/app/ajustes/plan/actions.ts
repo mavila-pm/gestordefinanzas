@@ -10,7 +10,7 @@ import type { ActionState } from '../../actions';
 const CANCEL_FAILED = 'No pudimos cancelar con Culqi. Tu plan no cambió. Inténtalo de nuevo en unos minutos.';
 
 /**
- * "Cancelar renovación" (spec §85, ADR-0018): Culqi first (the subscription is deleted there, so no other charge can
+ * "Cancelar renovación" (spec §85, ADR-0019): Culqi first (the subscription is deleted there, so no other charge can
  * happen), then SQL records cancel_at_period_end. Plus stays until the end of the paid period (or of the trial) and
  * then the plan becomes Free with every datum kept. If Culqi fails, nothing changes and the person is told so.
  * The subscription reference comes from the person's own row (RLS), never from the form.

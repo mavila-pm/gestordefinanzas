@@ -5,7 +5,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('../lib/server-db', () => ({ getServerPool: () => (process.env.DATABASE_URL ? ({ query: async () => ({ rows: [] }) }) : null) }));
 
 /**
- * Test/live key guard and plan mapping (ADR-0018). Preview and Production share ONE database: sandbox keys only
+ * Test/live key guard and plan mapping (ADR-0019). Preview and Production share ONE database: sandbox keys only
  * outside Production (and only for demo accounts), live keys only in Production; every bad combination → disabled
  * with a reason, never "culqi". The order amount picks the Culqi plan, so the January 2027 monthly change (400 → 900)
  * can never subscribe anyone at a price they did not accept.

@@ -8,7 +8,7 @@ import { CULQI_CHECKOUT_SCRIPT } from '../src/billing/culqi-public';
 import type { PlanCode } from '../src/domain/billing';
 
 /**
- * Card payment with Culqi Checkout Custom (ADR-0018). Culqi's own window collects the card and returns a token
+ * Card payment with Culqi Checkout Custom (ADR-0019). Culqi's own window collects the card and returns a token
  * (tkn_…): Velsuno never sees card data. Order of events: terms accepted → the server creates the order at its
  * price → Checkout opens showing that amount → token → the server charges the STORED amount (or subscribes) →
  * the gracias page reads the result from the database. Never optimistic: no success is shown before the server.

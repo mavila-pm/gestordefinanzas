@@ -5,7 +5,7 @@ import { WEBHOOK_MAX_BYTES } from '../../../../src/billing/culqi';
 import { handleCulqiWebhook } from '../../../../src/infrastructure/billing/culqi-webhook';
 
 /**
- * Culqi webhook (ADR-0018; owner setup in docs/runbooks/billing-culqi.md). Disabled (503) until the server secrets
+ * Culqi webhook (ADR-0019; owner setup in docs/runbooks/billing-culqi.md). Disabled (503) until the server secrets
  * exist: CULQI_PUBLIC_KEY + CULQI_SECRET_KEY (test keys outside Production, live keys only in Production),
  * CULQI_WEBHOOK_USER + CULQI_WEBHOOK_PASSWORD (HTTP Basic set in CulqiPanel, password ≥ 24 characters) and
  * DATABASE_URL. Culqi does not sign webhooks: the body is never trusted — the handler re-fetches the object from

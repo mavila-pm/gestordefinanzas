@@ -2,7 +2,7 @@ import type { BillingProvider, ProviderCharge, ProviderPlan, ProviderResult, Pro
 import { BillingRefused, type BillingStore, type OrderRow } from '../src/billing/store';
 
 /**
- * Test doubles for the billing flows (ADR-0018). FakeProvider answers like Culqi and counts every call (the real API
+ * Test doubles for the billing flows (ADR-0019). FakeProvider answers like Culqi and counts every call (the real API
  * is never reached). MemoryStore mimics the SQL contract of migrations 054–056 closely enough for flow tests; the
  * real SQL is exercised by tests/db/billing-checkout.test.ts with the same flows.
  */

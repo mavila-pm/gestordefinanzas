@@ -4,7 +4,7 @@ import type { ProviderCharge, ProviderError, ProviderSubscription } from '../../
 import { BillingRefused, type OrderRow } from '../../billing/store';
 
 /**
- * Culqi webhook (ADR-0018). Culqi does not sign webhooks, so authenticity is layered:
+ * Culqi webhook (ADR-0019). Culqi does not sign webhooks, so authenticity is layered:
  * 1. HTTP Basic credentials set in CulqiPanel ("Activar autenticación"), compared in constant time;
  * 2. the body is only a HINT: we read the event type and the object id, then RE-FETCH that object from Culqi with
  *    the secret key and act only on what Culqi returns (a forged "charge succeeded" for an unpaid charge does nothing);

@@ -1,6 +1,8 @@
-# ADR-0018 — Billing with Culqi (BillingProvider, card checkout, lifecycle)
+# ADR-0019 — Billing with Culqi (BillingProvider, card checkout, lifecycle)
 
-Status: proposed (2026-10-22). Code complete behind switches; **no real charge is possible** until the owner sets the
+(Numbered 0019: ADR-0018 is the security-headers decision of another front.)
+
+Status: proposed (2026-10-22; security review applied the same day). Code complete behind switches; **no real charge is possible** until the owner sets the
 env vars (runbook `docs/runbooks/billing-culqi.md`) and the PO approves the two items under "Needs the PO".
 
 ## Context
@@ -23,13 +25,25 @@ webhook handler) · `lib/culqi.ts` / `lib/billing.ts` (server-only wiring; the s
 owner, amount, currency, mode, trial length and date bounds. Outcomes: definitive "no" → `billing_fail_order`;
 unknown (timeout, 5xx, unreadable 2xx) → the order stays `processing` (webhook settles it; never "failed" while money
 may have moved); charged but not activatable → refund (or `needs_refund` in the ledger when the refund fails).
+A `processing` order blocks every new order of that person **at any age** (`payment_in_progress`): a result that
+never came is reconciled by support (runbook §7), never paid twice.
+
+**One live subscription per person.** `billing_renewal_open()` (SQL) ≡ `renewalStillOpen()` (TS): a Mensual/Anual
+with a provider reference, not cancelled, not closed — also when it no longer gives Plus (a lapsed `past_due`, which
+Culqi may still charge). While it holds, `billing_create_order` / `billing_begin_charge` refuse
+(`subscription_still_open`) and neither activation function overwrites the row: the person cancels it first
+(Ajustes → Plan y uso shows a lapsed renewal and its "Cancelar renovación"; the payment page says why it is blocked).
+A refused Vitalicio activation is refunded; a refused subscription is cancelled at Culqi.
 
 **Flows.** Vitalicio: Culqi Checkout Custom tokenizes the card in Culqi's window (card only, USD) → server charges
 `POST /v2/charges` with `metadata.order_id` → activation. Mensual/Anual: `GET /recurrent/plans/{id}` must match amount,
 currency, interval and trial days **before anything is created** → customer (one per person and mode, reused;
 address asked, never invented) → `POST /cards` → `POST /recurrent/subscriptions/create {card_id, plan_id, tyc: true,
 metadata}` → activation with **Culqi's** trial end / next billing date. A subscription that does not match what was
-accepted is deleted at Culqi at once.
+accepted is deleted at Culqi at once, and its order is closed WITH the subscription reference so every later event
+of it is attributed (cancel retried, charges refunded). A no-trial plan must have **no** initial cycles at all (a first
+cycle at another price or free cycles of another unit is a mismatch). No-trial plans stay unconfigured (purchase off)
+until the sandbox confirms how their first charge is reported (runbook §4.5–4.6).
 
 **Test/live guard** (`src/billing/config.ts`). Outside `VERCEL_ENV=production` only `pk_test_`/`sk_test_`; in
 Production only `pk_live_`/`sk_live_`; both keys of one mode. Any mismatch → billing disabled with a logged reason
@@ -54,9 +68,21 @@ object is **re-fetched with the secret key** and only Culqi's copy is acted on; 
 `billing_events (provider, event_ref)` plus per-reference idempotency inside every SQL function; 500 on transient
 errors (receipt stays open, Culqi retries). It also heals a lost checkout answer (subscription metadata carries the
 order id). It works with `CULQI_ENABLED=false`: renewals, refunds and cancellations of existing subscribers never stop.
+- **Periods only from charges.** A renewal is recorded only from a re-fetched successful charge (amount = the amount
+  sold, period = Culqi's next billing date). A subscription event never grants a period and never turns `past_due`
+  into `active`.
+- **Routing.** A charge that names a subscription, or carries the order of a Mensual/Anual, is a period charge — never
+  a Vitalicio settlement. One whose subscription is still being activated (order `processing`) answers 500 (retried).
+- **Charges no row holds** (`billing_flag_charge`): a successful charge of a subscription no `subscriptions` row holds
+  is recorded once as `needs_refund` (`orphan:<charge>`). When it is provably ours (an order closed with that
+  subscription, or its cancellation in the ledger) the subscription is cancelled again and the charge refunded once;
+  otherwise the owner reviews it (no automatic refund of a charge nothing links to Velsuno). A refused subscription's
+  later events retry its cancellation.
 
 **Cancel** (Ajustes → Plan y uso): `DELETE /recurrent/subscriptions/{id}` first, then `billing_cancel` (Plus until the
-period/trial end, then Free). If Culqi fails nothing changes and the person is told so. Vitalicio has no cancel.
+period/trial end, then Free). If Culqi fails nothing changes and the person is told so. A DELETE answered 404 counts
+only when a GET confirms 404 (UNVERIFIED how Culqi shows a cancelled subscription: fail closed). Vitalicio has no
+cancel.
 
 ## Not built (documented)
 - **Daily reconciliation job** (skipped in this block). Design: Vercel cron → `app/api/cron/billing-reconcile`
@@ -83,10 +109,12 @@ Confirmed from the official SDK source (culqi-php master, read 2026-10-22): base
 key prefixes, `outcome.type = 'venta_exitosa'`, interval meanings (1 day, 3 month, 4 year), how a free trial is
 expressed (`initial_cycles`), subscription fields (`trial_end`, `next_billing_date`, `active_card`, status codes),
 timestamps in ms, webhook body/types and Basic auth, `action_code: REVIEW` for 3DS, `?email=` customer filter,
-`validate: true` on cards, `amount_refunded`, `metadata.subscription_id` on period charges, Checkout v4 JS API, CSP
-origins. Each is marked `// UNVERIFIED` in code and listed in the runbook checklist.
+`validate: true` on cards, `amount_refunded`, `metadata.subscription_id` (or our `order_id`) on period charges, how a
+cancelled subscription answers GET (404 or a status), Checkout v4 JS API, CSP origins. Each is marked `// UNVERIFIED` in code and listed in the runbook checklist.
 
 ## Consequences
 - Going live = owner env vars + plans + webhook (runbook) + the two PO items above. No other code change.
-- Risk accepted until the reconciliation job exists: renewals rely on Culqi webhooks (period charges or
-  subscription events) whose shape is unverified.
+- Risk accepted until the reconciliation job exists: renewals rely on Culqi **charge** webhooks whose link to the
+  subscription (`metadata.subscription_id` or the order id) is unverified. If neither is present, renewals are never
+  recorded and a paying subscriber falls to Free after period end + grace (fail closed: never Plus without a
+  payment); the sandbox run (§4.6) must confirm it before live.

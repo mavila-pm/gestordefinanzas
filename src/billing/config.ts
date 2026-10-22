@@ -1,7 +1,7 @@
 import { culqiId, keyMode } from './culqi';
 
 /**
- * Billing configuration from the environment (pure: env is passed in). ADR-0018.
+ * Billing configuration from the environment (pure: env is passed in). ADR-0019.
  *
  * Test/live guard: Preview and Production share ONE database, so a sandbox charge must never grant real Plus and a
  * live key must never run outside Production:

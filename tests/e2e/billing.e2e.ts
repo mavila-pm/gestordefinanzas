@@ -1,5 +1,5 @@
 /**
- * Planes → Pago → Gracias (ADR-0018) end-to-end against the REAL Supabase project, through the running app. Demo path
+ * Planes → Pago → Gracias (ADR-0019) end-to-end against the REAL Supabase project, through the running app. Demo path
  * only: NO real charge can happen here. s18a is a demo account (purchase simulated, subscription untouched); s18b is a
  * real account that cannot buy anything while Culqi is off. If the server runs with Culqi SANDBOX keys, s18a sees the
  * card button instead and the suite stops before opening Culqi (the sandbox run is manual: docs/runbooks/billing-culqi.md).

@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Currency, ProviderCharge, ProviderErrorKind, ProviderPlan, ProviderRefund, ProviderSubscription } from './provider';
 
 /**
- * Culqi, pure part (ADR-0018): endpoints, id patterns, request bodies, response validators and webhook parsing.
+ * Culqi, pure part (ADR-0019): endpoints, id patterns, request bodies, response validators and webhook parsing.
  * No I/O here (the HTTP client is src/billing/culqi-client.ts). Every Culqi response is untrusted input: it is read
  * through a fixed schema, ids must match their pattern and mode (test/live), amounts must be integers.
  *
@@ -25,7 +25,8 @@ import type { Currency, ProviderCharge, ProviderErrorKind, ProviderPlan, Provide
  *   unit = day); subscription response fields (trial_end, next_billing_date, active_card, customer_id, plan_id) and
  *   status codes; timestamps in ms; key prefixes pk_test_/sk_test_/pk_live_/sk_live_; webhook body {object:'event',
  *   type, data (object or JSON string), id} and its HTTP Basic auth; 3-D Secure answer 'action_code: REVIEW';
- *   customers filter ?email=; card validate:true; charge amount_refunded; charge metadata.subscription_id.
+ *   customers filter ?email=; card validate:true; charge amount_refunded; charge metadata.subscription_id; GET of a
+ *   cancelled subscription (404 or 200 with a status).
  * Each UNVERIFIED item is in docs/runbooks/billing-culqi.md (sandbox checklist) and marked // UNVERIFIED below.
  */
 export const CULQI_API = 'https://api.culqi.com/v2';

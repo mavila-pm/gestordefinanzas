@@ -12,7 +12,7 @@ export type BillingLog = (event: Record<string, string | number | boolean | null
 const MAX_RESPONSE_BYTES = 256 * 1024;
 
 /**
- * Culqi HTTP client (ADR-0018). Server only by construction: it needs the SECRET key, which only lib/culqi.ts reads
+ * Culqi HTTP client (ADR-0019). Server only by construction: it needs the SECRET key, which only lib/culqi.ts reads
  * from the environment. 10 s timeout, NO automatic retry (a retried POST /charges could charge twice), responses
  * capped and validated, ids checked by pattern and mode before they reach a URL. Logs carry the operation, HTTP
  * status and a short code: never the key, the email, the token, names, addresses or provider messages.

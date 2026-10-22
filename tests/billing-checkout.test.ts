@@ -5,7 +5,7 @@ import { charge, FakeProvider, MemoryStore, ORDER, plan, planNoTrial, providerEr
 import fx from './fixtures/culqi/responses.synthetic.json';
 
 /**
- * Billing flows (ADR-0018) with a mocked Culqi and an in-memory store. Money invariants under test: the charge uses
+ * Billing flows (ADR-0019) with a mocked Culqi and an in-memory store. Money invariants under test: the charge uses
  * the STORED order amount; one claim → at most one charge; a definitive "no" never grants Plus; an unknown outcome
  * is never reported as "failed"; a charge that cannot be activated is refunded; the plan sold must be the plan
  * subscribed. The same flows run against the real SQL in tests/db/billing-checkout.test.ts.

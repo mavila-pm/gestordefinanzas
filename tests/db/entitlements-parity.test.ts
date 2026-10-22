@@ -4,7 +4,7 @@ import { planState, renewalStillOpen, type SubscriptionRow } from '../../src/dom
 import { DATABASE_URL, makePool, USER_A } from './helpers';
 
 /**
- * ONE entitlement rule (ADR-0018): SQL billing_plan_state (used by ai_effective_plan → AI quota, automatic-movement
+ * ONE entitlement rule (ADR-0019): SQL billing_plan_state (used by ai_effective_plan → AI quota, automatic-movement
  * limits) and TS planState (used by every page) must give the same answer for the same row.
  */
 const NOW = new Date('2026-11-15T12:00:00Z');

@@ -4,7 +4,7 @@ import type { BillingProvider, ProviderCharge, ProviderError, ProviderPlan, Prov
 import { BillingRefused, type BillingStore, type ClaimedOrder } from './store';
 
 /**
- * Billing flows (ADR-0018), provider- and database-agnostic so they are tested with a mocked provider and either a
+ * Billing flows (ADR-0019), provider- and database-agnostic so they are tested with a mocked provider and either a
  * fake or the real SQL store. Invariants:
  * - the amount charged is ALWAYS the order amount read from the database (billing_begin_charge), never the browser's;
  * - an order is claimed (pending → processing) before any money moves: a double submit gets order_not_pending and

@@ -7,7 +7,7 @@ import { CulqiClient, type FetchLike } from '../src/billing/culqi-client';
 import fx from './fixtures/culqi/responses.synthetic.json';
 
 /**
- * Culqi adapter (ADR-0018) against SYNTHETIC_UNVERIFIED fixtures and a mocked fetch: the real API is never called.
+ * Culqi adapter (ADR-0019) against SYNTHETIC_UNVERIFIED fixtures and a mocked fetch: the real API is never called.
  * Every Culqi answer is untrusted input: fixed schemas, ids by pattern and mode, integer amounts.
  */
 const SK = 'sk_test_0123456789abcdef';

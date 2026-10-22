@@ -130,7 +130,7 @@ from public.ai_calls where created_at > now() - interval '30 days' group by 1, 2
 select percentile_cont(array[.5,.9,.95]) within group (order by weighted_tokens) from public.ai_usage where bucket like 'm:%';
 ```
 
-## Billing (ADR-0018) — written 2026-10-22, NOT run yet
+## Billing (ADR-0019) — written 2026-10-22, NOT run yet
 New suite `billing` (`tests/e2e/billing.e2e.ts`, seed s18: s18a demo account, s18b real account). Demo path only, no
 Culqi call: plans with server prices → Vitalicio simulated (order `simulated`, real subscription untouched) → Mensual
 offers the trial; s18b sees "payments soon", cannot simulate or activate, no order created; the webhook answers

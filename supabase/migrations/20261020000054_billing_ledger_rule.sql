@@ -1,4 +1,4 @@
--- Billing before Culqi goes live (ADR-0018), part 1 of 3: states, provider references, test/live split, the
+-- Billing before Culqi goes live (ADR-0019), part 1 of 3: states, provider references, test/live split, the
 -- append-only billing ledger, saved provider customers and ONE entitlement rule (shared by SQL and TypeScript).
 --
 -- * billing_orders: new states 'processing' (a provider charge is in flight: it can never be superseded or expire)
@@ -120,7 +120,7 @@ create policy legal_documents_writer_read on public.legal_documents for select t
 
 -- ── One entitlement rule ─────────────────────────────────────────────────────────────────────────────────────────
 insert into public.plan_config (key, value, note) values
-  ('billing_grace_days', 3, 'PROPUESTO ADR-0018: días con Plus tras el fin de un periodo pagado cuya renovación aún no se confirma (pago pendiente)')
+  ('billing_grace_days', 3, 'PROPUESTO ADR-0019: días con Plus tras el fin de un periodo pagado cuya renovación aún no se confirma (pago pendiente)')
 on conflict (key) do nothing;
 
 -- 'free' | 'trial' | 'plus'. Pure: same inputs → same answer (TS mirror: planState in src/domain/entitlements.ts).

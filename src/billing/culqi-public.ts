@@ -1,6 +1,6 @@
 /**
  * Culqi values that are safe in the browser (no Node imports, no secrets): the Checkout script and the origins it
- * talks to. Everything else about Culqi is server-only (src/billing/culqi.ts, lib/culqi.ts). ADR-0018.
+ * talks to. Everything else about Culqi is server-only (src/billing/culqi.ts, lib/culqi.ts). ADR-0019.
  */
 
 /** Culqi Checkout Custom (v4). It opens Culqi's own window and returns a card token (tkn_…); card data never reaches Velsuno. */

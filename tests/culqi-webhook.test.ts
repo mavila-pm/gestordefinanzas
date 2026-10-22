@@ -3,7 +3,7 @@ import { handleCulqiWebhook } from '../src/infrastructure/billing/culqi-webhook'
 import { charge, FakeProvider, MemoryStore, ORDER, providerError, subscription, USER } from './billing-fakes';
 
 /**
- * Culqi webhook (ADR-0018). Culqi does not sign webhooks: Basic auth, then the body is only a hint — the object is
+ * Culqi webhook (ADR-0019). Culqi does not sign webhooks: Basic auth, then the body is only a hint — the object is
  * RE-FETCHED with the secret key and only Culqi's own copy is acted on. A replay has one effect.
  */
 const USERNAME = 'culqi-hook';

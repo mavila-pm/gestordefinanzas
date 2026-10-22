@@ -6,7 +6,7 @@ import { DEFAULT_PLAN_CONFIG, planState, renewalStillOpen, SUBSCRIPTION_COLUMNS,
 import { culqiCheckout } from './culqi';
 
 /**
- * How a purchase is completed (BillingProvider, spec §77/§85, ADR-0018):
+ * How a purchase is completed (BillingProvider, spec §77/§85, ADR-0019):
  * - 'demo': demo accounts complete the order without any charge (billing_simulate_payment); the real
  *   subscription never changes. Used when Culqi is off or in live mode.
  * - 'culqi': Culqi Checkout tokenizes the card in Culqi's own window (Velsuno never sees card data) and the

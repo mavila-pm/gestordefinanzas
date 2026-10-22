@@ -15,7 +15,7 @@ async function openAs(user: string): Promise<pg.Client> {
 const settle = <T>(p: Promise<T>) => p.then((v) => ({ ok: true as const, v }), (e: { code?: string; message: string }) => ({ ok: false as const, code: e.code, message: e.message }));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe.skipIf(!DATABASE_URL)('billing flow: one lock order, a charge in flight is protected (ADR-0018)', () => {
+describe.skipIf(!DATABASE_URL)('billing flow: one lock order, a charge in flight is protected (ADR-0019)', () => {
   let pool: pg.Pool;
   beforeAll(() => { pool = makePool(); });
   beforeEach(async () => { await resetBilling(pool); });

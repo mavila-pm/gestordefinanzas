@@ -1,6 +1,6 @@
 # Runbook — Culqi billing (owner steps, sandbox acceptance, go-live)
 
-Design and decisions: `docs/decisions/ADR-0018-billing-culqi.md`. Nothing here is done by an agent: keys, plans and
+Design and decisions: `docs/decisions/ADR-0019-billing-culqi.md`. Nothing here is done by an agent: keys, plans and
 webhook credentials exist only in the owner's CulqiPanel and Vercel. Never paste a key in chat, git or a ticket.
 
 ## 0. What is already in the code
@@ -21,7 +21,8 @@ Apply `supabase/migrations/20261020000054…56` to project `jeloegnvaxlfqjntbbyy
 select relname, relrowsecurity from pg_class where relname in ('billing_events','billing_customers');      -- true, true
 select has_table_privilege('authenticated','public.billing_events','select'),
        has_function_privilege('authenticated','public.billing_activate(uuid,text,text,bigint,text)','execute'),
-       has_function_privilege('authenticated','public.billing_begin_charge(uuid,uuid,text,boolean)','execute'); -- false ×3
+       has_function_privilege('authenticated','public.billing_begin_charge(uuid,uuid,text,boolean)','execute'),
+       has_function_privilege('authenticated','public.billing_flag_charge(text,text,text,bigint,text,boolean,text)','execute'); -- false ×4
 ```
 Then add the 054–056 rows to the applied table in `docs/runbooks/supabase-migrations.md`.
 
@@ -43,7 +44,9 @@ Then add the 054–056 rows to the applied table in `docs/runbooks/supabase-migr
    | `CULQI_PLAN_ANNUAL_5900` | Velsuno Plus Anual | 5900 | year | none |
 
    The 14 must equal `plan_config.trial_days`; the server compares the plan Culqi returns with the order (amount,
-   currency, interval, trial days) and refuses the purchase on any difference (`billing_plan_mismatch` in the logs).
+   currency, interval, trial days; a no-trial plan must have no initial cycles) and refuses the purchase on any
+   difference (`billing_plan_mismatch` in the logs). **Create the three no-trial plans but leave their env vars empty**
+   until §4.5 and §4.6 pass: empty = no-trial Mensual/Anual off (only people who already used their trial need them).
    If the panel cannot express a 14-day free start, tell engineering (fallback: save the card now, subscribe at the
    trial end — not built). The 900 plans are needed only from 2027-01-01 (Lima); without them Mensual is off then.
 4. Eventos → Webhooks (integration): URL
@@ -58,7 +61,7 @@ Then add the 054–056 rows to the applied table in `docs/runbooks/supabase-migr
 |---|---|---|
 | `CULQI_PUBLIC_KEY` | `pk_test_…` (Preview) / `pk_live_…` (Production) | handed to the page by the server; still set as a server var |
 | `CULQI_SECRET_KEY` | `sk_test_…` / `sk_live_…` | secret, server only |
-| `CULQI_PLAN_MONTHLY_400_TRIAL` … `CULQI_PLAN_ANNUAL_5900` | `pln_test_…` / `pln_live_…` | the six names above; mode must match the keys |
+| `CULQI_PLAN_MONTHLY_400_TRIAL` … `CULQI_PLAN_ANNUAL_5900` | `pln_test_…` / `pln_live_…` | the six names above; mode must match the keys; the no-trial three (`…_400`, `…_900`, `…_5900`) only after §4.5–4.6 |
 | `CULQI_WEBHOOK_USER`, `CULQI_WEBHOOK_PASSWORD` | as set in CulqiPanel | password ≥ 24 chars |
 | `DATABASE_URL` | Supabase → Connect → pooled connection string (Transaction mode) of `jeloegnvaxlfqjntbbyy` | secret, server only; also used by the Email Bridge |
 | `CULQI_ENABLED` | `false` until §4 passes, then `true` | exact string `true` |
@@ -70,18 +73,25 @@ The old names `CULQI_PLAN_MONTHLY` / `CULQI_PLAN_ANNUAL` are ignored (one plan p
 ## 4. Sandbox acceptance on Preview (demo account, Culqi test cards)
 Use a demo account (`scripts/qa/demo-account.sh`) and Culqi's published test cards. After each step check
 `/app/planes/gracias`, Ajustes → Plan y uso, `billing_orders`, `billing_events` (and CulqiPanel). Record what Culqi
-actually returned: it turns each UNVERIFIED item into confirmed (update `src/billing/culqi.ts` + ADR-0018).
+actually returned: it turns each UNVERIFIED item into confirmed (update `src/billing/culqi.ts` + ADR-0019).
 1. Vitalicio paid → gracias "Ya tienes Velsuno Plus Vitalicio"; order `paid`; one `chr_test_` in CulqiPanel.
 2. Vitalicio with a declining card → fixed message "… No se hizo ningún cargo."; order `failed`; no Plus.
 3. Mensual with trial → Plan y uso shows "Tu prueba termina el …" and "El primer cobro de US$ 4.00 será el …";
    check `subscriptions.trial_ends_at` = Culqi's date (**confirm field names: `trial_end`, `next_billing_date`,
    `active_card`, status codes**).
 4. Cancel during the trial → "Conservas Plus hasta el … No se hará ningún otro cobro."; CulqiPanel shows the
-   subscription cancelled; no charge at the trial end.
-5. Anual without trial (an account that already used its trial) → charged at creation? (**confirm**: a no-trial plan
-   charges on `subscriptions/create`; the activation needs Culqi's next billing date).
+   subscription cancelled; no charge at the trial end. Then `GET /recurrent/subscriptions/{id}` with `sk_test`:
+   **record** whether a cancelled subscription answers 404 or 200 with a status (a repeated cancel is recorded only
+   on GET 404).
+5. Anual without trial (set `CULQI_PLAN_ANNUAL_5900` on Preview for this step only) → charged at creation?
+   (**confirm**: a no-trial plan charges on `subscriptions/create`; the activation needs Culqi's next billing date;
+   which webhook reports that first charge and whether it carries `metadata.subscription_id` or our `order_id`).
 6. First period charge (or trigger a renewal in the sandbox) → **confirm** which webhook arrives and whether the
-   charge carries the subscription id (`metadata.subscription_id`?) — renewals depend on it (ADR-0018 risks).
+   charge carries the subscription id (`metadata.subscription_id`?) or the order id — renewals are recorded ONLY from
+   charges (ADR-0019 risks). A subscription event alone never renews.
+6b. Lapsed renewal: make a trial's first charge fail (declining card) and wait past the grace days (or move
+   `current_period_end` back on the demo row) → Plan y uso shows "Pago pendiente" and "Cancelar renovación"; the
+   payment page refuses a new plan ("Tu suscripción anterior sigue activa…") until it is cancelled.
 7. Resend a webhook from CulqiPanel → answer 200 `duplicate`, no second effect.
 8. A refund from CulqiPanel of the Vitalicio charge → order `refunded`, plan Free, ledger row `charge.refunded`.
 9. Browser console during Checkout: list every blocked/used origin (for the CSP below); try a 3-D Secure test card
@@ -110,10 +120,21 @@ answers 401, then `CULQI_ENABLED=true` and redeploy. First real purchase: the ow
 
 ## 7. Operations
 - Ledger: `select received_at, type, outcome, detail, object_ref from public.billing_events order by id desc limit 50;`
-  `outcome = 'needs_refund'` = money taken that could not be activated or was charged after a cancel: refund it in
-  CulqiPanel (the webhook records the refund). `outcome = 'received'` older than an hour = a delivery that kept
-  failing (Culqi retries; check Logs `culqi_webhook_failed`).
-- Orders stuck in `processing` > 15 min (unknown outcome, webhook lost): find the charge in CulqiPanel by
-  `metadata.order_id`; the daily reconciliation job that would do this is not built yet (ADR-0018).
+  `outcome = 'needs_refund'` = money taken that grants nothing. It is resolved when a `charge.refunded` row for the
+  same charge exists (`object_ref` = the `chr_…`); otherwise refund it in CulqiPanel (the webhook records it):
+  - `order.failed` with a `chr_…` (Vitalicio not activatable) — refund that charge;
+  - `order.failed` with a `sxn_…` (a refused subscription without trial) — its first charge was taken at creation:
+    find it in CulqiPanel under that subscription (the webhook refunds it automatically when it is reported);
+  - `charge.unmatched`, detail `…:ours` — refunded automatically unless the receipt closed as `needs_refund`
+    (`charge_of_unheld_subscription`): refund it by hand; detail `…:review` — a subscription nothing links to
+    Velsuno: check it in CulqiPanel (its metadata `order_id`, its customer) before refunding;
+  - `plan.renewed` with `charged_after_cancel` — charged after a cancellation.
+  `outcome = 'received'` older than an hour = a delivery that kept failing (Culqi retries; check Logs
+  `culqi_webhook_error` / `culqi_webhook_failed`).
+- Orders stuck in `processing` (unknown outcome, webhook lost) block every new purchase of that person, at any age
+  ("Tienes un pago en proceso… escríbenos"): find the charge in CulqiPanel by `metadata.order_id`. Charged → resend
+  its webhook from CulqiPanel (it activates or refunds). Not charged → close it in the SQL editor:
+  `select public.billing_fail_order('<order id>', 'reconciled_no_charge');`. The daily reconciliation job that would
+  do this is not built yet (ADR-0019).
 - 2027 price: from 2027-01-01 (Lima) new Mensual orders are US$ 9 and use the `_900` plans; existing subscribers stay
   on their US$ 4 plan (Culqi plan amounts are immutable) unless the PO decides a migration with notice.

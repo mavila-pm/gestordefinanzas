@@ -1,5 +1,5 @@
 /**
- * BillingStore: the database side of the billing flows (ADR-0018). Implemented over the privileged pool by
+ * BillingStore: the database side of the billing flows (ADR-0019). Implemented over the privileged pool by
  * src/infrastructure/billing/pg-billing-store.ts, which calls ONLY the service-only SQL functions of migrations
  * 20261020000054–56 (they re-check ownership, amount, currency, mode and dates, and write the ledger).
  * A refusal from SQL (a stable code such as 'order_not_pending') is a BillingRefused; anything else is transient.

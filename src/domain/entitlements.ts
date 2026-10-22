@@ -20,7 +20,7 @@ export const SUBSCRIPTION_COLUMNS = 'plan,status,trial_started_at,trial_ends_at,
 export type PlanState = 'free' | 'trial' | 'plus';
 
 /**
- * THE entitlement rule (ADR-0018). Mirror of SQL public.billing_plan_state (migration 20261020000054), checked row
+ * THE entitlement rule (ADR-0019). Mirror of SQL public.billing_plan_state (migration 20261020000054), checked row
  * by row by tests/db/entitlements-parity.test.ts — change both or neither.
  * - Any trial: Plus ('trial') until its exact end. A card-backed trial whose first charge is being confirmed keeps
  *   Plus for `graceDays`, never after a cancellation.

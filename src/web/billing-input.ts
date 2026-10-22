@@ -1,7 +1,7 @@
 import type { PlanCode } from '../domain/billing';
 
 /**
- * Untrusted checkout input (ADR-0018). Culqi needs a customer to save a card for Mensual/Anual: names, email and
+ * Untrusted checkout input (ADR-0019). Culqi needs a customer to save a card for Mensual/Anual: names, email and
  * phone come from the person's profile (registration), the address is asked in the form and never invented.
  * Card data never passes through here: Culqi Checkout returns only a token id.
  */

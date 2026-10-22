@@ -1,4 +1,4 @@
--- Billing before Culqi goes live (ADR-0018), part 3 of 3: the subscription lifecycle (spec §85).
+-- Billing before Culqi goes live (ADR-0019), part 3 of 3: the subscription lifecycle (spec §85).
 --
 -- Service-only (EXECUTE: service_role and the owner; never anon/authenticated). Each transition writes ONE ledger
 -- row in billing_events keyed by '<action>:<provider reference>' BEFORE changing anything: a replayed webhook or a

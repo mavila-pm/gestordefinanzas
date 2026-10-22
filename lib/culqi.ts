@@ -8,7 +8,7 @@ import { TERMS_COVER_BILLING } from '../src/web/legal';
 import { getServerPool } from './server-db';
 
 /**
- * Server-only wiring of Culqi (ADR-0018). The SECRET key is read here from the environment and handed to the
+ * Server-only wiring of Culqi (ADR-0019). The SECRET key is read here from the environment and handed to the
  * client; it never reaches a client component, a log line or a response. Writes go through the privileged pool
  * (DATABASE_URL) and only the service-only SQL billing functions.
  */
