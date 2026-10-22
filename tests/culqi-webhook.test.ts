@@ -107,6 +107,20 @@ describe('Culqi webhook: the body is a hint, Culqi is re-asked', () => {
     expect(store.events).toContain('past_due:chr_test_Failed0000000000');
     expect(USER).toBe(store.subs.get('sxn_test_S1u2B3s4C5r6I7p8')?.userId);
   });
+  it('a refund made in CulqiPanel: re-fetched refund and charge → Vitalicio refunded, Plus removed; replay once', async () => {
+    const { send, store, provider } = setup();
+    await send(body('charge.creation.succeeded', 'chr_test_A1b2C3d4E5f6G7h8'));
+    expect(store.plusUsers.has(USER)).toBe(true);
+    expect(await send(body('refund.creation.succeeded', 'ref_test_R1e2F3u4N5d6O7k8', 'evt_test_Refund000000000'))).toEqual({ status: 200, body: { status: 'processed' } });
+    expect(provider.calls.slice(-2)).toEqual(['getRefund', 'getCharge']);
+    expect(store.orders.get(ORDER)?.status).toBe('refunded');
+    expect(store.plusUsers.has(USER)).toBe(false);
+    expect(await send(body('refund.creation.succeeded', 'ref_test_R1e2F3u4N5d6O7k8', 'evt_test_Refund000000001'))).toEqual({ status: 200, body: { status: 'processed' } });
+    expect(store.events.filter((e) => e.startsWith('refund:'))).toHaveLength(1);
+    // A refund of a charge Velsuno never recorded: acknowledged, nothing changes.
+    provider.answers.getRefund = { ok: true, value: { id: 'ref_test_Unknown000000000', chargeRef: 'chr_test_Unknown000000000', amountMinor: 100, livemode: false } };
+    expect(await send(body('refund.creation.succeeded', 'ref_test_Unknown000000000', 'evt_test_Refund000000002'))).toEqual({ status: 200, body: { status: 'ignored' } });
+  });
   it('a renewal charged after the person cancelled is refunded at once', async () => {
     const { send, store, provider } = setup({ status: 'processing', provider: 'culqi', livemode: false, planCode: 'monthly', amountMinor: 400, trialDays: 14 });
     await send(body('subscription.creation.succeeded', 'sxn_test_S1u2B3s4C5r6I7p8'));

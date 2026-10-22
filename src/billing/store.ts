@@ -35,7 +35,6 @@ export interface BillingStore {
   cancel(userId: string, provider: string, subRef: string): Promise<Date | null>;
   refund(provider: string, chargeRef: string, refundRef: string, amountMinor: number, currency: string): Promise<string>;
   findOrder(orderId: string): Promise<OrderRow | null>;
-  findOrderByProviderRef(provider: string, ref: string): Promise<OrderRow | null>;
   findSubscription(provider: string, ref: string): Promise<SubscriptionRef | null>;
   /** Webhook receipt (idempotency): 'new' (process it), 'retry' (received before, never closed) or 'done'. */
   receive(provider: string, eventRef: string, type: string, objectRef: string | null, livemode: boolean | null): Promise<{ id: number; state: 'new' | 'retry' | 'done' }>;

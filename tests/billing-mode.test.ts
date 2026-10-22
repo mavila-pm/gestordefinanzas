@@ -116,6 +116,14 @@ describe('billingMode: who may buy with which keys', () => {
     expect(await modeFor(live, false)).toEqual(TERMS_COVER_BILLING ? expect.objectContaining({ kind: 'culqi', livemode: true }) : { kind: 'disabled' });
     expect(await modeFor(live, true)).toEqual({ kind: 'demo' });
   });
+  it('culqiConfigured(): true only for CULQI_ENABLED=true with keys that pass the guard and a database', async () => {
+    vi.stubEnv('DATABASE_URL', DB);
+    const { culqiConfigured } = await import('../lib/billing');
+    expect(culqiConfigured(test)).toBe(true);
+    expect(culqiConfigured({ ...test, CULQI_ENABLED: 'false' })).toBe(false);
+    expect(culqiConfigured({ ...test, CULQI_SECRET_KEY: SK_L })).toBe(false);
+    expect(culqiConfigured({ ...live, VERCEL_ENV: 'preview' })).toBe(false);
+  });
   it('switched off or misconfigured: demo simulates, real accounts see "disabled" — and the reason is logged once', async () => {
     expect(await modeFor({ ...test, CULQI_ENABLED: 'false' }, true)).toEqual({ kind: 'demo' });
     expect(await modeFor({ ...test, CULQI_ENABLED: 'false' }, false)).toEqual({ kind: 'disabled' });

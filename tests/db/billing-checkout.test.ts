@@ -79,6 +79,20 @@ describe.skipIf(!DATABASE_URL)('billing checkout + webhook over the real SQL (AD
     expect(await effectivePlan(pool, USER_A)).toBe('free');
   });
 
+  it('a full refund of Vitalicio made in CulqiPanel (webhook) → order refunded, plan canceled → Free; data kept', async () => {
+    const id = await orderFor(pool, USER_A, 'lifetime');
+    const provider = new FakeProvider();
+    provider.answers.charge = () => ({ ok: true, value: charge({ orderId: id }) });
+    await payLifetime({ store, provider }, { orderId: id, userId: USER_A, email: 'a@test.local', tokenRef: TKN });
+    const deps = { store, provider, auth: { user: 'culqi-hook', password: PW } };
+    const r = await handleCulqiWebhook({ headers: new Headers({ authorization: auth }), rawBody: hook('refund.creation.succeeded', 'ref_test_R1e2F3u4N5d6O7k8', 'evt_test_Ref0000000000001') }, deps);
+    expect(r).toEqual({ status: 200, body: { status: 'processed' } });
+    expect((await order(id)).status).toBe('refunded');
+    expect(await sub(USER_A)).toMatchObject({ status: 'canceled', billing_plan: 'lifetime' });
+    expect(await effectivePlan(pool, USER_A)).toBe('free');
+    expect((await events()).filter((e) => e.event_ref === 'refund:ref_test_R1e2F3u4N5d6O7k8')).toEqual([{ event_ref: 'refund:ref_test_R1e2F3u4N5d6O7k8', outcome: 'processed', detail: 'full' }]);
+  });
+
   it('Mensual with trial: customer saved, trialing with Culqi dates; cancel keeps Plus until the trial end', async () => {
     const id = await orderFor(pool, USER_A, 'monthly');
     const provider = new FakeProvider();

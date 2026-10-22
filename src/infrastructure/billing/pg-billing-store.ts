@@ -74,10 +74,6 @@ export class PgBillingStore implements BillingStore {
     const [r] = await q(this.pool, `select ${ORDER_COLS} from public.billing_orders where id = $1`, [orderId]);
     return r ? order(r) : null;
   }
-  async findOrderByProviderRef(provider: string, ref: string) {
-    const [r] = await q(this.pool, `select ${ORDER_COLS} from public.billing_orders where provider = $1 and provider_ref = $2`, [provider, ref]);
-    return r ? order(r) : null;
-  }
   async findSubscription(provider: string, ref: string): Promise<SubscriptionRef | null> {
     const [r] = await q(this.pool, `select user_id, status, billing_plan, provider_ref, cancel_at_period_end, livemode, trial_ends_at, current_period_end, billing_amount_minor, billing_currency::text as billing_currency
       from public.subscriptions where provider = $1 and provider_ref = $2`, [provider, ref]);

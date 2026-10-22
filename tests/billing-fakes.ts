@@ -143,7 +143,6 @@ export class MemoryStore implements BillingStore {
     return 'refunded';
   }
   async findOrder(id: string) { return this.orders.get(id) ?? null; }
-  async findOrderByProviderRef(_p: string, ref: string) { return [...this.orders.values()].find((o) => o.providerRef === ref) ?? null; }
   async findSubscription(_p: string, ref: string) {
     const s = this.subs.get(ref);
     return s ? { userId: s.userId, status: s.status, billingPlan: s.plan, providerRef: ref, cancelAtPeriodEnd: s.cancel, livemode: false, trialEndsAt: s.trialEnd, currentPeriodEnd: s.periodEnd, amountMinor: s.amountMinor, currency: s.currency } : null;
