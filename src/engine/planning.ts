@@ -250,6 +250,11 @@ export interface PlanInput {
   incomeDelayDays?: number;
   /** Apartados (all currencies; the plan keeps only its own). Saved money is not free money (ADR-0017). */
   reserves?: readonly Reserve[];
+  /**
+   * Income-based plan only: reserveId → net money set aside (Σ in − Σ out) on or after the income date
+   * (setAsideSince). It came out of THIS income, so it is not free either; older savings are not in the income.
+   */
+  setAsideSinceIncome?: ReadonlyMap<string, number>;
   /** Overrides INFREQUENT_RESERVE_RULE (tests / what-if only). */
   infrequentRule?: InfrequentRule;
 }
@@ -350,8 +355,11 @@ export function buildPlan(input: PlanInput): Plan {
   // Apartados of this currency only (PEN ≠ USD): what is saved is set aside (real money, never rounded); a dated
   // target adds this horizon's planned contribution. No target or no date: nothing is planned (never invented).
   // Saved money is part of the declared BALANCE: a plan that distributes a new income does not subtract it again.
+  // From an income: only what was set aside after it arrived came out of it (net, never more than is saved).
   for (const r of (input.reserves ?? []).filter((x) => x.currency === currency)) {
     if (r.savedMinor > 0 && input.base?.kind !== 'income') lines.push({ kind: 'fund', label: `Apartado: ${r.name}`, amountMinor: r.savedMinor, date: null, dateMax: null, note: 'Ya separado: no es dinero libre', reserveId: r.id });
+    const fromIncome = input.base?.kind === 'income' ? Math.min(Math.max(0, r.savedMinor), Math.max(0, input.setAsideSinceIncome?.get(r.id) ?? 0)) : 0;
+    if (fromIncome > 0) lines.push({ kind: 'fund', label: `Apartado: ${r.name}`, amountMinor: fromIncome, date: null, dateMax: null, note: 'Lo apartaste de este ingreso: no es dinero libre', reserveId: r.id });
     const c = until ? reserveContribution(r, from, until) : null;
     if (c) lines.push({ kind: 'reserve', label: `Para ${r.name}`, amountMinor: c, date: null, dateMax: null,
       note: `Meta ${formatMoney({ amountMinor: r.targetMinor!, currency })} al ${fmtDay(r.targetDate!)}`, reserveId: r.id });
@@ -392,6 +400,40 @@ function timeShare(needMinor: number, date: string, from: string, until: string)
   if (date <= until) return needMinor;
   const share = roundUnit((needMinor * (daysBetween(from, until) + 1)) / daysBetween(from, date));
   return Math.min(needMinor, share);
+}
+
+/**
+ * Net money moved into each Apartado (Σ in − Σ out) on or after a Lima date: what an income-based plan subtracts
+ * (review m1). Entries of other apartados or currencies are the caller's to filter; amounts are real, never rounded.
+ */
+export function setAsideSince(entries: ReadonlyArray<{ reserveId: string; direction: 'in' | 'out'; amountMinor: number; on: string }>, date: string): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const e of entries) {
+    if (e.on < date || !Number.isSafeInteger(e.amountMinor) || e.amountMinor <= 0) continue;
+    out.set(e.reserveId, (out.get(e.reserveId) ?? 0) + (e.direction === 'in' ? e.amountMinor : -e.amountMinor));
+  }
+  return out;
+}
+
+/**
+ * Review M4: an Apartado named like an active infrequent payment of the same currency (an apartado "SOAT" and the
+ * yearly SOAT in Próximos pagos) makes the plan set money aside twice for one need: the payment's own reserve and the
+ * apartado. A name is not proof, so nothing is merged: the screen warns and the person decides. Only payments the
+ * plan really reserves for (known amount, not monthly, not ended) count. Names compare without case, accents, small
+ * words or years ("Pago del SOAT 2027" = "SOAT"). reserveId → the payment's name.
+ */
+const NAME_FILLER = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'para', 'mi', 'mis', 'pago', 'cuota']);
+const nameKey = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9]+/)
+  .filter((w) => w && !NAME_FILLER.has(w) && !/^\d{4}$/.test(w)).sort().join(' ');
+export function reserveOverlaps(reserves: readonly Reserve[], obligations: readonly Obligation[], today: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const r of reserves) {
+    const key = nameKey(r.name);
+    const o = key ? obligations.find((x) => x.source === 'obligation' && x.frequency !== 'monthly' && x.currency === r.currency
+      && x.amountMinor !== null && x.amountStatus !== 'unknown' && !(x.endedOn && x.endedOn < today) && nameKey(x.name) === key) : undefined;
+    if (o) out.set(r.id, o.name);
+  }
+  return out;
 }
 
 /** Planned contribution of an Apartado in [from, until]: null without a target and a date; 0 once reached. */

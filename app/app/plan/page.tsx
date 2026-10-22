@@ -5,7 +5,7 @@ import { Sheet } from '../../../components/ui/sheet';
 import { essentialsFor, loadEssentialRows, loadPlanningData, planFor } from '../../../lib/planning';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
-import type { Plan, PlanLine } from '../../../src/engine/planning';
+import { reserveOverlaps, type Plan, type PlanLine } from '../../../src/engine/planning';
 import { addDays } from '../../../src/domain/dates';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
 import { SavingsGoal } from '../../../components/savings-goal';
@@ -190,7 +190,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       })}
 
       <SavingsGoal netMinor={pen.netCashFlowMinor} goalMinor={d.settings.PEN?.savingsGoalMinor ?? null} estimated={pen.savingsLabel === 'estimated'} />
-      <Reserves reserves={d.reserves} today={d.today} />
+      <Reserves reserves={d.reserves} today={d.today} overlaps={reserveOverlaps(d.reserves, d.obligations, d.today)} />
 
       {d.suggestions.length > 0 && (
         <section className="stack-sm" aria-label="Pagos detectados" data-testid="match-suggestions">

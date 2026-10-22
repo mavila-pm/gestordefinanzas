@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildPlan, INFREQUENT_RESERVE_RULE, planBreakdown, reserveContribution, reserveProgress,
+  buildPlan, INFREQUENT_RESERVE_RULE, planBreakdown, reserveContribution, reserveOverlaps, reserveProgress, setAsideSince,
   type Obligation, type PlanInput, type Reserve,
 } from '../src/engine/planning';
 import { validAppliedLines } from '../src/engine/applied';
@@ -28,6 +28,24 @@ describe('Apartados in Dinero libre', () => {
   it('distributing an income that just arrived does not subtract the apartado again (it lives in the balance)', () => {
     const p = buildPlan(input({ base: { kind: 'income', amountMinor: 400000, date: '2026-10-01' }, reserves: [trip({ targetMinor: 120000, targetDate: '2026-11-30' })] }));
     expect(p.lines.map((l) => l.kind)).toEqual(['reserve']); // only this horizon's planned contribution
+  });
+
+  it('review m1: from an income, what was set aside AFTER it arrived is not free (net, never above what is saved)', () => {
+    const entries = [
+      { reserveId: 'r1', direction: 'in' as const, amountMinor: 50000, on: '2026-09-20' }, // before the income: in the balance
+      { reserveId: 'r1', direction: 'in' as const, amountMinor: 30000, on: '2026-10-01' }, // from this income
+      { reserveId: 'r1', direction: 'out' as const, amountMinor: 10000, on: '2026-10-02' },
+      { reserveId: 'r2', direction: 'out' as const, amountMinor: 5000, on: '2026-10-02' }, // net < 0 → nothing
+    ];
+    const since = setAsideSince(entries, '2026-10-01');
+    expect(since).toEqual(new Map([['r1', 20000], ['r2', -5000]]));
+    const base = { kind: 'income' as const, amountMinor: 400000, date: '2026-10-01' };
+    const p = buildPlan(input({ base, reserves: [trip(), trip({ id: 'r2', name: 'Fondo', savedMinor: 10000 })], setAsideSinceIncome: since }));
+    expect(p.lines).toEqual([expect.objectContaining({ kind: 'fund', label: 'Apartado: Viaje', amountMinor: 20000, reserveId: 'r1', note: 'Lo apartaste de este ingreso: no es dinero libre' })]);
+    expect(p.freeMinor).toBe(400000 - 20000);
+    // Never more than what the apartado holds now; the balance plan is unchanged (it subtracts all that is saved).
+    expect(buildPlan(input({ base, reserves: [trip({ savedMinor: 5000 })], setAsideSinceIncome: since })).lines[0]!.amountMinor).toBe(5000);
+    expect(buildPlan(input({ reserves: [trip()], setAsideSinceIncome: since })).lines).toEqual([expect.objectContaining({ amountMinor: 80000 })]);
   });
 
   it('saved money is real: never rounded (S/ 800.55 stays 80055)', () => {
@@ -104,6 +122,18 @@ describe('infrequent payments: one switch between the accepted rule and the time
     expect(buildPlan(soatInput({ partialPaid: paidPart })).lines).toEqual([expect.objectContaining({ amountMinor: 1200 })]); // 300 × 15 / 365.25
     expect(buildPlan(soatInput({ partialPaid: paidPart, infrequentRule: 'time_left' })).lines).toEqual([expect.objectContaining({ amountMinor: 12500 })]);
     expect(buildPlan(soatInput({ partialPaid: new Map([['soat', new Map([['2026-11', 60000]])]]) })).lines).toEqual([]);
+  });
+  it('review M4: an apartado named like the SOAT is flagged (the plan would set money aside twice); nothing is merged', () => {
+    const r = (name: string, currency: 'PEN' | 'USD' = 'PEN') => trip({ id: name, name, currency });
+    const monthly: Obligation = { ...soat, id: 'luz', name: 'Luz', frequency: 'monthly', anchorMonth: null };
+    const unknown: Obligation = { ...soat, id: 'tax', name: 'Predial', amountMinor: null, amountStatus: 'unknown' };
+    const ended: Obligation = { ...soat, id: 'old', name: 'Seguro auto', endedOn: '2026-09-30' };
+    const debt: Obligation = { ...soat, id: 'loan', source: 'debt', name: 'Préstamo' };
+    const flagged = reserveOverlaps([r('SOAT'), r('Pago del soat 2027'), r('SOAT', 'USD'), r('Viaje'), r('Luz'), r('Predial'), r('Seguro auto'), r('Préstamo')],
+      [soat, monthly, unknown, ended, debt], '2026-10-05');
+    expect(flagged).toEqual(new Map([['SOAT', 'SOAT'], ['Pago del soat 2027', 'SOAT']]));
+    // The plan itself is unchanged (a name is not proof): both lines stay until the person decides.
+    expect(buildPlan(soatInput({ reserves: [trip({ name: 'SOAT', savedMinor: 30000 })] })).lines.map((l) => l.kind)).toEqual(['reserve', 'fund']);
   });
   it('time_left: 600 × 15 / 36 → S/ 250', () => {
     expect(buildPlan(soatInput({ infrequentRule: 'time_left' })).lines).toEqual([expect.objectContaining({ kind: 'reserve', label: 'Para SOAT', amountMinor: 25000 })]);

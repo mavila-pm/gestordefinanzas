@@ -53,7 +53,8 @@ function ReserveFields({ r, today }: { r?: Reserve; today: string }) {
   );
 }
 
-export function Reserves({ reserves, today }: { reserves: readonly Reserve[]; today: string }) {
+/** overlaps: reserveId → the infrequent payment with the same name (engine reserveOverlaps): the plan sets money aside for both. */
+export function Reserves({ reserves, today, overlaps }: { reserves: readonly Reserve[]; today: string; overlaps?: ReadonlyMap<string, string> }) {
   const create = (
     <Sheet label={reserves.length ? 'Nuevo' : 'Crear apartado'} triggerClassName={reserves.length ? 'link small-link' : 'quiet'} title="Nuevo apartado" testId="reserve-new"
       subtitle="Dinero que separas para algo concreto.">
@@ -70,7 +71,7 @@ export function Reserves({ reserves, today }: { reserves: readonly Reserve[]; to
       <div className="row"><h2 id="h-reserves">Apartados</h2>{reserves.length > 0 && create}</div>
       {reserves.length === 0 ? (
         <>
-          <p className="muted">Separa dinero para un viaje, el SOAT o lo que venga. No es un gasto: sigue en tu saldo.</p>
+          <p className="muted">Separa dinero para un viaje, un regalo o lo que venga. No es un gasto: sigue en tu saldo.</p>
           <div>{create}</div>
         </>
       ) : (
@@ -91,6 +92,8 @@ export function Reserves({ reserves, today }: { reserves: readonly Reserve[]; to
                 </div>
                 {p.ratio !== null && <span className="progress" aria-hidden="true"><span className="fill" style={{ width: `${Math.max(2, p.ratio * 100)}%` }} /></span>}
                 <small className={p.late ? 'warn' : 'muted'}>{note}</small>
+                {overlaps?.has(r.id) && <small className="warn" data-testid="reserve-overlap">
+                  {overlaps.get(r.id)} ya está en tus pagos y el plan ya le separa dinero: si es lo mismo, {r.savedMinor > 0 ? 'usa lo apartado y archívalo' : 'archívalo'}.</small>}
                 <div className="actions">
                   <Move r={r} direction="in" />
                   {r.savedMinor > 0 && <Move r={r} direction="out" />}
