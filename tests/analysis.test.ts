@@ -127,6 +127,15 @@ describe('sync history labels (§52)', () => {
     expect(describeSyncEvent({ channel: 'x', outcome: 'BCP_SMS_V1', created_at: '', transaction_id: 't' }))
       .toEqual({ channel: 'Otra fuente', outcome: 'Procesado', linkable: true });
   });
+
+  it('a Free plan rejection says what happened and what to do (never "por seguridad"); only fixed codes are mapped', async () => {
+    const { describeSyncEvent } = await import('../src/web/sync-history');
+    const row = (detail: string | null) => ({ channel: 'email', outcome: 'rejected', created_at: '', transaction_id: null, detail });
+    expect(describeSyncEvent(row('plan_auto_limit')).outcome).toBe('No se registró: llegaste al límite automático del mes. Regístralo a mano');
+    expect(describeSyncEvent(row('plan_institution_limit')).outcome).toBe('No se registró: tu plan Free automatiza un solo banco. Regístralo a mano');
+    for (const d of [null, 'payload exceeds size limit', 'constructor', '__proto__']) expect(describeSyncEvent(row(d)).outcome).toBe('Rechazado por seguridad');
+    expect(describeSyncEvent({ ...row('plan_auto_limit'), outcome: 'unresolved' }).outcome).toBe('No pudimos leerlo');
+  });
 });
 
 import { spendByInstrument } from '../src/engine/analysis';

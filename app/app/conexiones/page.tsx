@@ -11,7 +11,7 @@ export default async function Connections() {
   const [{ data }, history] = await Promise.all([
     supabase.from('email_connections').select('address_local,created_at').eq('status', 'active').maybeSingle(),
     // RLS: only the user's own events.
-    supabase.from('financial_events').select('channel,outcome,created_at,transaction_id').order('created_at', { ascending: false }).limit(30),
+    supabase.from('financial_events').select('channel,outcome,created_at,transaction_id,detail').order('created_at', { ascending: false }).limit(30),
   ]);
   const events = (history.data ?? []) as SyncEventRow[];
   const domain = process.env.INGEST_EMAIL_DOMAIN;
