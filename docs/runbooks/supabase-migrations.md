@@ -64,6 +64,9 @@
 | 20261011000045_income_day_pending.sql | expected_incomes: a declared income may have its pay day por confirmar (day_of_month null; never projected); semimonthly needs both days or neither | 2026-10-11 |
 | 20261012000046_billing_checkout.sql | billing_price() (Mensual 400 → 900 from 2027-01-01 Lima, Anual 5900, Vitalicio 19800, USD minor) + billing_orders (RLS read own; writes only via billing_create_order / billing_simulate_payment (demo only) / billing_activate (service_role)) + subscriptions.billing_plan | 2026-10-12 |
 | 20261012000047_billing_hardening.sql | billing_create_order(plan, expected_minor) (price_changed; per-user advisory lock; supersedes pending orders) + billing_activate(order, provider, ref, amount, currency) (amount/currency/ref checked, 1 h TTL, re-checks subscription and trial at activation). Old signatures kept but EXECUTE revoked (no DROP) | 2026-10-12 |
+| 20261020000051_settlement_guard.sql | **PENDING (branch wf/front-c-planning, ADR-0017; apply 051 → 052 → 053)** plan_settlements_guard trigger (confirmed only; payment = outgoing, not income, same currency; income = income, same currency). Before applying: a SELECT must return 0 violating rows (0 on 2026-10-20) | — |
+| 20261020000052_partial_settlements.sql | **PENDING — PO applies it** (contains DROP): status + 'partial', one closing row per (payment, month), advisory-locked guard. SQL Editor → paste → Run | — |
+| 20261020000053_reserves.sql | **PENDING** Apartados: reserves + append-only reserve_entries (guard: never more out than saved, archived empty, linked movement same currency) + reserve_balances view; own-row RLS, explicit grants | — |
 
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
