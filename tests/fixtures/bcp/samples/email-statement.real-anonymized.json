@@ -1,0 +1,13 @@
+{
+  "fixtureStatus": "REAL_ANONYMIZED",
+  "evidence": "Product Owner sample 2026-09-27: sender, domain, subject observed; body content redacted.",
+  "raw": {
+    "channel": "email",
+    "externalEventId": "<statement-sample-1@mail.test>",
+    "sender": "Estados de Cuenta BCP <estadodecuenta@notificacionesbcp.com.pe>",
+    "subject": "Estado de Cuenta de tu Tarjeta AMERICAN EXPRESS",
+    "body": "[Nombre del cliente anonimizado]\n[Número de tarjeta/cuenta anonimizado]\n[Información financiera sensible anonimizada]",
+    "receivedAt": "2026-09-24T14:00:00Z"
+  },
+  "expected": { "outcome": "non_transactional" }
+}

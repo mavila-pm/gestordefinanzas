@@ -1,0 +1,168 @@
+'use server';
+
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { authCallbackUrl } from '../../lib/env';
+import { authUser, createSupabaseServerClient } from '../../lib/supabase/server';
+import { limaToday } from '../../src/domain/dates';
+import { AUTH_NEXT_COOKIE, authNextCookieOptions, birthProblem, normalizePhone, parseBirthDate, parseEmail, passwordProblem, PHONE_ERROR, safeNextPath } from '../../src/web/auth-input';
+import { PRIVACY_VERSION, TERMS_VERSION } from '../../src/web/legal';
+import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError } from '../../src/web/password-reset';
+import { passwordChangeOutcome, parseReauthCode, reauthRequestOutcome, type ChangePasswordState } from '../../src/web/password-change';
+import { LOGIN_INVALID, LOGIN_SERVER, lockoutMessage, loginOutcome } from '../../src/web/login';
+import { capPassed } from '../../lib/cap';
+import { CAP_ERROR } from '../../lib/cap-core';
+
+/** Remembers where the email link should land (the callback URL itself stays query-free). */
+async function rememberAuthNext(path: '/crear-cuenta' | '/reset-password') {
+  (await cookies()).set(AUTH_NEXT_COOKIE, path, authNextCookieOptions(process.env.NODE_ENV === 'production'));
+}
+
+export interface FormState {
+  error?: string;
+  message?: string;
+  /** Registration: the link was sent (the form switches to "Revisa tu correo"). */
+  sent?: true;
+}
+
+export async function login(_prev: FormState, form: FormData): Promise<FormState> {
+  const email = parseEmail(form.get('email'));
+  const password = form.get('password');
+  if (!email || typeof password !== 'string' || !password) return { error: LOGIN_INVALID };
+  // Anti-bot first (Cap): a bot without a valid single-use token never reaches the lockout counter or Supabase Auth,
+  // so it cannot lock a real person's email either. The lockout below still applies to every verified attempt.
+  if (!(await capPassed(form, 'login'))) return { error: CAP_ERROR };
+  const supabase = await createSupabaseServerClient();
+  // Progressive lockout (migrations 033/034): reserved in the database before the password is checked, keyed on the email.
+  // No IP: this RPC is public, so a caller-supplied IP could lock a shared carrier IP for everyone behind it.
+  const { data: gate, error: gateError } = await supabase.rpc('login_attempt', { p_email: email, p_ip: null });
+  const g = Array.isArray(gate) ? gate[0] : null;
+  if (gateError || !g) {
+    console.warn(JSON.stringify({ event: 'login_gate_failed', code: gateError?.code ?? null }));
+    return { error: LOGIN_SERVER };
+  }
+  if (!g.allowed) return { error: lockoutMessage(g.wait_seconds) };
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    const outcome = loginOutcome(error, g.wait_seconds);
+    if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
+    return { error: outcome.message };
+  }
+  const { error: resetError } = await supabase.rpc('login_succeeded', { p_ip: null });
+  if (resetError) console.warn(JSON.stringify({ event: 'login_reset_failed', code: resetError.code ?? null }));
+  redirect(safeNextPath(form.get('next')));
+}
+
+/**
+ * Registration step 1: email only. Supabase Auth sends a signed, single-use, expiring link (signInWithOtp creates the
+ * user if new; a registered address simply gets a sign-in link). The link lands on /auth/confirm (token_hash) and
+ * continues at /crear-cuenta. Same answer for new and registered addresses; the address is never logged.
+ */
+export async function signup(_prev: FormState, form: FormData): Promise<FormState> {
+  const email = parseEmail(form.get('email'));
+  if (!email) return { error: 'Revisa tu correo electrónico.' };
+  if (!(await capPassed(form, 'signup'))) return { error: CAP_ERROR };
+  const supabase = await createSupabaseServerClient();
+  await rememberAuthNext('/crear-cuenta');
+  const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: authCallbackUrl() } });
+  const outcome = emailLinkOutcome(error);
+  if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
+  return outcome.state;
+}
+
+/** Registration step 2: the password (12+, letters and numbers), validated here and by Supabase Auth. */
+export async function createPassword(_prev: FormState, form: FormData): Promise<FormState> {
+  const password = form.get('password');
+  const problem = passwordProblem(password);
+  if (problem) return { error: problem };
+  const supabase = await createSupabaseServerClient();
+  if (!(await authUser(supabase))) redirect('/login?error=link');
+  const { error } = await supabase.auth.updateUser({ password: password as string });
+  if (error) {
+    console.warn(JSON.stringify({ event: 'registration_password_failed', status: error.status ?? null, code: error.code ?? null }));
+    return { error: newPasswordError(error) };
+  }
+  // The step is recorded by the database when Supabase Auth changes the password (trigger, migration 031).
+  redirect('/crear-cuenta/perfil');
+}
+
+/** Registration step 3: profile, 18+ (birth date, checked again in SQL) and acceptance of the current legal versions. */
+export async function completeProfile(_prev: FormState, form: FormData): Promise<FormState> {
+  const given = String(form.get('givenNames') ?? '').trim();
+  const family = String(form.get('familyNames') ?? '').trim();
+  if (!given || !family) return { error: 'Escribe tu nombre y apellidos.' };
+  const phone = normalizePhone(form.get('phone'));
+  if (!phone) return { error: PHONE_ERROR };
+  const birthError = birthProblem(form.get('birthDate'), limaToday());
+  if (birthError) return { error: birthError };
+  const birth = parseBirthDate(form.get('birthDate'))!;
+  if (form.get('accept') !== 'on') return { error: 'Para continuar, acepta los Términos y la Política de Privacidad.' };
+  const supabase = await createSupabaseServerClient();
+  if (!(await authUser(supabase))) redirect('/login');
+  const { error } = await supabase.rpc('complete_registration', {
+    p_given: given, p_family: family, p_phone: phone, p_birth: birth, p_terms: TERMS_VERSION, p_privacy: PRIVACY_VERSION,
+  });
+  if (error) return { error: registrationError(error.message) };
+  redirect('/bienvenida');
+}
+
+export async function requestPasswordReset(_prev: FormState, form: FormData): Promise<FormState> {
+  const email = parseEmail(form.get('email'));
+  if (!email) return { error: 'Ingresa un correo válido.' };
+  if (!(await capPassed(form, 'recovery'))) return { error: CAP_ERROR };
+  const supabase = await createSupabaseServerClient();
+  await rememberAuthNext('/reset-password');
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: authCallbackUrl() });
+  // Same neutral answer whether or not the account exists, including Supabase's 429 (which only happens for
+  // registered emails). The failure is logged server-side for diagnosis, without the email address.
+  const outcome = passwordResetOutcome(error);
+  if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
+  return outcome.state;
+}
+
+export async function updatePassword(_prev: FormState, form: FormData): Promise<FormState> {
+  const password = form.get('password');
+  const problem = passwordProblem(password);
+  if (problem) return { error: problem };
+  const supabase = await createSupabaseServerClient();
+  if (!(await authUser(supabase))) return { error: 'Tu enlace venció. Pide uno nuevo.' };
+  const { error } = await supabase.auth.updateUser({ password: password as string });
+  if (error) return { error: newPasswordError(error) };
+  redirect('/app');
+}
+
+/**
+ * Signed-in password change (Ajustes). Supabase Auth only: updateUser; if Supabase requires reauthentication
+ * ("Secure password change" + session older than 24 h) it emails a one-time code via reauthenticate(), and the
+ * next submit sends it as `nonce`. Never logs the password or the code.
+ */
+export async function changePassword(prev: ChangePasswordState, form: FormData): Promise<ChangePasswordState> {
+  const password = form.get('password');
+  const problem = passwordProblem(password);
+  if (problem) return { error: problem, needsCode: prev.needsCode };
+  const rawCode = form.get('code');
+  const code = parseReauthCode(rawCode);
+  if (prev.needsCode && !code) return { needsCode: true, error: 'Escribe el código que te enviamos por correo.' };
+  const supabase = await createSupabaseServerClient();
+  // Password flows validate the session with the Auth server (getUser), not only the local JWT.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+  const { error } = await supabase.auth.updateUser(code ? { password: password as string, nonce: code } : { password: password as string });
+  const outcome = passwordChangeOutcome(error, !!code, (prev.done ?? 0) + 1);
+  if (error) console.warn(JSON.stringify({ event: 'password_change_failed', status: error.status ?? null, code: error.code ?? null }));
+  if (!error) {
+    // Changed, maybe because of a suspected leak: other devices sign out, this one stays.
+    const { error: outError } = await supabase.auth.signOut({ scope: 'others' });
+    if (outError) console.warn(JSON.stringify({ event: 'password_change_signout_others_failed', status: outError.status ?? null, code: outError.code ?? null }));
+  }
+  if (outcome !== 'reauthenticate') return outcome;
+  const { error: reauthError } = await supabase.auth.reauthenticate();
+  if (reauthError) console.warn(JSON.stringify({ event: 'password_reauth_failed', status: reauthError.status ?? null, code: reauthError.code ?? null }));
+  return reauthRequestOutcome(reauthError);
+}
+
+export async function logout(): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  await supabase.auth.signOut();
+  redirect('/login');
+}
