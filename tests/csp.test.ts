@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { buildCsp, CSP_HEADER, CSP_REPORT_PATH, cspNonce, CULQI_HOSTS, REPORTING_ENDPOINTS } from '../src/web/security-headers';
-import { MAX_REPORT_BYTES, MAX_REPORTS, parseCspReports, readLimited, safeReportUrl } from '../src/web/csp-report';
+import { CSP_LOG_LINES_PER_WINDOW, cspLogLimiter, MAX_REPORT_BYTES, MAX_REPORTS, parseCspReports, readLimited, safeReportUrl, type CspViolation } from '../src/web/csp-report';
 
 /**
  * Content-Security-Policy, REPORT-ONLY in this block: a per-request nonce from proxy.ts, the policy string, and the
@@ -164,6 +164,27 @@ describe('readLimited', () => {
   });
 });
 
+describe('cspLogLimiter (public endpoint: bounded log volume per instance)', () => {
+  const v = (directive: string, blocked: string): CspViolation => ({ document: null, blocked, directive, disposition: 'report', source: null, line: null, column: null });
+  it('each directive + blocked pair once per window; repeats are counted and reported once when the next window starts', () => {
+    const take = cspLogLimiter(3, 1000);
+    expect(take([v('script-src-elem', 'inline'), v('script-src-elem', 'inline')], 0)).toEqual([{ event: 'csp_violation', ...v('script-src-elem', 'inline') }]);
+    expect(take([v('script-src-elem', 'inline')], 500)).toEqual([]);
+    expect(take([v('script-src-elem', 'inline')], 1000)).toEqual([
+      { event: 'csp_violation_dropped', count: 2 },
+      { event: 'csp_violation', ...v('script-src-elem', 'inline') },
+    ]);
+  });
+  it('at most maxLines distinct pairs per window, whatever a script varies', () => {
+    const take = cspLogLimiter(3, 1000);
+    const lines = Array.from({ length: 50 }, (_, i) => take([v('script-src-elem', `https://x${i}.example/a.js`)], i)).flat();
+    expect(lines).toHaveLength(3);
+    expect(take([], 2000)).toEqual([{ event: 'csp_violation_dropped', count: 47 }]);
+    expect(take([], 3000)).toEqual([]);
+  });
+  it('default: 20 lines per minute', () => expect(CSP_LOG_LINES_PER_WINDOW).toBe(20));
+});
+
 // ── The route ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe('POST /api/csp-report', () => {
   let warn: ReturnType<typeof vi.spyOn>;
@@ -187,6 +208,13 @@ describe('POST /api/csp-report', () => {
     expect((await POST(post('{}', { 'content-length': String(MAX_REPORT_BYTES + 1) }))).status).toBe(413);
     expect((await POST(post(`{"csp-report":{"blocked-uri":"${'x'.repeat(MAX_REPORT_BYTES)}"}}`))).status).toBe(413);
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('the same violation posted in a loop is logged once', async () => {
+    const { POST } = await import('../app/api/csp-report/route');
+    const body = JSON.stringify({ 'csp-report': { 'blocked-uri': 'https://loop.example/x.js', 'effective-directive': 'script-src-elem' } });
+    for (let i = 0; i < 10; i++) expect((await POST(post(body))).status).toBe(204);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('garbage → 204, nothing logged', async () => {

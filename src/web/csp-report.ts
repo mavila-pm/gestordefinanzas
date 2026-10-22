@@ -81,6 +81,40 @@ export function parseCspReports(raw: string): CspViolation[] {
   return bodies.slice(0, MAX_REPORTS).map(violation).filter((v): v is CspViolation => v !== null);
 }
 
+/** Log lines per minute per server instance for /api/csp-report (the endpoint is public and has no other limit). */
+export const CSP_LOG_LINES_PER_WINDOW = 20;
+export const CSP_LOG_WINDOW_MS = 60_000;
+
+export type CspLogLine = ({ event: 'csp_violation' } & CspViolation) | { event: 'csp_violation_dropped'; count: number };
+
+/**
+ * Log volume guard for the public report endpoint: within a window each distinct directive + blocked pair is logged
+ * once, and at most `maxLines` pairs per window; everything else is only counted, and the count is logged once when
+ * the next window starts. A script posting in a loop therefore costs at most `maxLines` + 1 lines per minute per
+ * instance, and a real violation already seen in the window is not repeated. Memory stays bounded by `maxLines`.
+ */
+export function cspLogLimiter(maxLines = CSP_LOG_LINES_PER_WINDOW, windowMs = CSP_LOG_WINDOW_MS) {
+  let start = Number.NEGATIVE_INFINITY;
+  let seen = new Set<string>();
+  let dropped = 0;
+  return (violations: CspViolation[], now: number): CspLogLine[] => {
+    const out: CspLogLine[] = [];
+    if (now - start >= windowMs) {
+      if (dropped > 0) out.push({ event: 'csp_violation_dropped', count: dropped });
+      start = now;
+      seen = new Set();
+      dropped = 0;
+    }
+    for (const v of violations) {
+      const key = `${v.directive ?? ''}\u0000${v.blocked ?? ''}`;
+      if (seen.has(key) || seen.size >= maxLines) { dropped++; continue; }
+      seen.add(key);
+      out.push({ event: 'csp_violation', ...v });
+    }
+    return out;
+  };
+}
+
 /**
  * Reads at most `limit` bytes of a request body (the Content-Length header may be absent or lie). Returns null when
  * the body is larger: the caller answers 413 without buffering the rest.
