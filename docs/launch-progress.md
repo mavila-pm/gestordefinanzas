@@ -19,10 +19,15 @@ Resultado completo por frente en el journal del workflow; resumen:
 | F Pagos | precios en servidor, pedidos, compra demo | adaptador Culqi con mocks, webhook, ciclo de vida, cancelación, guard test/live | cuenta Culqi (USD + recurrentes), llaves, planes, webhook, decisiones comerciales/legales |
 
 ## Ejecución
-| Bloque | Rama | Estado | Evidencia |
+| Bloque | Rama | Estado (2026-10-22) | Evidencia |
 |---|---|---|---|
-| B Bancos (11 tareas) | `wf/front-b-banks` | IMPLEMENTADO; revisión adversarial + seguridad en curso | check 646 · test:db 151 · build OK |
-| A, C, F, D, E | `wf/front-{a-auth,c-planning,f-billing,d-ai,e-email}` | en curso (worktrees aislados) | — |
+| B Bancos (11 tareas) | `wf/front-b-banks` | IMPLEMENTADO; revisiones adversarial y de seguridad hechas (sin bloqueantes, 7 hallazgos mayores); correcciones en curso | check 646 · test:db 151 · build OK (antes de correcciones) |
+| A Auth/seguridad | `wf/front-a-auth` | 7 tareas con commit (sesiones, cookies, cabeceras, CSP report-only, proxy fail-closed, bloqueo, cuenta existente); migración 049 en curso | pendiente de verificación final |
+| C Planificación | `wf/front-c-planning` | C1–C4 con commit (guarda SQL de liquidaciones, omitido ≠ pagado, pagos parciales: esquema + motor); C5–C12 en curso | pendiente |
+| F Pagos (Culqi) | `wf/front-f-billing` | en curso | — |
+| D IA, E Correo | — | en cola tras A/B | — |
+
+Interrupción 2026-10-20/22: el reinicio del entorno detuvo los procesos; el trabajo quedó en las ramas y se retomó sin reiniciar.
 
 ## Bloqueado por el PO (acción mínima)
 Se consolida al cerrar el ciclo; ver la sección final del reporte del ciclo.
