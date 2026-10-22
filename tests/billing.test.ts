@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { annualSavingPercent, isPlanCode, limaDatePlus } from '../src/domain/billing';
+import { renewalStillOpen } from '../src/domain/entitlements';
 
 describe('billing (pure)', () => {
   it('annual saving only when it really saves', () => {
@@ -10,6 +11,17 @@ describe('billing (pure)', () => {
     expect(isPlanCode('annual')).toBe(true);
     expect(isPlanCode('weekly')).toBe(false);
     expect(isPlanCode(undefined)).toBe(false);
+  });
+  it('renewal still open: a Mensual/Anual with a provider reference, not cancelled, not closed (whatever the plan state)', () => {
+    const sub = { status: 'past_due', billing_plan: 'monthly', provider_ref: 'sxn_test_a1', cancel_at_period_end: false };
+    expect(renewalStillOpen(sub)).toBe(true);
+    expect(renewalStillOpen({ ...sub, status: 'trialing' })).toBe(true);
+    expect(renewalStillOpen({ ...sub, cancel_at_period_end: true })).toBe(false);
+    expect(renewalStillOpen({ ...sub, status: 'canceled' })).toBe(false);
+    expect(renewalStillOpen({ ...sub, billing_plan: 'lifetime' })).toBe(false);
+    expect(renewalStillOpen({ ...sub, billing_plan: null })).toBe(false);
+    expect(renewalStillOpen({ ...sub, provider_ref: null })).toBe(false);
+    expect(renewalStillOpen(null)).toBe(false);
   });
   it('trial end date in Lima', () => {
     expect(limaDatePlus(new Date('2026-10-12T03:00:00Z'), 14)).toBe('2026-10-25');

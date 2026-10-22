@@ -58,6 +58,8 @@ export async function startCardOrderAction(input: { plan: unknown; amount: unkno
   const [mode, state] = await Promise.all([billingMode(supabase), loadBillingState(supabase)]);
   if (mode.kind !== 'culqi') return { ok: false, error: copy('disabled') };
   if (state.paid) return { ok: false, error: copy('already_plus') };
+  // An older Mensual/Anual Culqi can still charge: the person cancels it first (SQL refuses too), never two at once.
+  if (state.renewalOpen) return { ok: false, error: copy('subscription_still_open') };
   // Never a wrong price: a Mensual/Anual order needs the Culqi plan of exactly this amount and trial configured.
   if (!purchasable(mode, input.plan, expected, input.plan !== 'lifetime' && !state.trialUsed)) return { ok: false, error: copy('price_config_mismatch') };
   const { data: order, error } = await supabase.rpc('billing_create_order', { p_plan: input.plan, p_expected_minor: expected });

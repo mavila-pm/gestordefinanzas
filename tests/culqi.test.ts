@@ -73,7 +73,11 @@ describe('Culqi response validators (fixed schemas)', () => {
     expect(parseRefund(fx.refund_ok)).toEqual({ id: 'ref_test_R1e2F3u4N5d6O7k8', chargeRef: 'chr_test_A1b2C3d4E5f6G7h8', amountMinor: 19800, livemode: false });
     expect(parseRefund({ ...clone(fx.refund_ok), charge_id: 'chr_live_A1b2C3d4E5f6G7h8' })).toBeNull();
     expect(parsePlan(fx.plan_monthly_trial)).toMatchObject({ amountMinor: 400, currency: 'USD', interval: 'month', intervalCount: 1, freeInitialCycles: { count: 14, unit: 1 }, chargesAtStart: false });
-    expect(parsePlan(fx.plan_monthly)).toMatchObject({ freeInitialCycles: null, chargesAtStart: true });
+    expect(parsePlan(fx.plan_monthly)).toMatchObject({ freeInitialCycles: null, chargesAtStart: true, initialCycles: 0 });
+    expect(parsePlan(fx.plan_monthly_trial)).toMatchObject({ initialCycles: 14 });
+    // Initial cycles at another price (or of another unit) are not "no trial": kept visible so planMatches refuses them.
+    expect(parsePlan({ ...clone(fx.plan_monthly), initial_cycles: { count: 1, has_initial_charge: true, amount: 5900, interval_unit_time: 3 } }))
+      .toMatchObject({ freeInitialCycles: null, chargesAtStart: true, initialCycles: 1 });
     expect(parsePlan({ ...clone(fx.plan_monthly), interval_unit_time: 9 })).toBeNull();
     const sub = parseSubscription({ ...clone(fx.subscription_trial), trial_end: 1792540800000, next_billing_date: 1792540800000, customer_id: 'cus_live_C1u2S3t4O5m6E7r8' });
     expect(sub).toMatchObject({ id: 'sxn_test_S1u2B3s4C5r6I7p8', planRef: 'pln_test_M1o2N3t4H5l6Y7t8', cardRef: 'crd_test_C1a2R3d4O5k6A7b8', customerRef: null, orderId: ORDER, rawStatus: 1 });

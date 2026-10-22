@@ -15,8 +15,10 @@ export function charge(o: Partial<ProviderCharge> = {}): ProviderCharge {
   return { id: 'chr_test_A1b2C3d4E5f6G7h8', amountMinor: 19800, currency: 'USD', succeeded: true, refundedMinor: 0, orderId: ORDER, subscriptionRef: null, livemode: false, ...o };
 }
 export function plan(o: Partial<ProviderPlan> = {}): ProviderPlan {
-  return { id: 'pln_test_M1o2N3t4H5l6Y7t8', amountMinor: 400, currency: 'USD', interval: 'month', intervalCount: 1, freeInitialCycles: { count: 14, unit: 1 }, chargesAtStart: false, livemode: false, ...o };
+  return { id: 'pln_test_M1o2N3t4H5l6Y7t8', amountMinor: 400, currency: 'USD', interval: 'month', intervalCount: 1, freeInitialCycles: { count: 14, unit: 1 }, chargesAtStart: false, initialCycles: 14, livemode: false, ...o };
 }
+/** A plan without trial: no initial cycles, charges at creation. */
+export const planNoTrial = (o: Partial<ProviderPlan> = {}) => plan({ id: 'pln_test_M1o2N3t4H5l6Y7n8', freeInitialCycles: null, chargesAtStart: true, initialCycles: 0, ...o });
 export function subscription(o: Partial<ProviderSubscription> = {}): ProviderSubscription {
   const end = new Date(Date.now() + 14 * 86_400_000);
   return { id: 'sxn_test_S1u2B3s4C5r6I7p8', rawStatus: 1, planRef: 'pln_test_M1o2N3t4H5l6Y7t8', customerRef: 'cus_test_C1u2S3t4O5m6E7r8', cardRef: 'crd_test_C1a2R3d4O5k6A7b8', trialEnd: end, nextBillingDate: end, orderId: ORDER, livemode: false, ...o };
@@ -137,12 +139,21 @@ export class MemoryStore implements BillingStore {
   async refund(_p: string, chargeRef: string, refundRef: string, amount: number) {
     if (this.events.includes(`refund:${refundRef}`)) return 'duplicate';
     const o = [...this.orders.values()].find((x) => x.providerRef === chargeRef);
+    if (!o && (this.events.includes(`orphan:${chargeRef}`) || this.events.includes(`renewal:${chargeRef}`))) { this.events.push(`refund:${refundRef}`); return 'recorded'; }
     if (!o) throw new BillingRefused('unknown_charge');
     this.events.push(`refund:${refundRef}`);
     if (amount === o.amountMinor && (o.status === 'paid' || o.status === 'failed')) { o.status = 'refunded'; this.plusUsers.delete(o.userId); }
     return 'refunded';
   }
   async findOrder(id: string) { return this.orders.get(id) ?? null; }
+  async findOrderByRef(_p: string, ref: string) { return [...this.orders.values()].find((o) => o.providerRef === ref) ?? null; }
+  async flagCharge(i: { chargeRef: string; subRef: string }) {
+    if (this.subs.has(i.subRef)) throw new BillingRefused('subscription_known');
+    const ours = !!(await this.findOrderByRef('culqi', i.subRef)) || this.events.includes(`cancel:${i.subRef}`);
+    if (this.events.includes(`orphan:${i.chargeRef}`)) return { state: 'duplicate' as const, ours };
+    this.events.push(`orphan:${i.chargeRef}`);
+    return { state: 'flagged' as const, ours };
+  }
   async findSubscription(_p: string, ref: string) {
     const s = this.subs.get(ref);
     return s ? { userId: s.userId, status: s.status, billingPlan: s.plan, providerRef: ref, cancelAtPeriodEnd: s.cancel, livemode: false, trialEndsAt: s.trialEnd, currentPeriodEnd: s.periodEnd, amountMinor: s.amountMinor, currency: s.currency } : null;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { cancelRenewal, payLifetime, paySubscription, planMatches } from '../src/billing/checkout';
-import { charge, FakeProvider, MemoryStore, ORDER, plan, providerError, subscription, USER } from './billing-fakes';
+import { parsePlan } from '../src/billing/culqi';
+import { charge, FakeProvider, MemoryStore, ORDER, plan, planNoTrial, providerError, subscription, USER } from './billing-fakes';
+import fx from './fixtures/culqi/responses.synthetic.json';
 
 /**
  * Billing flows (ADR-0018) with a mocked Culqi and an in-memory store. Money invariants under test: the charge uses
@@ -97,7 +99,7 @@ describe('Mensual/Anual: plan check → customer → card → subscription → a
   });
   it('plan amount ≠ order amount (e.g. a US$ 9 plan for a US$ 4 order) → refused before anything is created', async () => {
     for (const p of [plan({ amountMinor: 900 }), plan({ currency: 'PEN' }), plan({ interval: 'year' }), plan({ intervalCount: 3 }),
-      plan({ freeInitialCycles: null, chargesAtStart: true }), plan({ freeInitialCycles: { count: 7, unit: 1 } }), plan({ freeInitialCycles: { count: 14, unit: 3 } })]) {
+      planNoTrial(), plan({ freeInitialCycles: { count: 7, unit: 1 }, initialCycles: 7 }), plan({ freeInitialCycles: { count: 14, unit: 3 } })]) {
       const { store, provider, deps } = setup(monthlyTrial);
       provider.answers.getPlan = { ok: true, value: p };
       expect(await paySubscription({ ...deps, plans }, { orderId: ORDER, userId: USER, email: 'a@b.pe', tokenRef: TKN, customer })).toEqual({ status: 'unavailable', code: 'price_config_mismatch' });
@@ -110,12 +112,18 @@ describe('Mensual/Anual: plan check → customer → card → subscription → a
     expect(await paySubscription({ ...deps, plans }, { orderId: ORDER, userId: USER, email: 'a@b.pe', tokenRef: TKN, customer })).toEqual({ status: 'unavailable', code: 'price_config_mismatch' });
     expect(provider.calls).toEqual([]);
   });
-  it('planMatches: a no-trial order needs a plan that charges at start; a trial order exactly its free days', () => {
+  it('planMatches: a no-trial order needs a plan without initial cycles; a trial order exactly its free days', () => {
     const order = { planCode: 'monthly' as const, amountMinor: 400, currency: 'USD' as const, trialDays: 0 };
-    expect(planMatches(plan({ freeInitialCycles: null, chargesAtStart: true }), order)).toBe(true);
+    expect(planMatches(planNoTrial(), order)).toBe(true);
     expect(planMatches(plan(), order)).toBe(false);
     expect(planMatches(plan(), { ...order, trialDays: 14 })).toBe(true);
     expect(planMatches(plan(), { ...order, trialDays: 15 })).toBe(false);
+    // A plan whose first cycle charges another amount (US$ 59 for a US$ 4 order), or gives free cycles of another
+    // unit, is never "no trial".
+    const odd = parsePlan({ ...JSON.parse(JSON.stringify(fx.plan_monthly)), initial_cycles: { count: 1, has_initial_charge: true, amount: 5900, interval_unit_time: 3 } })!;
+    expect(planMatches(odd, order)).toBe(false);
+    expect(planMatches(planNoTrial({ initialCycles: 2 }), order)).toBe(false);
+    expect(planMatches(parsePlan(fx.plan_monthly)!, order)).toBe(true);
   });
   it('card declined → failed, no subscription; subscription create unknown → pending', async () => {
     const a = setup(monthlyTrial);
@@ -128,11 +136,20 @@ describe('Mensual/Anual: plan check → customer → card → subscription → a
     expect(b.store.orders.get(ORDER)?.status).toBe('processing');
   });
   it('a subscription Culqi created that does not match what was accepted is cancelled at Culqi at once', async () => {
+    // Trial: nothing was charged → refused (no "we will refund" message); the order keeps the subscription reference.
     const { store, provider, deps } = setup(monthlyTrial);
     provider.answers.createSubscription = { ok: true, value: subscription({ trialEnd: null, nextBillingDate: new Date(Date.now() + 30 * 86_400_000) }) };
-    expect(await paySubscription({ ...deps, plans }, { orderId: ORDER, userId: USER, email: 'a@b.pe', tokenRef: TKN, customer })).toEqual({ status: 'needs_refund', code: 'trial_mismatch' });
+    expect(await paySubscription({ ...deps, plans }, { orderId: ORDER, userId: USER, email: 'a@b.pe', tokenRef: TKN, customer })).toEqual({ status: 'refused', code: 'trial_mismatch' });
     expect(provider.calls).toContain('cancelSubscription');
     expect(store.plusUsers.size).toBe(0);
+    expect(store.orders.get(ORDER)).toMatchObject({ status: 'failed', providerRef: 'sxn_test_S1u2B3s4C5r6I7p8' });
+    // No trial: the plan charged at creation → needs_refund (refunded when its charge webhook arrives).
+    const b = setup({ planCode: 'monthly', amountMinor: 400, trialDays: 0 });
+    b.provider.answers.getPlan = { ok: true, value: planNoTrial() };
+    b.provider.answers.createSubscription = { ok: true, value: subscription({ trialEnd: null, nextBillingDate: null }) };
+    expect(await paySubscription({ ...b.deps, plans }, { orderId: ORDER, userId: USER, email: 'a@b.pe', tokenRef: TKN, customer })).toEqual({ status: 'needs_refund', code: 'bad_period' });
+    expect(b.provider.calls).toContain('cancelSubscription');
+    expect(b.store.orders.get(ORDER)).toMatchObject({ status: 'failed', providerRef: 'sxn_test_S1u2B3s4C5r6I7p8' });
   });
   it('an existing Culqi customer with the same email is reused only on an exact match', async () => {
     const a = setup(monthlyTrial);
@@ -154,10 +171,21 @@ describe('Cancelar renovación', () => {
     const r = await cancelRenewal(deps, { userId: USER, subRef: 'sxn_test_S1u2B3s4C5r6I7p8' });
     expect(r.ok && r.until?.getTime()).toBe(store.subs.get('sxn_test_S1u2B3s4C5r6I7p8')!.trialEnd!.getTime());
     expect(store.subs.get('sxn_test_S1u2B3s4C5r6I7p8')!.cancel).toBe(true);
-    // Already deleted at Culqi (a retry after a crash): recorded, still ok.
+    // Already deleted at Culqi (a retry after a crash): recorded only when Culqi confirms it is gone (GET 404).
     provider.answers.cancelSubscription = providerError('not_found');
+    provider.answers.getSubscription = providerError('not_found');
     expect((await cancelRenewal(deps, { userId: USER, subRef: 'sxn_test_S1u2B3s4C5r6I7p8' })).ok).toBe(true);
     expect(store.events.filter((e) => e.startsWith('cancel:'))).toHaveLength(1);
+  });
+  it('DELETE answers 404 but GET still returns the subscription (or fails) → not cancelled, nothing recorded', async () => {
+    const { store, provider, deps } = setup(monthlyTrial);
+    await paySubscription({ ...deps, plans }, { orderId: ORDER, userId: USER, email: 'a@b.pe', tokenRef: TKN, customer });
+    provider.answers.cancelSubscription = providerError('not_found');
+    expect(await cancelRenewal(deps, { userId: USER, subRef: 'sxn_test_S1u2B3s4C5r6I7p8' })).toEqual({ ok: false, code: 'still_at_provider' });
+    provider.answers.getSubscription = providerError('unavailable', 'network');
+    expect(await cancelRenewal(deps, { userId: USER, subRef: 'sxn_test_S1u2B3s4C5r6I7p8' })).toEqual({ ok: false, code: 'network' });
+    expect(store.subs.get('sxn_test_S1u2B3s4C5r6I7p8')!.cancel).toBe(false);
+    expect(store.events.filter((e) => e.startsWith('cancel:'))).toHaveLength(0);
   });
   it('if Culqi fails, nothing changes (the renewal is still on) and the caller says so', async () => {
     const { store, provider, deps } = setup(monthlyTrial);

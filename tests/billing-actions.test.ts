@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { billingDate } from '../src/domain/billing';
 import { FakeProvider, MemoryStore, ORDER, USER } from './billing-fakes';
 
 /**
@@ -29,18 +30,29 @@ vi.mock('../lib/culqi', () => ({
 }));
 const form = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 
+const PERIOD_END = new Date(Date.now() + 31 * 86_400_000);
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+
 describe('cancelRenewalAction', () => {
   beforeEach(() => {
     serviceOn = true;
     service.provider = new FakeProvider();
     service.store = new MemoryStore();
-    service.store.subs.set('sxn_test_S1u2B3s4C5r6I7p8', { userId: USER, status: 'active', cancel: false, periodEnd: new Date('2026-11-22T15:00:00Z'), trialEnd: null, amountMinor: 400, currency: 'USD', plan: 'monthly' });
+    service.store.subs.set('sxn_test_S1u2B3s4C5r6I7p8', { userId: USER, status: 'active', cancel: false, periodEnd: PERIOD_END, trialEnd: null, amountMinor: 400, currency: 'USD', plan: 'monthly' });
     rows.subscriptions = { provider: 'culqi', provider_ref: 'sxn_test_S1u2B3s4C5r6I7p8', billing_plan: 'monthly', cancel_at_period_end: false, livemode: false };
   });
   it('cancels at Culqi with the reference from the person\'s row, then keeps Plus until the period end', async () => {
     const { cancelRenewalAction } = await import('../app/app/ajustes/plan/actions');
     const r = await cancelRenewalAction({}, form({ confirm: 'yes', subRef: 'sxn_test_SomeoneElse0000' }));
-    expect(r).toEqual({ message: 'Listo. Conservas Plus hasta el 22 de noviembre de 2026. No se hará ningún otro cobro.' });
+    expect(r).toEqual({ message: `Listo. Conservas Plus hasta el ${billingDate(PERIOD_END.toISOString())}. No se hará ningún otro cobro.` });
+    expect(service.provider.calls).toEqual(['cancelSubscription']);
+    expect(service.store.subs.get('sxn_test_S1u2B3s4C5r6I7p8')?.cancel).toBe(true);
+  });
+  it('a lapsed renewal (Free, Culqi may still charge) can be cancelled too; nothing is promised about Plus', async () => {
+    const { cancelRenewalAction } = await import('../app/app/ajustes/plan/actions');
+    service.store.subs.get('sxn_test_S1u2B3s4C5r6I7p8')!.status = 'past_due';
+    service.store.subs.get('sxn_test_S1u2B3s4C5r6I7p8')!.periodEnd = new Date(daysAgo(10));
+    expect(await cancelRenewalAction({}, form({ confirm: 'yes' }))).toEqual({ message: 'Listo. No se hará ningún otro cobro. Quedas en Free con todos tus datos.' });
     expect(service.provider.calls).toEqual(['cancelSubscription']);
     expect(service.store.subs.get('sxn_test_S1u2B3s4C5r6I7p8')?.cancel).toBe(true);
   });
@@ -96,5 +108,20 @@ describe('card checkout actions', () => {
     expect(await startCardOrderAction({ plan: 'monthly', amount: 900, terms: true, address: 'Av. 1', city: 'Lima' })).toMatchObject({ ok: false, error: expect.stringMatching(/no está disponible/) });
     expect(rpc).not.toHaveBeenCalled();
     vi.unstubAllEnvs();
+  });
+  it('a lapsed Mensual still renewing at Culqi: no new order until its renewal is cancelled (never two subscriptions)', async () => {
+    checkout = { ok: true, plans: {} };
+    rows.demo_access = { user_id: USER };
+    const lapsed = { plan: 'plus', status: 'past_due', trial_started_at: daysAgo(60), trial_ends_at: daysAgo(46), current_period_end: daysAgo(10),
+      billing_plan: 'monthly', cancel_at_period_end: false, provider_ref: 'sxn_test_S1u2B3s4C5r6I7p8' };
+    rows.subscriptions = lapsed;
+    const { startCardOrderAction } = await import('../app/app/planes/actions');
+    expect(await startCardOrderAction({ plan: 'lifetime', amount: 19800, terms: true })).toMatchObject({ ok: false, error: expect.stringMatching(/suscripción anterior sigue activa en Culqi/) });
+    expect(rpc).not.toHaveBeenCalled();
+    // Cancelled at Culqi ("Cancelar renovación"): the purchase can start.
+    rows.subscriptions = { ...lapsed, cancel_at_period_end: true };
+    rows.billing_orders = { amount_minor: 19800, currency: 'USD', id: ORDER, plan_code: 'lifetime' };
+    rpc.mockResolvedValue({ data: ORDER, error: null });
+    expect(await startCardOrderAction({ plan: 'lifetime', amount: 19800, terms: true })).toMatchObject({ ok: true });
   });
 });

@@ -118,7 +118,8 @@ export function parsePlan(v: unknown): ProviderPlan | null {
   const free = ic && (ic.count as number) > 0 && ic.amount === 0 && ic.has_initial_charge === false
     ? { count: ic.count as number, unit: intIn(ic.interval_unit_time, 1, 6) ? ic.interval_unit_time : 0 } : null;
   const chargesAtStart = !free;
-  return { id: v.id as string, amountMinor: v.amount, currency: cur, interval, intervalCount: v.interval_count, freeInitialCycles: free, chargesAtStart, livemode: id.livemode };
+  const initialCycles = ic ? (ic.count as number) : 0;
+  return { id: v.id as string, amountMinor: v.amount, currency: cur, interval, intervalCount: v.interval_count, freeInitialCycles: free, chargesAtStart, initialCycles, livemode: id.livemode };
 }
 
 export function parseSubscription(v: unknown): ProviderSubscription | null {

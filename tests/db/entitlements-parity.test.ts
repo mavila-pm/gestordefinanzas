@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type pg from 'pg';
-import { planState, type SubscriptionRow } from '../../src/domain/entitlements';
+import { planState, renewalStillOpen, type SubscriptionRow } from '../../src/domain/entitlements';
 import { DATABASE_URL, makePool, USER_A } from './helpers';
 
 /**
@@ -51,6 +51,18 @@ describe.skipIf(!DATABASE_URL)('entitlement rule parity: SQL billing_plan_state 
       expect({ name, sql }).toEqual({ name, sql: expected });
       expect({ name, ts: planState(r, 3, NOW) }).toEqual({ name, ts: expected });
     }
+  });
+
+  it('renewal still open: SQL billing_renewal_open ≡ TS renewalStillOpen', async () => {
+    const rows: Array<[string | null, string | null, string | null, boolean | null]> = [];
+    for (const plan of ['monthly', 'annual', 'lifetime', null]) for (const status of ['trialing', 'active', 'past_due', 'canceled', 'free', null])
+      for (const ref of ['sxn_test_a1', null]) for (const cancel of [false, true, null]) rows.push([plan, status, ref, cancel]);
+    for (const [plan, status, ref, cancel] of rows) {
+      const sql = (await pool.query('select public.billing_renewal_open($1, $2, $3, $4) as o', [plan, status, ref, cancel])).rows[0].o;
+      const ts = renewalStillOpen({ billing_plan: plan, status, provider_ref: ref, cancel_at_period_end: cancel });
+      expect({ plan, status, ref, cancel, sql }).toEqual({ plan, status, ref, cancel, sql: ts });
+    }
+    expect(rows.filter(([p, s, r, c]) => renewalStillOpen({ billing_plan: p, status: s, provider_ref: r, cancel_at_period_end: c }))).toHaveLength(2 * 3 * 2);
   });
 
   it('ai_effective_plan uses the rule with plan_config.billing_grace_days (demo simulation first)', async () => {

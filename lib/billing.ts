@@ -2,7 +2,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { planKey, type PlanKey } from '../src/billing/config';
 import { PLAN_CODES, type PlanCode } from '../src/domain/billing';
-import { DEFAULT_PLAN_CONFIG, planState, SUBSCRIPTION_COLUMNS, type SubscriptionRow } from '../src/domain/entitlements';
+import { DEFAULT_PLAN_CONFIG, planState, renewalStillOpen, SUBSCRIPTION_COLUMNS, type SubscriptionRow } from '../src/domain/entitlements';
 import { culqiCheckout } from './culqi';
 
 /**
@@ -53,16 +53,24 @@ export interface BillingState {
   trialUsed: boolean;
   /** A paid plan that still gives Plus (renewing, in grace, or cancelled but not ended): nothing else to buy. */
   paid: boolean;
+  /**
+   * A Mensual/Anual Culqi can still charge (renewal never cancelled), even when it no longer gives Plus (lapsed after
+   * a failed charge): nothing else can be bought until the person cancels it (never two live subscriptions).
+   */
+  renewalOpen: boolean;
 }
 
 /** The person's paid state, through THE entitlement rule (planState ≡ SQL billing_plan_state). */
 export async function loadBillingState(supabase: SupabaseClient, now = new Date()): Promise<BillingState> {
   const [{ data }, { data: grace }] = await Promise.all([
-    supabase.from('subscriptions').select(SUBSCRIPTION_COLUMNS).maybeSingle(),
+    supabase.from('subscriptions').select(`${SUBSCRIPTION_COLUMNS},provider_ref`).maybeSingle(),
     supabase.from('plan_config').select('value').eq('key', 'billing_grace_days').maybeSingle(),
   ]);
-  const sub = (data as SubscriptionRow | null) ?? null;
+  const sub = (data as (SubscriptionRow & { provider_ref: string | null }) | null) ?? null;
   const billingPlan = (sub?.billing_plan ?? null) as PlanCode | null;
   const graceDays = Number(grace?.value ?? DEFAULT_PLAN_CONFIG.billing_grace_days);
-  return { billingPlan, status: sub?.status ?? null, trialUsed: !!sub?.trial_started_at, paid: billingPlan !== null && planState(sub, graceDays, now) !== 'free' };
+  return {
+    billingPlan, status: sub?.status ?? null, trialUsed: !!sub?.trial_started_at,
+    paid: billingPlan !== null && planState(sub, graceDays, now) !== 'free', renewalOpen: renewalStillOpen(sub),
+  };
 }

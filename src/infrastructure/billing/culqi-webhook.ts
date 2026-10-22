@@ -1,7 +1,7 @@
 import { settleCharge, settleSubscription, type CheckoutDeps } from '../../billing/checkout';
-import { basicAuthOk, parseWebhook, WEBHOOK_MAX_BYTES } from '../../billing/culqi';
+import { basicAuthOk, culqiId, parseWebhook, WEBHOOK_MAX_BYTES } from '../../billing/culqi';
 import type { ProviderCharge, ProviderError, ProviderSubscription } from '../../billing/provider';
-import { BillingRefused } from '../../billing/store';
+import { BillingRefused, type OrderRow } from '../../billing/store';
 
 /**
  * Culqi webhook (ADR-0018). Culqi does not sign webhooks, so authenticity is layered:
@@ -60,10 +60,19 @@ async function onCharge(deps: WebhookDeps, id: string, close: Close): Promise<We
   const { store, provider } = deps;
   const charge = fetched(await provider.getCharge(id));
   if (!charge) return close('rejected', 'charge_not_found');
-  if (charge.orderId) {
-    const order = await store.findOrder(charge.orderId);
-    if (!order) return close('rejected', 'unknown_order');
-    if (order.planCode !== 'lifetime') return close('ignored', 'subscription_order_charge');
+  const order = charge.orderId ? await store.findOrder(charge.orderId) : null;
+  if (charge.orderId && !order) return close('rejected', 'unknown_order');
+  // A subscription's charge — it names its subscription, or carries the order of a Mensual/Anual (Culqi may copy the
+  // subscription's metadata onto its charges, UNVERIFIED) — is a period charge, never a Vitalicio settlement.
+  if (charge.subscriptionRef || (order && order.planCode !== 'lifetime')) {
+    const subRef = charge.subscriptionRef ?? (culqiId(order!.providerRef, 'sxn') ? order!.providerRef : null);
+    if (subRef) return onPeriodCharge(deps, charge, subRef, order, close);
+    // Its subscription is not settled yet (the checkout's answer was lost): Culqi retries this delivery, and the
+    // subscription's own event (or support) settles the order first. Nothing is recorded meanwhile.
+    if (order!.status === 'processing') throw new Transient('subscription_pending');
+    return close('ignored', `subscription_order_${order!.status}`);
+  }
+  if (order) {
     if (!charge.succeeded) {
       if (order.status === 'processing' || order.status === 'pending') await store.failOrder(order.id, 'charge_failed');
       return close('processed', 'charge_failed');
@@ -71,20 +80,19 @@ async function onCharge(deps: WebhookDeps, id: string, close: Close): Promise<We
     const r = await settleCharge(deps, order.id, order, charge);
     return close(r.status === 'needs_refund' ? 'needs_refund' : 'processed', `order_${r.status}`);
   }
-  if (charge.subscriptionRef) return onPeriodCharge(deps, charge, close);
   return close('ignored', 'unmatched_charge');
 }
 
-/** A charge Culqi made for a subscription period (UNVERIFIED: how Culqi links it to the subscription). */
-async function onPeriodCharge(deps: WebhookDeps, charge: ProviderCharge, close: Close): Promise<WebhookResult> {
+/** A charge Culqi made for a subscription (UNVERIFIED: how Culqi links it to the subscription). */
+async function onPeriodCharge(deps: WebhookDeps, charge: ProviderCharge, subRef: string, order: OrderRow | null, close: Close): Promise<WebhookResult> {
   const { store, provider } = deps;
-  const local = await store.findSubscription(provider.name, charge.subscriptionRef!);
-  if (!local) return close('ignored', 'unknown_subscription');
+  const local = await store.findSubscription(provider.name, subRef);
+  if (!local) return onUnheldCharge(deps, charge, subRef, order, close);
   if (!charge.succeeded) {
-    const s = await store.markPastDue(provider.name, charge.subscriptionRef!, charge.id, 'charge_failed');
+    const s = await store.markPastDue(provider.name, subRef, charge.id, 'charge_failed');
     return close('processed', `past_due_${s}`);
   }
-  const sub = fetched(await provider.getSubscription(charge.subscriptionRef!));
+  const sub = fetched(await provider.getSubscription(subRef));
   if (!sub?.nextBillingDate) return close('rejected', 'no_next_billing_date');
   const r = await store.recordRenewal(provider.name, sub.id, charge.id, charge.amountMinor, charge.currency, sub.nextBillingDate);
   if (r === 'needs_refund') {
@@ -94,6 +102,54 @@ async function onPeriodCharge(deps: WebhookDeps, charge: ProviderCharge, close: 
     return close('processed', 'charged_after_cancel_refunded');
   }
   return close('processed', `renewal_${r}`);
+}
+
+/**
+ * A charge of a subscription NO row holds: its activation was refused, a later purchase replaced it after it was
+ * cancelled, or Velsuno never knew it. Nothing is granted for it, ever: flagged once (needs_refund). When it is
+ * provably Velsuno's, the subscription is stopped at Culqi (a failed cancel is retried here) and the charge refunded
+ * once; otherwise the owner reviews it (runbook §7) — never an automatic refund of a charge nothing links to us.
+ */
+async function onUnheldCharge(deps: WebhookDeps, charge: ProviderCharge, subRef: string, order: OrderRow | null, close: Close): Promise<WebhookResult> {
+  const { store, provider } = deps;
+  if (!charge.succeeded) return close('ignored', 'unknown_subscription_failed_charge');
+  // Its order still waits for the subscription's activation (lost checkout answer): settle that first (retry).
+  const pending = order ?? (await orderOfSubscription(deps, subRef));
+  if (pending?.status === 'processing') throw new Transient('subscription_pending');
+  let flag: { state: 'flagged' | 'duplicate'; ours: boolean };
+  try {
+    flag = await store.flagCharge({ provider: provider.name, chargeRef: charge.id, subRef, amountMinor: charge.amountMinor, currency: charge.currency, livemode: charge.livemode, code: 'unknown_subscription' });
+  } catch (e) {
+    // Activated meanwhile (a race with its own event): Culqi retries and the charge takes the period path.
+    if (e instanceof BillingRefused && e.code === 'subscription_known') throw new Transient('subscription_known');
+    throw e;
+  }
+  if (!flag.ours) return close(flag.state === 'flagged' ? 'needs_refund' : 'ignored', 'unknown_subscription');
+  const stop = await provider.cancelSubscription(subRef);
+  const stopped = stop.ok || stop.kind === 'not_found';
+  if (flag.state === 'flagged' && charge.refundedMinor < charge.amountMinor) {
+    const back = await provider.refund({ chargeRef: charge.id, amountMinor: charge.amountMinor - charge.refundedMinor });
+    if (!back.ok) {
+      deps.log?.({ event: 'billing_needs_refund', code: 'charge_of_unheld_subscription', refund_error: back.code, canceled_at_provider: stopped });
+      return close('needs_refund', 'charge_of_unheld_subscription');
+    }
+    try {
+      await store.refund(provider.name, charge.id, back.value.id, back.value.amountMinor, charge.currency);
+    } catch (e) {
+      if (!(e instanceof BillingRefused)) throw e;
+    }
+  }
+  // The refund is done once (the flag is its key); a cancel that failed is retried on Culqi's next delivery.
+  if (!stopped) throw new Transient(stop.code);
+  return close('processed', flag.state === 'flagged' ? 'charge_of_unheld_subscription_refunded' : 'charge_of_unheld_subscription_seen');
+}
+
+/** The order a subscription was created for, from Culqi's own copy of its metadata (never from the webhook body). */
+async function orderOfSubscription(deps: WebhookDeps, subRef: string): Promise<OrderRow | null> {
+  const byRef = await deps.store.findOrderByRef(deps.provider.name, subRef);
+  if (byRef) return byRef;
+  const sub = fetched(await deps.provider.getSubscription(subRef));
+  return sub?.orderId ? deps.store.findOrder(sub.orderId) : null;
 }
 
 async function onRefund(deps: WebhookDeps, id: string, close: Close): Promise<WebhookResult> {
@@ -112,32 +168,38 @@ async function onRefund(deps: WebhookDeps, id: string, close: Close): Promise<We
 }
 
 /**
- * A subscription event: re-fetch it. When Culqi moved the next billing date past ours, a period was charged: record
- * the renewal keyed by (subscription, new date) at the amount the plan was sold at (Culqi plan amounts cannot change,
- * UNVERIFIED). Status codes are not interpreted (meanings not published).
+ * A subscription event. A period is NEVER granted from it: renewals are recorded only from a re-fetched successful
+ * charge (onPeriodCharge), so a moved next billing date without a payment gives nothing and a past_due stays past_due.
+ * A subscription no row holds: the checkout's answer was lost (activate it), or its activation was refused (stop it
+ * at Culqi again — the cancel at checkout may have failed). Status codes are not interpreted (meanings not published).
  */
 async function onSubscription(deps: WebhookDeps, id: string, close: Close): Promise<WebhookResult> {
   const { store, provider } = deps;
-  const local = await store.findSubscription(provider.name, id);
+  if (await store.findSubscription(provider.name, id)) return close('ignored', 'subscription_event');
   const sub = fetched(await provider.getSubscription(id));
-  if (!sub) return close(local ? 'rejected' : 'ignored', 'subscription_not_found');
-  if (!local) return onNewSubscription(deps, sub, close);
-  const next = sub.nextBillingDate;
-  if (!next || !local.amountMinor || !local.currency || (local.currentPeriodEnd && next.getTime() <= local.currentPeriodEnd.getTime())) return close('ignored', 'no_new_period');
-  const r = await store.recordRenewal(provider.name, id, `${id}_${Math.floor(next.getTime() / 1000)}`, local.amountMinor, local.currency, next);
-  return close(r === 'needs_refund' ? 'needs_refund' : 'processed', `renewal_${r}`);
+  if (!sub) return close('ignored', 'subscription_not_found');
+  return onNewSubscription(deps, sub, close);
 }
 
 /**
- * A subscription we have no row for: the checkout's answer from Culqi was lost (timeout) after Culqi created it.
- * Our order id travels in its metadata; activate it exactly as the checkout would have (same SQL checks), or stop it.
+ * A subscription we have no row for. Our order id travels in its metadata (or the order was closed with its
+ * reference): activate it exactly as the checkout would have (same SQL checks), or stop it.
  */
 async function onNewSubscription(deps: WebhookDeps, sub: ProviderSubscription, close: Close): Promise<WebhookResult> {
-  if (!sub.orderId) return close('ignored', 'unknown_subscription');
-  const order = await deps.store.findOrder(sub.orderId);
-  if (!order || order.planCode === 'lifetime') return close('rejected', 'unknown_order');
-  if (order.status !== 'processing') return close('ignored', `order_${order.status}`);
-  if (!sub.customerRef || !sub.cardRef) return close('rejected', 'subscription_incomplete');
-  const r = await settleSubscription(deps, order.id, order, sub, sub.customerRef, sub.cardRef);
-  return close(r.status === 'needs_refund' ? 'needs_refund' : 'processed', `order_${r.status}`);
+  const { store, provider } = deps;
+  const order = sub.orderId ? await store.findOrder(sub.orderId) : await store.findOrderByRef(provider.name, sub.id);
+  if (!order) return sub.orderId ? close('rejected', 'unknown_order') : close('ignored', 'unknown_subscription');
+  if (order.planCode === 'lifetime') return close('rejected', 'unknown_order');
+  if (order.status === 'processing') {
+    if (!sub.customerRef || !sub.cardRef) return close('rejected', 'subscription_incomplete');
+    const r = await settleSubscription(deps, order.id, order, sub, sub.customerRef, sub.cardRef);
+    return close(r.status === 'needs_refund' ? 'needs_refund' : 'processed', `order_${r.status}`);
+  }
+  // Its order closed without granting anything (refused activation): it must not stay alive at Culqi.
+  if ((order.status === 'failed' || order.status === 'refunded') && (order.providerRef === sub.id || order.providerRef === null)) {
+    const stop = await provider.cancelSubscription(sub.id);
+    if (!stop.ok && stop.kind !== 'not_found') throw new Transient(stop.code);
+    return close('processed', 'refused_subscription_canceled');
+  }
+  return close('ignored', `order_${order.status}`);
 }

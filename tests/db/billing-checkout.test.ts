@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { cancelRenewal, payLifetime, paySubscription } from '../../src/billing/checkout';
 import { PgBillingStore } from '../../src/infrastructure/billing/pg-billing-store';
 import { handleCulqiWebhook } from '../../src/infrastructure/billing/culqi-webhook';
-import { charge, FakeProvider, subscription } from '../billing-fakes';
+import { charge, FakeProvider, planNoTrial, subscription } from '../billing-fakes';
 import { effectivePlan, orderFor, resetBilling } from './billing-helpers';
 import { DATABASE_URL, makePool, USER_A, USER_B } from './helpers';
 
@@ -138,5 +138,44 @@ describe.skipIf(!DATABASE_URL)('billing checkout + webhook over the real SQL (AD
     provider.answers.getCharge = { ok: false, kind: 'not_found', code: 'not_found', status: 404 };
     expect(await send(hook('charge.creation.succeeded', 'chr_test_Forged00000000000', 'evt_test_Forged0000000001'))).toEqual({ status: 200, body: { status: 'rejected' } });
     expect(await sub(USER_A)).toMatchObject({ status: 'active' });
+  });
+  it('a refused no-trial subscription: stopped again on its next event, its charge flagged and refunded once (real SQL)', async () => {
+    const SXN = 'sxn_test_S1u2B3s4C5r6I7p8';
+    // A person who already used the trial: Mensual without trial (its plan charges at creation).
+    const id = await orderFor(pool, USER_A, 'monthly');
+    await pool.query('update public.billing_orders set trial_days = 0 where id = $1', [id]);
+    const provider = new FakeProvider();
+    provider.answers.getPlan = { ok: true, value: planNoTrial() };
+    provider.answers.createSubscription = () => ({ ok: true, value: subscription({ orderId: id, trialEnd: null, nextBillingDate: null }) });
+    provider.answers.cancelSubscription = { ok: false, kind: 'unavailable', code: 'network', status: null };
+    const out = await paySubscription({ store, provider, plans: { 'monthly:400:no_trial': 'pln_test_M1o2N3t4H5l6Y7n8' } }, { orderId: id, userId: USER_A, email: 'a@test.local', tokenRef: TKN, customer });
+    expect(out).toEqual({ status: 'needs_refund', code: 'bad_period' });
+    expect(await order(id)).toMatchObject({ status: 'failed', provider_ref: SXN });
+    expect((await events()).find((e) => e.event_ref === `fail:${id}`)).toMatchObject({ outcome: 'needs_refund', detail: 'activation_refused:bad_period' });
+    const deps = { store, provider, auth: { user: 'culqi-hook', password: PW } };
+    const send = (raw: string) => handleCulqiWebhook({ headers: new Headers({ authorization: auth }), rawBody: raw }, deps);
+    // Its next event retries the cancel (500 while Culqi fails: the receipt stays open), then closes.
+    provider.answers.getSubscription = { ok: true, value: subscription({ orderId: id }) };
+    expect((await send(hook('subscription.update.succeeded', SXN, 'evt_test_SubUpd0000000001'))).status).toBe(500);
+    provider.answers.cancelSubscription = undefined;
+    expect(await send(hook('subscription.update.succeeded', SXN, 'evt_test_SubUpd0000000001'))).toEqual({ status: 200, body: { status: 'processed' } });
+    // Its charge: flagged once, refunded once (also when delivered again), never Plus.
+    provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_NoTrial000000000', amountMinor: 400, orderId: id, subscriptionRef: SXN }) };
+    provider.answers.refund = { ok: true, value: { id: 'ref_test_NoTrial000000000', chargeRef: 'chr_test_NoTrial000000000', amountMinor: 400, livemode: false } };
+    for (const evt of ['evt_test_ChrNoTrial000001', 'evt_test_ChrNoTrial000002']) {
+      expect(await send(hook('charge.creation.succeeded', 'chr_test_NoTrial000000000', evt))).toEqual({ status: 200, body: { status: 'processed' } });
+    }
+    expect(provider.calls.filter((c) => c === 'refund')).toHaveLength(1);
+    const ev = await events();
+    expect(ev.filter((e) => e.event_ref === 'orphan:chr_test_NoTrial000000000')).toEqual([{ event_ref: 'orphan:chr_test_NoTrial000000000', outcome: 'needs_refund', detail: 'unknown_subscription:ours' }]);
+    expect(ev.filter((e) => e.event_ref === 'refund:ref_test_NoTrial000000000')).toEqual([{ event_ref: 'refund:ref_test_NoTrial000000000', outcome: 'processed', detail: 'flagged_charge' }]);
+    expect(await sub(USER_A)).toBeUndefined();
+    expect(await effectivePlan(pool, USER_A)).toBe('free');
+    // A charge of a subscription nothing links to Velsuno: flagged for the owner, no automatic refund.
+    provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_Stranger00000000', amountMinor: 400, orderId: null, subscriptionRef: 'sxn_test_Stranger0000000' }) };
+    provider.answers.getSubscription = { ok: true, value: subscription({ id: 'sxn_test_Stranger0000000', orderId: null }) };
+    expect(await send(hook('charge.creation.succeeded', 'chr_test_Stranger00000000', 'evt_test_Stranger00000001'))).toEqual({ status: 200, body: { status: 'needs_refund' } });
+    expect(provider.calls.filter((c) => c === 'refund')).toHaveLength(1);
+    expect((await events()).find((e) => e.event_ref === 'orphan:chr_test_Stranger00000000')).toMatchObject({ outcome: 'needs_refund', detail: 'unknown_subscription:review' });
   });
 });

@@ -5,7 +5,7 @@ import { loadEntitlements } from '../../../../lib/queries';
 import { aiPlanFrom, allowance, velsUsage, type AIPlan } from '../../../../src/ai/entitlements';
 import { billingDate, paidPlanView, PLAN_INFO } from '../../../../src/domain/billing';
 import { longDate } from '../../../../src/domain/dates';
-import { SUBSCRIPTION_COLUMNS } from '../../../../src/domain/entitlements';
+import { renewalStillOpen, SUBSCRIPTION_COLUMNS } from '../../../../src/domain/entitlements';
 import { formatMoney } from '../../../../src/domain/money';
 import { limaMonth, limaMonthRange } from '../../../../src/web/auth-input';
 import { startTrialAction } from '../../actions';
@@ -42,6 +42,10 @@ export default async function PlanSettings() {
   const resetLabel = meter.resetAt ? (meter.renews === 'trial_end' ? `Tu prueba termina el ${longDate(meter.resetAt)}.` : `Se reinicia el ${longDate(meter.resetAt)}. Tu uso se renueva automáticamente cada mes.`) : null;
   // A paid plan (Culqi): its phase, the provider's dates and the next charge. null for Free, card-less trial, by hand.
   const paid = plus ? paidPlanView(sub.data) : null;
+  // Free again (a failed or unconfirmed charge past the grace days) while Culqi can still charge it: say so and let the
+  // person stop it — nobody is ever stuck with a renewal they cannot cancel.
+  const lapsed = !plus && renewalStillOpen(sub.data) ? paidPlanView(sub.data) : null;
+  const future = (iso: string | null) => (iso && Date.parse(iso) > now.getTime() ? iso : null);
   const usd = (m: number) => formatMoney({ amountMinor: m, currency: sub.data?.billing_currency === 'PEN' ? 'PEN' : 'USD' });
   const graceEnd = paid?.phase === 'past_due' && paid.until ? new Date(Date.parse(paid.until) + config.billing_grace_days * 86_400_000).toISOString() : null;
 
@@ -79,12 +83,16 @@ export default async function PlanSettings() {
           <SettingsRow label="Estado" value={sub.data.status === 'past_due' ? 'Pago pendiente' : 'Activo'}
             hint={sub.data.current_period_end ? `Hasta el ${billingDate(sub.data.current_period_end)}` : undefined} />
         )}
-        {paid?.canCancel && paid.until && (
+        {lapsed && (
+          <SettingsRow label="Renovación" value={<span data-testid="plan-status">{sub.data?.status === 'past_due' ? 'Pago pendiente' : 'Sin confirmar'}</span>}
+            hint={`${sub.data?.status === 'past_due' ? 'No pudimos cobrar' : 'Aún no confirmamos el cobro de'} tu plan ${PLAN_INFO[lapsed.plan].name}. Estás en Free con todos tus datos, pero Culqi puede volver a intentarlo.`} />
+        )}
+        {((paid?.canCancel && paid.until) || lapsed?.canCancel) && (
           <details className="settings-row stack-sm" data-testid="cancel-renewal">
             <summary className="button secondary">Cancelar renovación</summary>
             <ActionForm action={cancelRenewalAction} label="Cancelar renovación" className="stack-sm">
               <input type="hidden" name="confirm" value="yes" />
-              <p className="small">Conservas Plus hasta el {billingDate(paid.until)}. No se hará ningún otro cobro. Después pasas a Free con todos tus datos.</p>
+              <p className="small">{future(paid?.until ?? null) ? `Conservas Plus hasta el ${billingDate(paid!.until!)}. ` : ''}No se hará ningún otro cobro. {future(paid?.until ?? null) ? 'Después pasas' : 'Quedas'} en Free con todos tus datos.</p>
               <button type="submit" className="secondary" data-testid="confirm-cancel">Sí, cancelar renovación</button>
             </ActionForm>
           </details>

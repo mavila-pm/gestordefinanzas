@@ -31,6 +31,8 @@ export default async function Checkout({ searchParams }: { searchParams: Promise
   const consent = consentText(plan, price, info.period, trialEnd);
   // Card payment only when the exact Culqi plan for this price (and trial) is configured: never a wrong price.
   const card = mode.kind === 'culqi' && purchasable(mode, plan, prices[plan], trialDays > 0);
+  // An older Mensual/Anual Culqi can still charge: cancel it first (the server and SQL refuse a second one).
+  const blocked = state.renewalOpen;
 
   return (
     <main className="stack narrow" data-testid="checkout">
@@ -50,14 +52,20 @@ export default async function Checkout({ searchParams }: { searchParams: Promise
         {plan === 'monthly' && monthly2027 !== prices.monthly && <p className="muted small">Desde enero de 2027 la cuota mensual será {formatMoney({ amountMinor: monthly2027, currency: 'USD' })}. Te avisaremos antes del cambio.</p>}
       </section>
 
-      {mode.kind === 'demo' && <p className="notice" data-testid="demo-notice">Cuenta demo: la compra se simula y no se hace ningún cargo.</p>}
-      {(mode.kind === 'disabled' || (mode.kind === 'culqi' && !card)) && (
+      {blocked && (
+        <div className="notice warning stack-sm" data-testid="renewal-open">
+          <p>Tu suscripción anterior sigue activa en Culqi y podría volver a cobrarte. Cancela su renovación antes de elegir un plan nuevo. Hoy no se hará ningún cargo.</p>
+          <Link href="/app/ajustes/plan" className="button secondary">Ir a Plan y uso</Link>
+        </div>
+      )}
+      {!blocked && mode.kind === 'demo' && <p className="notice" data-testid="demo-notice">Cuenta demo: la compra se simula y no se hace ningún cargo.</p>}
+      {!blocked && (mode.kind === 'disabled' || (mode.kind === 'culqi' && !card)) && (
         <p className="notice warning" data-testid="payments-soon">{mode.kind === 'culqi'
           ? 'Este plan aún no se puede pagar con tarjeta. Hoy no se puede completar la compra y no se hará ningún cargo.'
           : 'Los pagos con tarjeta se habilitarán muy pronto. Hoy no se puede completar la compra y no se hará ningún cargo.'}</p>
       )}
 
-      {mode.kind === 'culqi' && card ? (
+      {blocked ? null : mode.kind === 'culqi' && card ? (
         <CulqiCheckoutButton plan={plan} amountMinor={prices[plan]} publicKey={mode.publicKey} testMode={!mode.livemode}
           consent={consent} title="Confirmar compra" buttonLabel={trialDays ? `Empezar ${trialDays} días gratis` : `Pagar ${price}`} />
       ) : (

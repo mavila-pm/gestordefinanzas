@@ -131,3 +131,102 @@ describe('Culqi webhook: the body is a hint, Culqi is re-asked', () => {
     expect(provider.calls.at(-1)).toBe('refund');
   });
 });
+
+describe('Culqi webhook: periods only from charges; charges no row holds are never ignored (review F 1–4)', () => {
+  const SXN = 'sxn_test_S1u2B3s4C5r6I7p8';
+  const monthly = { status: 'processing', provider: 'culqi', livemode: false, planCode: 'monthly', amountMinor: 400, trialDays: 14 } as const;
+  const days = (n: number) => new Date(Date.now() + n * 86_400_000);
+
+  it('a subscription event never grants a period: past_due + a later next billing date → still past_due, ignored', async () => {
+    const { send, store, provider } = setup(monthly);
+    await send(body('subscription.creation.succeeded', SXN));
+    const s = store.subs.get(SXN)!;
+    s.status = 'past_due';
+    const end = s.periodEnd;
+    provider.answers.getSubscription = { ok: true, value: subscription({ nextBillingDate: days(44) }) };
+    expect(await send(body('subscription.update.succeeded', SXN, 'evt_test_SubUpd000000000'))).toEqual({ status: 200, body: { status: 'ignored' } });
+    expect(store.subs.get(SXN)).toMatchObject({ status: 'past_due', periodEnd: end });
+    expect(store.events.some((e) => e.startsWith('renewal:'))).toBe(false);
+    expect(store.receipts.get('evt_test_SubUpd000000000')).toMatchObject({ outcome: 'ignored', detail: 'subscription_event' });
+  });
+
+  it('a period charge that also carries the order id takes the period path (renewal / past_due), never the Vitalicio one', async () => {
+    const { send, store, provider } = setup(monthly);
+    await send(body('subscription.creation.succeeded', SXN));
+    const next = days(44);
+    provider.answers.getSubscription = { ok: true, value: subscription({ nextBillingDate: next }) };
+    provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_Both000000000000', amountMinor: 400, orderId: ORDER, subscriptionRef: SXN }) };
+    expect(await send(body('charge.creation.succeeded', 'chr_test_Both000000000000', 'evt_test_Both000000000000'))).toEqual({ status: 200, body: { status: 'processed' } });
+    expect(store.subs.get(SXN)).toMatchObject({ status: 'active', periodEnd: next });
+    // Only the order id (no subscription id on the charge): the order's subscription reference is used.
+    provider.answers.getSubscription = { ok: true, value: subscription({ nextBillingDate: days(74) }) };
+    provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_OrderOnly0000000', amountMinor: 400, orderId: ORDER, subscriptionRef: null }) };
+    await send(body('charge.creation.succeeded', 'chr_test_OrderOnly0000000', 'evt_test_OrderOnly0000000'));
+    expect(store.events).toContain('renewal:chr_test_OrderOnly0000000');
+    provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_BothFail00000000', amountMinor: 400, orderId: ORDER, subscriptionRef: SXN, succeeded: false }) };
+    await send(body('charge.creation.failed', 'chr_test_BothFail00000000', 'evt_test_BothFail00000000'));
+    expect(store.subs.get(SXN)?.status).toBe('past_due');
+    expect(store.orders.get(ORDER)?.status).toBe('trialing');
+  });
+
+  it('a successful charge of a subscription nothing links to Velsuno → needs_refund for the owner, no automatic refund', async () => {
+    const { send, store, provider } = setup();
+    provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_Nobody00000000', amountMinor: 400, orderId: null, subscriptionRef: 'sxn_test_Nobody00000000' }) };
+    provider.answers.getSubscription = { ok: true, value: subscription({ id: 'sxn_test_Nobody00000000', orderId: null }) };
+    expect(await send(body('charge.creation.succeeded', 'chr_test_Nobody00000000', 'evt_test_Nobody00000000'))).toEqual({ status: 200, body: { status: 'needs_refund' } });
+    expect(provider.calls).not.toContain('refund');
+    expect(provider.calls).not.toContain('cancelSubscription');
+    expect(store.events).toContain('orphan:chr_test_Nobody00000000');
+    // Delivered again: recorded once.
+    expect(await send(body('charge.creation.succeeded', 'chr_test_Nobody00000000', 'evt_test_Nobody00000001'))).toEqual({ status: 200, body: { status: 'ignored' } });
+    expect(store.events.filter((e) => e.startsWith('orphan:'))).toHaveLength(1);
+  });
+
+  it('refused no-trial subscription whose cancel failed: the next event retries the cancel; its charge is refunded once', async () => {
+    const { send, store, provider } = setup({ ...monthly, trialDays: 0 });
+    // The checkout's answer was lost; Culqi's subscription has no usable date → activation refused; the cancel fails.
+    provider.answers.getSubscription = { ok: true, value: subscription({ trialEnd: null, nextBillingDate: null }) };
+    provider.answers.cancelSubscription = providerError('unavailable', 'network');
+    expect(await send(body('subscription.creation.succeeded', SXN, 'evt_test_SubNew000000000'))).toEqual({ status: 200, body: { status: 'needs_refund' } });
+    expect(store.orders.get(ORDER)).toMatchObject({ status: 'failed', providerRef: SXN });
+    expect(store.plusUsers.size).toBe(0);
+    // Its next event: the cancel is retried (500 while Culqi keeps failing; Culqi redelivers), then done.
+    expect((await send(body('subscription.update.succeeded', SXN, 'evt_test_SubUpd000000001'))).status).toBe(500);
+    provider.answers.cancelSubscription = undefined;
+    expect(await send(body('subscription.update.succeeded', SXN, 'evt_test_SubUpd000000001'))).toEqual({ status: 200, body: { status: 'processed' } });
+    // Its first charge (the plan charged at creation): flagged, the subscription stopped again, refunded once.
+    provider.calls = [];
+    provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_FirstNoTrial00000', amountMinor: 400, orderId: ORDER, subscriptionRef: null }) };
+    expect(await send(body('charge.creation.succeeded', 'chr_test_FirstNoTrial00000', 'evt_test_ChrFirst00000000'))).toEqual({ status: 200, body: { status: 'processed' } });
+    expect(provider.calls).toEqual(['getCharge', 'cancelSubscription', 'refund']);
+    expect(store.events).toContain('orphan:chr_test_FirstNoTrial00000');
+    await send(body('charge.creation.succeeded', 'chr_test_FirstNoTrial00000', 'evt_test_ChrFirst00000001'));
+    expect(provider.calls.filter((c) => c === 'refund')).toHaveLength(1);
+    expect(store.events.filter((e) => e.startsWith('refund:'))).toHaveLength(1);
+    expect(store.plusUsers.size).toBe(0);
+  });
+
+  it('a refund that fails leaves needs_refund; a cancel that fails after the refund is retried without refunding again', async () => {
+    const a = setup({ ...monthly, status: 'failed', providerRef: SXN });
+    a.provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_Unheld000000000', amountMinor: 400, orderId: ORDER, subscriptionRef: SXN }) };
+    a.provider.answers.refund = providerError('unavailable', 'network');
+    expect(await a.send(body('charge.creation.succeeded', 'chr_test_Unheld000000000'))).toEqual({ status: 200, body: { status: 'needs_refund' } });
+    const b = setup({ ...monthly, status: 'failed', providerRef: SXN });
+    b.provider.answers.getCharge = a.provider.answers.getCharge;
+    b.provider.answers.cancelSubscription = providerError('unavailable', 'network');
+    expect((await b.send(body('charge.creation.succeeded', 'chr_test_Unheld000000000'))).status).toBe(500);
+    b.provider.answers.cancelSubscription = undefined;
+    expect(await b.send(body('charge.creation.succeeded', 'chr_test_Unheld000000000'))).toEqual({ status: 200, body: { status: 'processed' } });
+    expect(b.provider.calls.filter((c) => c === 'refund')).toHaveLength(1);
+  });
+
+  it('a charge whose subscription is still being activated (order processing) is retried later, never flagged', async () => {
+    const { send, store, provider } = setup({ ...monthly, trialDays: 0 });
+    provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_Early00000000000', amountMinor: 400, orderId: ORDER, subscriptionRef: null }) };
+    expect((await send(body('charge.creation.succeeded', 'chr_test_Early00000000000', 'evt_test_Early00000000000'))).status).toBe(500);
+    provider.answers.getCharge = { ok: true, value: charge({ id: 'chr_test_Early00000000001', amountMinor: 400, orderId: null, subscriptionRef: SXN }) };
+    expect((await send(body('charge.creation.succeeded', 'chr_test_Early00000000001', 'evt_test_Early00000000001'))).status).toBe(500);
+    expect(store.orders.get(ORDER)?.status).toBe('processing');
+    expect(store.events.some((e) => e.startsWith('orphan:'))).toBe(false);
+  });
+});

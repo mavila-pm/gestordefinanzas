@@ -54,6 +54,18 @@ export function planState(sub: Pick<SubscriptionRow, 'plan' | 'status' | 'trial_
   return 'free';
 }
 
+/**
+ * A Mensual/Anual the provider can still charge: it has a provider reference, its renewal was never cancelled and it
+ * is not closed — whatever the plan state (a lapsed past_due is Free but Culqi may still charge it). While it holds,
+ * nothing else is bought: the person cancels it first, so there are never two live subscriptions. Mirror of SQL
+ * public.billing_renewal_open (migration 20261020000055), checked by tests/db/entitlements-parity.test.ts.
+ */
+export function renewalStillOpen(sub: { status?: string | null; billing_plan?: string | null; provider_ref?: string | null; cancel_at_period_end?: boolean | null } | null): boolean {
+  if (!sub) return false;
+  return (sub.billing_plan === 'monthly' || sub.billing_plan === 'annual') && !!sub.provider_ref && sub.cancel_at_period_end !== true
+    && (sub.status === 'trialing' || sub.status === 'active' || sub.status === 'past_due');
+}
+
 export interface PlanConfig {
   trial_days: number;
   /** Days with Plus after a paid period ends while its renewal is still being confirmed (plan_config). */

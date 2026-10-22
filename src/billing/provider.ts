@@ -47,6 +47,8 @@ export interface ProviderPlan {
   freeInitialCycles: { count: number; unit: number } | null;
   /** The plan charges something when the subscription is created (no free first period). */
   chargesAtStart: boolean;
+  /** Number of initial cycles of any kind (free or at another price); 0 when the plan has none. */
+  initialCycles: number;
   livemode: boolean;
 }
 

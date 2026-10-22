@@ -121,10 +121,11 @@ export async function payLifetime(deps: CheckoutDeps, i: { orderId: string; user
 export function planMatches(plan: ProviderPlan, order: ClaimedOrder): boolean {
   if (plan.amountMinor !== order.amountMinor || plan.currency !== order.currency) return false;
   if (plan.interval !== (order.planCode === 'monthly' ? 'month' : 'year') || plan.intervalCount !== 1) return false;
-  if (order.trialDays === 0) return !plan.freeInitialCycles && plan.chargesAtStart;
+  // No trial: no initial cycles at all — neither free months nor a first charge at another price.
+  if (order.trialDays === 0) return plan.initialCycles === 0 && !plan.freeInitialCycles && plan.chargesAtStart;
   // The free period must be exactly the trial the person accepted (UNVERIFIED: unit 1 = day).
   const f = plan.freeInitialCycles;
-  return !!f && !plan.chargesAtStart && f.unit === TRIAL_UNIT_DAY && f.count === order.trialDays;
+  return !!f && !plan.chargesAtStart && plan.initialCycles === f.count && f.unit === TRIAL_UNIT_DAY && f.count === order.trialDays;
 }
 /** Culqi interval_unit_time for days (UNVERIFIED, see src/billing/culqi.ts). */
 export const TRIAL_UNIT_DAY = 1;
@@ -212,16 +213,19 @@ export async function settleSubscription(
     // Settled before with THIS subscription (a replay): nothing more to do.
     const o = await store.findOrder(orderId);
     if (o && o.providerRef === s.id && (o.status === 'paid' || o.status === 'trialing')) return { status: o.status as 'paid' | 'trialing', orderId };
-    // Not what the person accepted (trial length, dates, already Plus): stop it at Culqi now, close the order and
-    // flag it for review (a plan that charged at creation would need a refund the owner checks in the ledger).
+    // Not what the person accepted (trial length, dates, already Plus, an older renewal still open): stop it at Culqi
+    // now and close the order WITH the subscription reference, so every later event of it is attributed: a failed
+    // cancel is retried by its next webhook, and any charge it makes is flagged and refunded (culqi-webhook.ts).
     const cancel = await provider.cancelSubscription(s.id);
-    deps.log?.({ event: 'billing_subscription_refused', code: e.code, canceled_at_provider: cancel.ok });
+    deps.log?.({ event: 'billing_subscription_refused', code: clip(e.code), canceled_at_provider: cancel.ok || cancel.kind === 'not_found' });
     try {
       await store.failOrder(orderId, clip(`activation_refused:${e.code}`), s.id);
     } catch (f) {
       if (!(f instanceof BillingRefused)) throw f;
     }
-    return { status: 'needs_refund', code: e.code };
+    // A trial charged nothing. Without a trial the plan charged at creation: that charge is refunded when its webhook
+    // arrives (flagged as needs_refund in the ledger until then).
+    return order.trialDays > 0 ? { status: 'refused', code: e.code } : { status: 'needs_refund', code: e.code };
   }
 }
 
@@ -233,8 +237,15 @@ export async function cancelRenewal(deps: CheckoutDeps, i: { userId: string; sub
   const { store, provider } = deps;
   if (!isCulqiId(i.subRef, 'sxn', provider.livemode)) return { ok: false, code: 'bad_subscription' };
   const r = await provider.cancelSubscription(i.subRef);
-  // Already gone at Culqi (a previous attempt cancelled it but the database step did not finish): record it now.
-  if (!r.ok && r.kind !== 'not_found') return { ok: false, code: r.code };
+  if (!r.ok) {
+    if (r.kind !== 'not_found') return { ok: false, code: r.code };
+    // DELETE said "not found": maybe a previous attempt cancelled it and the database step did not finish. Recorded
+    // only when Culqi confirms it is gone (GET 404); anything else is not proof that no other charge can happen.
+    // UNVERIFIED: whether a cancelled subscription answers GET 404 or 200 with a status (meanings not published).
+    const g = await provider.getSubscription(i.subRef);
+    if (g.ok) return { ok: false, code: 'still_at_provider' };
+    if (g.kind !== 'not_found') return { ok: false, code: g.code };
+  }
   try {
     return { ok: true, until: await store.cancel(i.userId, provider.name, i.subRef) };
   } catch (e) {

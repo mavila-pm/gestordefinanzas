@@ -35,6 +35,14 @@ export interface BillingStore {
   cancel(userId: string, provider: string, subRef: string): Promise<Date | null>;
   refund(provider: string, chargeRef: string, refundRef: string, amountMinor: number, currency: string): Promise<string>;
   findOrder(orderId: string): Promise<OrderRow | null>;
+  /** The order the provider object (charge or subscription) was settled or closed with, if any. */
+  findOrderByRef(provider: string, ref: string): Promise<OrderRow | null>;
+  /**
+   * A successful charge of a subscription no row holds (billing_flag_charge): recorded once as needs_refund. 'ours'
+   * when an order or a recorded cancellation links the subscription to Velsuno (refund it); else the owner reviews it.
+   * Refused with 'subscription_known' when a row holds the subscription (a period charge).
+   */
+  flagCharge(i: { provider: string; chargeRef: string; subRef: string; amountMinor: number; currency: string; livemode: boolean; code: string }): Promise<{ state: 'flagged' | 'duplicate'; ours: boolean }>;
   findSubscription(provider: string, ref: string): Promise<SubscriptionRef | null>;
   /** Webhook receipt (idempotency): 'new' (process it), 'retry' (received before, never closed) or 'done'. */
   receive(provider: string, eventRef: string, type: string, objectRef: string | null, livemode: boolean | null): Promise<{ id: number; state: 'new' | 'retry' | 'done' }>;

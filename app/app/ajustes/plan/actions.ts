@@ -32,5 +32,7 @@ export async function cancelRenewalAction(_p: ActionState, form: FormData): Prom
   const r = await cancelRenewal(deps, { userId: user.id, subRef: sub.provider_ref });
   if (!r.ok) return { error: CANCEL_FAILED };
   revalidatePath('/app', 'layout');
-  return { message: r.until ? `Listo. Conservas Plus hasta el ${billingDate(r.until.toISOString())}. No se hará ningún otro cobro.` : 'Listo. No se hará ningún otro cobro.' };
+  // A cancelled renewal has no grace days: Plus stays only until a date still ahead (else the plan is Free now).
+  const until = r.until && r.until.getTime() > Date.now() ? r.until : null;
+  return { message: until ? `Listo. Conservas Plus hasta el ${billingDate(until.toISOString())}. No se hará ningún otro cobro.` : 'Listo. No se hará ningún otro cobro. Quedas en Free con todos tus datos.' };
 }
