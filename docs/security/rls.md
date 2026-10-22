@@ -51,5 +51,14 @@ once the account is complete (`already_registered`, nothing rewritten) and answe
 account per 24 h (`too_many_attempts` after that, even for a free number), so a signed-in account cannot enumerate
 which +51 numbers have an account. Residual: each new account (one real inbox each) gets its own 5 answers.
 
-Live check after applying (expected: only `cap_spend`, `login_attempt`):
-`select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'EXECUTE') order by 1;`
+Live check after applying (expected: only `cap_spend`, `login_attempt`; extension functions are left out, as in the test):
+`select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.prokind = 'f' and has_function_privilege('anon', p.oid, 'EXECUTE') and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e') order by 1;`
+
+Rollback of 049 (registration only; the trigger-function revoke needs none). Granting `complete_registration` again
+is not enough on its own: the app falls back to it only on PGRST202 (function missing), never on a permission error.
+- With a deploy: ship an app version that calls `complete_registration` directly, then
+  `grant execute on function public.complete_registration(text, text, text, date, text, text) to authenticated;`
+- Without a deploy (PO, SQL Editor; the connector cannot run a DROP):
+  `grant execute on function public.complete_registration(text, text, text, date, text, text) to authenticated;
+  drop function public.finish_registration(text, text, text, date, text, text); notify pgrst, 'reload schema';`
+  `registration_phone_refusals` can stay (private, unused).

@@ -220,4 +220,17 @@ describe.skipIf(!DATABASE_URL)('registration', () => {
       await asRole(pool, role, role === 'anon' ? null : USER_A, async (c) => { expect(await errorCode(c, old)).toBe('42501'); });
     }
   });
+
+  it('documented rollback without a deploy (docs/security/rls.md) brings back the old path; rolled back here', async () => {
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      await c.query('reset role');
+      await c.query(`grant execute on function public.complete_registration(text, text, text, date, text, text) to authenticated;
+        drop function public.finish_registration(text, text, text, date, text, text); notify pgrst, 'reload schema';`);
+      await setPassword(USER_A, c);
+      expect(await errorCode(c, complete(await lima(c, 30)))).toBe('42883'); // gone: PostgREST answers PGRST202 → app fallback
+      await c.query(`select public.complete_registration('Ana María', 'Pérez Soto', '+51987654321', $1, '2026-10-08', '2026-10-08')`, [await lima(c, 30)]);
+      expect(await status(c)).toMatchObject({ required: false, completed: true });
+    });
+    expect((await pool.query(`select to_regprocedure('public.finish_registration(text, text, text, date, text, text)') is not null ok`)).rows[0].ok).toBe(true);
+  });
 });

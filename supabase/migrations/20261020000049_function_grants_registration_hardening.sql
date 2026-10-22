@@ -18,10 +18,19 @@
 --    invalid_phone, invalid_birth_date, under_age, consent_version, password_step_pending) still raise: they reveal
 --    nothing about other people. Calls of one account are serialised by a row lock on its profile, so parallel calls
 --    cannot outrun the counter.
---    The old complete_registration stays in place (no DROP, like 047) but nobody can execute it any more: the
---    oracle is closed the moment this applies. Order: ship the app first (app/auth/actions.ts calls
+--    The old complete_registration stays in place (nothing removed, like 047) but nobody can execute it any more:
+--    the oracle is closed the moment this applies. Order: ship the app first (app/auth/actions.ts calls
 --    finish_registration and, only while this migration is not applied, falls back to the old function); then apply.
---    Rollback: grant execute on the old function to authenticated again.
+--    Rollback (registration only; part 1 needs none, triggers fire without EXECUTE). Granting the old function again
+--    is NOT enough: the app falls back only on PGRST202 (function missing), never on a permission error, so while
+--    finish_registration exists the old one is never called. Either
+--      a) deploy an app version that calls complete_registration directly, then
+--         `grant execute on function public.complete_registration(text, text, text, date, text, text) to authenticated;`
+--      or b) without a deploy, the PO in the SQL Editor (statements the connector cannot run): grant the old function
+--         as in a), remove public.finish_registration(text, text, text, date, text, text), then
+--         `notify pgrst, 'reload schema';` so PostgREST answers PGRST202 and the app falls back.
+--    Exact statements: docs/security/rls.md ("Rollback of 049").
+--    registration_phone_refusals can stay (private, unused once finish_registration is gone).
 
 -- ── 1. Trigger functions: no direct EXECUTE ───────────────────────────────────────────────────────────────────
 do $$
@@ -57,8 +66,8 @@ alter table public.registration_phone_refusals enable row level security;
 revoke all on public.registration_phone_refusals from public, anon, authenticated;
 
 -- ── 2. Registration: replacement function; the old one is no longer executable ────────────────────────────────
--- A new name because the return type changes (void → text), which CREATE OR REPLACE cannot do, and a DROP would keep
--- this migration out of the connector (docs/runbooks/supabase-migrations.md).
+-- A new name because the return type changes (void → text), which CREATE OR REPLACE cannot do, and removing the old
+-- function first would keep this migration out of the connector (docs/runbooks/supabase-migrations.md).
 revoke all on function public.complete_registration(text, text, text, date, text, text) from public, anon, authenticated;
 
 create function public.finish_registration(p_given text, p_family text, p_phone text, p_birth date, p_terms text, p_privacy text)

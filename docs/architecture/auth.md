@@ -8,7 +8,7 @@
   `phone_taken` answers; the password step by the trigger `on_auth_password_changed`, 031); `lib/registration.ts` gates `/app` and `/bienvenida`
   pages and `lib/supabase/proxy.ts` refuses POSTs from unfinished accounts (403). Accounts created before
   2026-10-08 05:00 UTC are grandfathered. Emails, SMTP and dashboard settings: `docs/runbooks/auth-email.md`.
-- Session: `@supabase/ssr` cookies, `httpOnly`, `Secure` in production, `SameSite=Lax` (`authCookieOptions()`, ADR-0017).
+- Session: `@supabase/ssr` cookies, `httpOnly`, `Secure` in production, `SameSite=Lax` (`authCookieOptions()`, ADR-0018).
   `proxy.ts` refreshes the session on every request and redirects `/app/*` and `/bienvenida` to `/login` when
   `auth.getClaims()` (JWT signature checked locally, ES256) has no user; `app/app/layout.tsx` re-validates on every
   protected render (defense in depth). Password flows keep `getUser()`. A revoked access token stays valid until it
@@ -41,7 +41,7 @@
   would enumerate accounts. The failure is logged server-side as `password_reset_request_failed` (status + code,
   never the email). Test: `tests/password-reset.test.ts` (action-level, Supabase stubbed, no emails).
 - Email delivery: custom SMTP (Brevo) since 2026-10-08; sender/domain setup pending (`docs/runbooks/auth-email.md` §3).
-- Security headers (ADR-0017): X-Frame-Options DENY, nosniff, strict referrer, restrictive Permissions-Policy, COOP
+- Security headers (ADR-0018): X-Frame-Options DENY, nosniff, strict referrer, restrictive Permissions-Policy, COOP
   same-origin, HSTS over https, nonce-based CSP in report-only mode (`/api/csp-report`).
 
 ## Supabase dashboard settings (manual, Product Owner)

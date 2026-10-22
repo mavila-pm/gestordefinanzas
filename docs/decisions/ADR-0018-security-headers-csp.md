@@ -1,6 +1,7 @@
-# ADR-0017 — Security headers, report-only CSP and session cookies
+# ADR-0018 — Security headers, report-only CSP and session cookies
 
 Status: accepted (2026-10-20, FRONT A auth/security audit). CSP stays **report-only** until the step below.
+(Numbered 0018: ADR-0017 is partial payments and reserves, from the planning front of the same date.)
 
 ## Decision
 - **Static headers** (`next.config.ts`, every path): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
@@ -8,7 +9,9 @@ Status: accepted (2026-10-20, FRONT A auth/security audit). CSP stays **report-o
   `Cross-Origin-Opener-Policy: same-origin`; `poweredByHeader: false`.
 - **Per request** (`proxy.ts`, `src/web/security-headers.ts`): `Strict-Transport-Security: max-age=63072000;
   includeSubDomains` only when the request came over https (`x-forwarded-proto`, else the URL). No `preload`: that
-  is a hard-to-undo owner decision for the production domain.
+  is a hard-to-undo owner decision for the production domain. Before production on the apex domain, the owner checks
+  that no subdomain has to stay on http (for example an email click-tracking CNAME, such as Brevo's): with
+  `includeSubDomains` browsers would refuse it over http. If one does, drop `includeSubDomains` or serve it over https.
 - **CSP** `Content-Security-Policy-Report-Only` with a fresh 128-bit nonce per request. The proxy replaces any
   client-sent `x-nonce` / `content-security-policy` request header, puts the nonce on the request (Next.js 16 reads it
   from the request CSP header, report-only included, to tag its own scripts; `app/layout.tsx` reads `x-nonce` for the
@@ -22,7 +25,9 @@ Status: accepted (2026-10-20, FRONT A auth/security audit). CSP stays **report-o
 - **Reports**: `POST /api/csp-report` (public, untrusted): ≤ 8 KB read (413 above), ≤ 5 reports per request, one
   `csp_violation` JSON line each with `document`, `blocked`, `directive`, `disposition`, `source`, `line`, `column`;
   URLs keep scheme + host + path only (auth links carry `token_hash`), control characters removed, values ≤ 200 chars,
-  script samples never logged. Nothing is stored.
+  script samples never logged. Nothing is stored. Log volume is capped per server instance (`cspLogLimiter`): each
+  directive + blocked pair once a minute, at most 20 pairs a minute, the rest counted in one `csp_violation_dropped`
+  line, so a script posting in a loop cannot flood the logs.
 - **Session cookies**: `authCookieOptions()` (`httpOnly`, `Secure` in production, `SameSite=Lax`, `path=/`) on both
   `createServerClient` calls. No browser Supabase client exists; only the `vs-*` preference cookies are read by scripts.
 

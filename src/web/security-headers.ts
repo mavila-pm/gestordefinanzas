@@ -3,7 +3,11 @@
  * permissions, COOP) live in next.config.ts; proxy.ts adds these to every response it handles.
  */
 
-/** HSTS: two years, subdomains included, no preload (preload is a separate, hard-to-undo owner decision). */
+/**
+ * HSTS: two years, subdomains included, no preload (preload is a separate, hard-to-undo owner decision). Before the
+ * production apex domain: the owner checks that no subdomain must stay http (e.g. an email click-tracking CNAME), since
+ * includeSubDomains forces https on all of them (ADR-0018).
+ */
 export const HSTS = 'max-age=63072000; includeSubDomains';
 
 /**
@@ -18,7 +22,7 @@ export function isHttps(forwardedProto: string | null | undefined, protocol: str
 // ── Content-Security-Policy (REPORT-ONLY) ───────────────────────────────────────────────────────────────────────
 /**
  * Report-only on purpose: browsers report violations to CSP_REPORT_PATH and block nothing. Switching to the
- * enforcing header is a separate step, once the reports from Preview are clean (ADR-0017).
+ * enforcing header is a separate step, once the reports from Preview are clean (ADR-0018).
  */
 export const CSP_HEADER = 'Content-Security-Policy-Report-Only';
 export const CSP_REPORT_PATH = '/api/csp-report';
