@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError, RESET_SENT } from '../src/web/password-reset';
+import { emailLinkOutcome, newPasswordError, passwordResetOutcome, REGISTRATION_TOO_MANY, registrationError, registrationOutcome, RESET_SENT } from '../src/web/password-reset';
 
 /**
  * Anti-enumeration for password recovery (spec §86). Supabase returns 429 `over_email_send_rate_limit` only for
@@ -34,13 +34,20 @@ describe('passwordResetOutcome (pure policy)', () => {
 // ── The real server action, with Next.js and Supabase stubbed ────────────────────────────────────────────────
 const resetPasswordForEmail = vi.fn();
 const signInWithOtp = vi.fn();
+const updateUser = vi.fn();
+const signOut = vi.fn();
+const rpc = vi.fn();
+const authUser = vi.fn();
+const calls: string[] = [];
+const redirect = vi.fn((to: string) => { calls.push(`redirect:${to}`); });
 vi.mock('server-only', () => ({}));
 // Cap is covered in tests/cap.test.ts; here the person already passed it (the subject is anti-enumeration).
 vi.mock('../lib/cap', () => ({ capPassed: async () => true }));
 vi.mock('next/headers', () => ({ cookies: async () => ({ set: vi.fn(), get: vi.fn(), getAll: () => [] }) }));
-vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
+vi.mock('next/navigation', () => ({ redirect: (to: string) => redirect(to) }));
 vi.mock('../lib/supabase/server', () => ({
-  createSupabaseServerClient: async () => ({ auth: { resetPasswordForEmail, signInWithOtp } }),
+  createSupabaseServerClient: async () => ({ auth: { resetPasswordForEmail, signInWithOtp, updateUser, signOut }, rpc }),
+  authUser: (...a: unknown[]) => authUser(...a),
 }));
 
 const form = (email: string) => { const f = new FormData(); f.set('email', email); return f; };
@@ -120,5 +127,144 @@ describe('signup (email only): same answer for new and registered addresses; err
     expect(registrationError('under_age')).toBe('Velsuno es para personas mayores de 18 años.');
     expect(registrationError('phone_taken')).toBe('Ese número ya está registrado en otra cuenta. Usa otro número o entra con esa cuenta.');
     expect(registrationError('duplicate key value violates something internal')).toBe('No pudimos guardar tus datos. Intenta de nuevo.');
+  });
+});
+
+describe('updatePassword (recovery link → new password): other devices are signed out', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  const pw = (password: string) => { const f = new FormData(); f.set('password', password); return f; };
+  beforeEach(() => {
+    for (const m of [updateUser, signOut, authUser, redirect]) m.mockClear();
+    calls.length = 0;
+    authUser.mockResolvedValue({ id: 'u1', email: null });
+    updateUser.mockReset();
+    signOut.mockReset();
+    signOut.mockImplementation(async (o: unknown) => { calls.push(`signOut:${JSON.stringify(o)}`); return { error: null }; });
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => warn.mockRestore());
+
+  it('success → signOut({ scope: "others" }) exactly once, then redirect to /app', async () => {
+    const { updatePassword } = await import('../app/auth/actions');
+    updateUser.mockResolvedValueOnce({ data: {}, error: null });
+    await updatePassword({}, pw('ahorro2026lima'));
+    expect(updateUser).toHaveBeenCalledWith({ password: 'ahorro2026lima' });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith({ scope: 'others' });
+    expect(calls).toEqual(['signOut:{"scope":"others"}', 'redirect:/app']);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('updateUser error → plain message, no sign-out, no redirect', async () => {
+    const { updatePassword } = await import('../app/auth/actions');
+    updateUser.mockResolvedValueOnce({ data: null, error: { status: 422, code: 'weak_password' } });
+    expect(await updatePassword({}, pw('ahorro2026lima'))).toEqual({ error: 'Esa contraseña es fácil de adivinar. Prueba con otra.' });
+    expect(signOut).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it('a sign-out failure is logged as {event, status, code} without the password, and the person still continues', async () => {
+    const { updatePassword } = await import('../app/auth/actions');
+    updateUser.mockResolvedValueOnce({ data: {}, error: null });
+    signOut.mockResolvedValueOnce({ error: { status: 500, code: 'unexpected_failure', message: 'boom' } });
+    await updatePassword({}, pw('ahorro2026lima'));
+    expect(warn).toHaveBeenCalledTimes(1);
+    const logged = String(warn.mock.calls[0]![0]);
+    expect(JSON.parse(logged)).toEqual({ event: 'password_reset_signout_others_failed', status: 500, code: 'unexpected_failure' });
+    expect(logged).not.toContain('ahorro2026lima');
+    expect(redirect).toHaveBeenCalledWith('/app');
+  });
+
+  it('expired link (no session) → asks for a new link; nothing is changed', async () => {
+    const { updatePassword } = await import('../app/auth/actions');
+    authUser.mockResolvedValueOnce(null);
+    expect(await updatePassword({}, pw('ahorro2026lima'))).toEqual({ error: 'Tu enlace venció. Pide uno nuevo.' });
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+});
+
+describe('completeProfile: finish_registration answers a status (migration 049)', () => {
+  const TAKEN = 'Ese número ya está registrado en otra cuenta. Usa otro número o entra con esa cuenta.';
+  const profileForm = () => {
+    const f = new FormData();
+    f.set('givenNames', 'Ana María'); f.set('familyNames', 'Pérez Soto'); f.set('phone', '987654321');
+    f.set('birthDate', '1990-04-20'); f.set('accept', 'on');
+    return f;
+  };
+  beforeEach(() => {
+    rpc.mockReset(); redirect.mockClear(); calls.length = 0;
+    authUser.mockResolvedValue({ id: 'u1', email: null });
+  });
+
+  it('pure mapping: ok / already_registered continue; refusals become copy; unknown fails closed', () => {
+    for (const ok of ['ok', 'already_registered']) expect(registrationOutcome(ok, null)).toEqual({ next: '/bienvenida' });
+    expect(registrationOutcome('phone_taken', null)).toEqual({ error: TAKEN });
+    expect(registrationOutcome('too_many_attempts', null)).toEqual({ error: REGISTRATION_TOO_MANY });
+    // Says what happened and when / how to try again (the window is 24 h; nothing sensitive in saying so).
+    expect(REGISTRATION_TOO_MANY).toBe('Probaste varios números ya registrados. Intenta de nuevo mañana con otro número.');
+    expect(registrationOutcome('something_new', null)).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
+    expect(registrationOutcome({ status: 'ok' }, null)).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
+    // An error wins over any data, and still never shows the provider's text.
+    expect(registrationOutcome('ok', { message: 'under_age' })).toEqual({ error: 'Velsuno es para personas mayores de 18 años.' });
+    expect(registrationOutcome(null, { message: 'permission denied for function complete_registration' })).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
+  });
+
+  it('an empty answer is success only from the old void complete_registration (fallback), never from finish_registration', () => {
+    for (const empty of [null, undefined, '']) {
+      expect(registrationOutcome(empty, null)).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
+      expect(registrationOutcome(empty, null, true)).toEqual({ next: '/bienvenida' });
+    }
+  });
+
+  it('the action: an empty answer from finish_registration stays on the form (fail closed)', async () => {
+    const { completeProfile } = await import('../app/auth/actions');
+    rpc.mockResolvedValueOnce({ data: null, error: null });
+    expect(await completeProfile({}, profileForm())).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it('the action sends the normalized values once and redirects only on ok / already_registered', async () => {
+    const { completeProfile } = await import('../app/auth/actions');
+    for (const answer of ['ok', 'already_registered']) {
+      rpc.mockResolvedValueOnce({ data: answer, error: null });
+      expect(await completeProfile({}, profileForm())).toBeUndefined();
+    }
+    expect(calls).toEqual(['redirect:/bienvenida', 'redirect:/bienvenida']);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).toHaveBeenCalledWith('finish_registration', {
+      p_given: 'Ana María', p_family: 'Pérez Soto', p_phone: '+51987654321', p_birth: '1990-04-20', p_terms: '2026-10-08', p_privacy: '2026-10-08',
+    });
+  });
+
+  it('only while 049 is not applied (PGRST202) it falls back to complete_registration; any other error does not', async () => {
+    const { completeProfile } = await import('../app/auth/actions');
+    rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
+    rpc.mockResolvedValueOnce({ data: null, error: null }); // old void function: success
+    expect(await completeProfile({}, profileForm())).toBeUndefined();
+    expect(rpc.mock.calls.map((c) => c[0])).toEqual(['finish_registration', 'complete_registration']);
+    expect(rpc.mock.calls[1]![1]).toEqual(rpc.mock.calls[0]![1]);
+    expect(calls).toEqual(['redirect:/bienvenida']);
+    // The old function's raise is still mapped to copy.
+    rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } });
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'phone_taken' } });
+    expect(await completeProfile({}, profileForm())).toEqual({ error: TAKEN });
+    // After 049 the old function is not executable: a permission error is never retried elsewhere.
+    rpc.mockReset();
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'permission denied for function finish_registration' } });
+    expect(await completeProfile({}, profileForm())).toEqual({ error: 'No pudimos guardar tus datos. Intenta de nuevo.' });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('phone_taken and too_many_attempts stay on the form with plain copy; no redirect', async () => {
+    const { completeProfile } = await import('../app/auth/actions');
+    rpc.mockResolvedValueOnce({ data: 'phone_taken', error: null });
+    expect(await completeProfile({}, profileForm())).toEqual({ error: TAKEN });
+    rpc.mockResolvedValueOnce({ data: 'too_many_attempts', error: null });
+    expect(await completeProfile({}, profileForm())).toEqual({ error: REGISTRATION_TOO_MANY });
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'consent_version', code: '22023' } });
+    expect(await completeProfile({}, profileForm())).toEqual({ error: 'Actualizamos los Términos o la Política de Privacidad. Recarga la página y vuelve a aceptarlos.' });
+    expect(redirect).not.toHaveBeenCalled();
   });
 });

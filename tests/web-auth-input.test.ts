@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { limaToday } from '../src/domain/dates';
-import { ageOn, birthProblem, limaMonth, limaMonthRange, normalizePhone, parseBirthDate, parseEmail, passwordProblem, safeNextPath } from '../src/web/auth-input';
+import { ageOn, birthProblem, EXISTING_ACCOUNT_NOTICE, limaMonth, limaMonthRange, normalizePhone, parseBirthDate, parseEmail, passwordProblem, registrationLanding, safeNextPath, sameOriginPost } from '../src/web/auth-input';
 
 describe('auth input validation', () => {
   it('emails', () => {
@@ -62,5 +62,38 @@ describe('auth input validation', () => {
     expect(limaMonthRange('2026-12')).toEqual({ from: '2026-12-01T05:00:00.000Z', to: '2027-01-01T05:00:00.000Z' });
     expect(limaMonthRange('2026-13')).toBeNull();
     expect(limaMonthRange("2026-09' or 1=1")).toBeNull();
+  });
+});
+
+describe('registrationLanding (where an email link continues at /crear-cuenta)', () => {
+  it('a new account goes to its step; an account that already existed goes to the app with the notice', () => {
+    expect(registrationLanding('password')).toBe('/crear-cuenta/contrasena');
+    expect(registrationLanding('profile')).toBe('/crear-cuenta/perfil');
+    expect(registrationLanding('done')).toBe('/app?cuenta=existente');
+  });
+  it('step unreadable → the app WITHOUT the notice (a new account is not told it already had one; the layout re-checks)', () => {
+    expect(registrationLanding('unknown')).toBe('/app');
+  });
+  it('the notice tells the inbox owner they already had an account and how to enter next time', () => {
+    expect(EXISTING_ACCOUNT_NOTICE).toBe('Ya tenías una cuenta con este correo. Entraste con el enlace; también puedes entrar con tu contraseña.');
+  });
+});
+
+describe('sameOriginPost (plain-form POST route handlers: /auth/logout)', () => {
+  const H = 'velsuno.example';
+  it('same origin passes; no Origin and no Sec-Fetch-Site (old browser, curl) passes like Next.js server actions', () => {
+    expect(sameOriginPost('https://velsuno.example', 'same-origin', H)).toBe(true);
+    expect(sameOriginPost(null, null, H)).toBe(true);
+    expect(sameOriginPost(null, 'same-origin', H)).toBe(true);
+  });
+  it('another site, another subdomain, an opaque or broken Origin → refused', () => {
+    expect(sameOriginPost('https://evil.example', 'cross-site', H)).toBe(false);
+    expect(sameOriginPost('https://evil.example', null, H)).toBe(false);
+    expect(sameOriginPost(null, 'cross-site', H)).toBe(false);
+    expect(sameOriginPost(null, 'same-site', H)).toBe(false);
+    expect(sameOriginPost('https://x.velsuno.example', null, H)).toBe(false);
+    expect(sameOriginPost('null', null, H)).toBe(false);
+    expect(sameOriginPost('not a url', null, H)).toBe(false);
+    expect(sameOriginPost('https://velsuno.example', null, null)).toBe(false);
   });
 });

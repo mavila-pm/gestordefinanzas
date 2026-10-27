@@ -55,9 +55,31 @@ export function newPasswordError(error: { status?: number; code?: string }): str
   return 'No pudimos guardar tu contraseña. Intenta de nuevo.';
 }
 
-/** complete_registration errors (SQL exception messages) to copy. */
+/** After 5 phone_taken answers in 24 h (migration 049): what happened, and when and how to try again. */
+export const REGISTRATION_TOO_MANY = 'Probaste varios números ya registrados. Intenta de nuevo mañana con otro número.';
+/** PostgREST: the function is not in the schema cache (finish_registration before migration 049 is applied). */
+export const REGISTRATION_RPC_MISSING = 'PGRST202';
+const REGISTRATION_FAILED = 'No pudimos guardar tus datos. Intenta de nuevo.';
+
+/**
+ * finish_registration answer (migration 049) → where the person goes, or the copy to show.
+ * 'ok' and 'already_registered' (double tap, back button: nothing is rewritten) both continue to /bienvenida.
+ * An empty answer is success only from the previous void complete_registration (`legacy`: the fallback while 049 is
+ * not applied); from finish_registration it is refused like any status this code does not know (fail closed).
+ */
+export type RegistrationOutcome = { next: '/bienvenida' } | { error: string };
+export function registrationOutcome(data: unknown, error: { message?: string } | null | undefined, legacy = false): RegistrationOutcome {
+  if (error) return { error: registrationError(error.message) };
+  if (data === 'ok' || data === 'already_registered') return { next: '/bienvenida' };
+  if (legacy && (data === null || data === undefined || data === '')) return { next: '/bienvenida' };
+  if (data === 'phone_taken') return { error: registrationError('phone_taken') };
+  if (data === 'too_many_attempts') return { error: REGISTRATION_TOO_MANY };
+  return { error: REGISTRATION_FAILED };
+}
+
+/** finish_registration / complete_registration errors (SQL exception messages) to copy. */
 export function registrationError(message: string | undefined): string {
-  if (!message) return 'No pudimos guardar tus datos. Intenta de nuevo.';
+  if (!message) return REGISTRATION_FAILED;
   if (message.includes('under_age')) return 'Velsuno es para personas mayores de 18 años.';
   if (message.includes('phone_taken')) return 'Ese número ya está registrado en otra cuenta. Usa otro número o entra con esa cuenta.';
   if (message.includes('invalid_phone')) return 'Escribe tu celular de 9 dígitos. Empieza con 9.';

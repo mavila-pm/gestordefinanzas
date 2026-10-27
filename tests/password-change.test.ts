@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
 import { passwordProblem } from '../src/web/auth-input';
 import { CODE_SENT, PASSWORD_CHANGED, parseReauthCode, passwordChangeOutcome, reauthRequestOutcome, revealState, submitGate } from '../src/web/password-change';
 
@@ -136,5 +137,51 @@ describe('changePassword action', () => {
     getUser.mockResolvedValueOnce({ data: { user: null }, error: { status: 401 } });
     await expect(changePassword({}, form('ahorro2026lima'))).rejects.toThrow('redirect:/login');
     expect(updateUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /auth/logout ("Cerrar sesión", a plain form outside /app)', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { signOut.mockClear(); warn = vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+  afterEach(() => warn.mockRestore());
+  const SAME = { origin: 'https://velsuno.example', host: 'velsuno.example', 'sec-fetch-site': 'same-origin' };
+  const post = (headers: Record<string, string> = SAME) => new NextRequest('https://velsuno.example/auth/logout', { method: 'POST', headers });
+
+  it('signs out this device only (scope local), then 303 to /login', async () => {
+    const { POST } = await import('../app/auth/logout/route');
+    const res = await POST(post());
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('https://velsuno.example/login');
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a revoke failure is logged (status/code only) and the person still lands on /login', async () => {
+    const { POST } = await import('../app/auth/logout/route');
+    signOut.mockResolvedValueOnce({ error: { status: 500, code: 'unexpected_failure' } } as never);
+    const res = await POST(post());
+    expect(res.headers.get('location')).toBe('https://velsuno.example/login');
+    expect(JSON.parse(String(warn.mock.calls[0]![0]))).toEqual({ event: 'logout_failed', status: 500, code: 'unexpected_failure' });
+  });
+
+  it('a cross-site form cannot sign anyone out (403, Supabase not called)', async () => {
+    const { POST } = await import('../app/auth/logout/route');
+    expect((await POST(post({ origin: 'https://evil.example', host: 'velsuno.example' }))).status).toBe(403);
+    expect((await POST(post({ 'sec-fetch-site': 'cross-site', host: 'velsuno.example' }))).status).toBe(403);
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('behind Vercel the forwarded host is the one compared', async () => {
+    const { POST } = await import('../app/auth/logout/route');
+    const res = await POST(post({ origin: 'https://velsuno.example', host: 'internal.vercel', 'x-forwarded-host': 'velsuno.example' }));
+    expect(res.status).toBe(303);
+    expect((await POST(post({ origin: 'https://velsuno.example', host: 'internal.vercel', 'x-forwarded-host': 'velsuno.example, internal.vercel' }))).status).toBe(303);
+    expect((await POST(post({ origin: 'https://velsuno.example', host: 'velsuno.example', 'x-forwarded-host': 'evil.example' }))).status).toBe(403);
+  });
+
+  it('no server action is left for "Cerrar sesión" (it would post to /app and meet the registration gate)', async () => {
+    const actions = await import('../app/auth/actions');
+    expect('logout' in actions).toBe(false);
   });
 });

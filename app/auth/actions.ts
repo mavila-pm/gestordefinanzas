@@ -7,9 +7,9 @@ import { authUser, createSupabaseServerClient } from '../../lib/supabase/server'
 import { limaToday } from '../../src/domain/dates';
 import { AUTH_NEXT_COOKIE, authNextCookieOptions, birthProblem, normalizePhone, parseBirthDate, parseEmail, passwordProblem, PHONE_ERROR, safeNextPath } from '../../src/web/auth-input';
 import { PRIVACY_VERSION, TERMS_VERSION } from '../../src/web/legal';
-import { emailLinkOutcome, newPasswordError, passwordResetOutcome, registrationError } from '../../src/web/password-reset';
+import { emailLinkOutcome, newPasswordError, passwordResetOutcome, REGISTRATION_RPC_MISSING, registrationOutcome } from '../../src/web/password-reset';
 import { passwordChangeOutcome, parseReauthCode, reauthRequestOutcome, type ChangePasswordState } from '../../src/web/password-change';
-import { LOGIN_INVALID, LOGIN_SERVER, lockoutMessage, loginOutcome } from '../../src/web/login';
+import { LOGIN_INVALID, LOGIN_SERVER, lockedState, loginOutcome } from '../../src/web/login';
 import { capPassed } from '../../lib/cap';
 import { CAP_ERROR } from '../../lib/cap-core';
 
@@ -23,14 +23,19 @@ export interface FormState {
   message?: string;
   /** Registration: the link was sent (the form switches to "Revisa tu correo"). */
   sent?: true;
+  /** Login: password sign-in is locked for now; the form offers the email link and recovery (LOCKOUT_LINKS). */
+  locked?: true;
 }
 
 export async function login(_prev: FormState, form: FormData): Promise<FormState> {
   const email = parseEmail(form.get('email'));
   const password = form.get('password');
   if (!email || typeof password !== 'string' || !password) return { error: LOGIN_INVALID };
-  // Anti-bot first (Cap): a bot without a valid single-use token never reaches the lockout counter or Supabase Auth,
-  // so it cannot lock a real person's email either. The lockout below still applies to every verified attempt.
+  // Anti-bot first (Cap): a bot without a valid single-use token never reaches the lockout counter or Supabase Auth
+  // through this form. Cap does NOT protect the counter itself: public.login_attempt is executable by anon, so anyone
+  // with the publishable key can call /rest/v1/rpc/login_attempt directly and keep an email locked for password
+  // sign-in. The lock message therefore offers the email link and recovery (lockedState). Planned fix (owner
+  // decision, ADR-0016): run the counter with a server-only credential and revoke anon EXECUTE.
   if (!(await capPassed(form, 'login'))) return { error: CAP_ERROR };
   const supabase = await createSupabaseServerClient();
   // Progressive lockout (migrations 033/034): reserved in the database before the password is checked, keyed on the email.
@@ -41,12 +46,12 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
     console.warn(JSON.stringify({ event: 'login_gate_failed', code: gateError?.code ?? null }));
     return { error: LOGIN_SERVER };
   }
-  if (!g.allowed) return { error: lockoutMessage(g.wait_seconds) };
+  if (!g.allowed) return lockedState(g.wait_seconds);
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     const outcome = loginOutcome(error, g.wait_seconds);
     if (outcome.diagnostic) console.warn(JSON.stringify(outcome.diagnostic));
-    return { error: outcome.message };
+    return outcome.locked ? { error: outcome.message, locked: true } : { error: outcome.message };
   }
   const { error: resetError } = await supabase.rpc('login_succeeded', { p_ip: null });
   if (resetError) console.warn(JSON.stringify({ event: 'login_reset_failed', code: resetError.code ?? null }));
@@ -99,11 +104,17 @@ export async function completeProfile(_prev: FormState, form: FormData): Promise
   if (form.get('accept') !== 'on') return { error: 'Para continuar, acepta los Términos y la Política de Privacidad.' };
   const supabase = await createSupabaseServerClient();
   if (!(await authUser(supabase))) redirect('/login');
-  const { error } = await supabase.rpc('complete_registration', {
-    p_given: given, p_family: family, p_phone: phone, p_birth: birth, p_terms: TERMS_VERSION, p_privacy: PRIVACY_VERSION,
-  });
-  if (error) return { error: registrationError(error.message) };
-  redirect('/bienvenida');
+  // finish_registration (migration 049) answers a status ('ok' | 'already_registered' | 'phone_taken' |
+  // 'too_many_attempts'); validation problems still come back as errors. A finished registration is final and
+  // phone_taken answers are capped. Until 049 is applied the function does not exist yet (PGRST202): only then the
+  // previous complete_registration is used. Remove the fallback once 049 is live.
+  const args = { p_given: given, p_family: family, p_phone: phone, p_birth: birth, p_terms: TERMS_VERSION, p_privacy: PRIVACY_VERSION };
+  let { data, error } = await supabase.rpc('finish_registration', args);
+  const legacy = error?.code === REGISTRATION_RPC_MISSING;
+  if (legacy) ({ data, error } = await supabase.rpc('complete_registration', args));
+  const outcome = registrationOutcome(data, error, legacy);
+  if ('error' in outcome) return { error: outcome.error };
+  redirect(outcome.next);
 }
 
 export async function requestPasswordReset(_prev: FormState, form: FormData): Promise<FormState> {
@@ -128,6 +139,9 @@ export async function updatePassword(_prev: FormState, form: FormData): Promise<
   if (!(await authUser(supabase))) return { error: 'Tu enlace venció. Pide uno nuevo.' };
   const { error } = await supabase.auth.updateUser({ password: password as string });
   if (error) return { error: newPasswordError(error) };
+  // Recovery usually follows a suspected leak: other devices sign out, this one stays (same as changePassword).
+  const { error: outError } = await supabase.auth.signOut({ scope: 'others' });
+  if (outError) console.warn(JSON.stringify({ event: 'password_reset_signout_others_failed', status: outError.status ?? null, code: outError.code ?? null }));
   redirect('/app');
 }
 
@@ -159,10 +173,4 @@ export async function changePassword(prev: ChangePasswordState, form: FormData):
   const { error: reauthError } = await supabase.auth.reauthenticate();
   if (reauthError) console.warn(JSON.stringify({ event: 'password_reauth_failed', status: reauthError.status ?? null, code: reauthError.code ?? null }));
   return reauthRequestOutcome(reauthError);
-}
-
-export async function logout(): Promise<void> {
-  const supabase = await createSupabaseServerClient();
-  await supabase.auth.signOut();
-  redirect('/login');
 }

@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { reduceMotionFrom, textSizeFrom } from '../src/web/preferences';
 import './globals.css';
 
@@ -32,6 +32,8 @@ const SYSTEM_THEME = `document.documentElement.dataset.theme=matchMedia('(prefer
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const jar = await cookies();
+  // CSP nonce of this request (proxy.ts): the inline theme script must carry it.
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   const chosen = jar.get('vs-theme')?.value;
   const theme = chosen === 'light' || chosen === 'dark' ? chosen : undefined;
   // Device preferences (Ajustes → Apariencia / Accesibilidad), applied on the server: no flash, no layout jump.
@@ -39,7 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const motion = reduceMotionFrom(jar.get('vs-motion')?.value) ? 'reduce' : undefined;
   return (
     <html lang="es-PE" data-theme={theme} data-text={text === 'md' ? undefined : text} data-motion={motion} className={velsunoSans.variable} suppressHydrationWarning>
-      <head>{!theme && <script dangerouslySetInnerHTML={{ __html: SYSTEM_THEME }} />}</head>
+      <head>{!theme && <script nonce={nonce} dangerouslySetInnerHTML={{ __html: SYSTEM_THEME }} />}</head>
       <body>{children}</body>
     </html>
   );

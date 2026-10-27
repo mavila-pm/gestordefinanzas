@@ -3,12 +3,14 @@ import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabasePublicEnv } from '../env';
+import { authCookieOptions } from '../../src/web/auth-input';
 
 /** Per-request client acting as the signed-in user: every query is subject to RLS. */
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
   const { url, key } = supabasePublicEnv();
   return createServerClient(url, key, {
+    cookieOptions: authCookieOptions(process.env.NODE_ENV === 'production'),
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (toSet) => {

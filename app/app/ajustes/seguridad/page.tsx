@@ -1,8 +1,7 @@
 import { ActionForm } from '../../../../components/action-form';
 import { ChangePasswordForm } from '../../../../components/change-password-form';
-import { SettingsPage, SettingsRow, SettingsSection } from '../../../../components/settings';
+import { LogoutForm, SettingsPage, SettingsRow, SettingsSection } from '../../../../components/settings';
 import { Sheet } from '../../../../components/ui/sheet';
-import { logout } from '../../../auth/actions';
 import { signOutOthersAction } from '../actions';
 
 export const metadata = { title: 'Seguridad · Ajustes' };
@@ -25,7 +24,7 @@ export default function SecuritySettings() {
             <button type="submit" className="quiet" data-testid="signout-others">Cerrar otras sesiones</button>
           </ActionForm>
         </div>
-        <form action={logout} className="settings-row"><button type="submit" className="link" style={{ paddingLeft: 0 }}>Cerrar sesión</button></form>
+        <LogoutForm className="settings-row" />
       </SettingsSection>
     </SettingsPage>
   );
