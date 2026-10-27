@@ -1023,11 +1023,12 @@ html[data-motion="reduce"] .tw, html[data-motion="reduce"] .msg.fresh > .chat-ca
 .auth-login-art .brand, .auth-login-claim, .auth-login-panel { animation: rise-in 260ms var(--ease-out) both; }
 /* Orb: the body floats (8 px desktop / 4 px mobile, 8 s), the halo breathes on its own layer (10 s). Seamless loops:
    each keyframe set starts and ends on the same state. transform/opacity only; the orb box never moves (space kept). */
-.auth-login-orb { --orb-float: 4px; }
-@media (min-width: 1024px) { .auth-login-orb { --orb-float: 8px; } }
-@keyframes orb-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(calc(var(--orb-float) * -1)); } }
+/* Literal values (no custom properties inside @keyframes: Safari does not animate them reliably). */
+@keyframes orb-float-sm { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(0, -4px, 0); } }
+@keyframes orb-float { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(0, -8px, 0); } }
 @keyframes orb-breathe { 0%, 100% { transform: scale(1); opacity: .65; } 50% { transform: scale(1.025); opacity: .8; } }
-.auth-orb-body { animation: orb-float 8s cubic-bezier(0.45, 0, 0.55, 1) infinite; will-change: transform; }
+.auth-orb-body { animation: orb-float-sm 8s cubic-bezier(0.45, 0, 0.55, 1) infinite; will-change: transform; }
+@media (min-width: 1024px) { .auth-orb-body { animation-name: orb-float; } }
 .auth-orb-halo { opacity: .65; transform-origin: 50% 50%; animation: orb-breathe 10s cubic-bezier(0.45, 0, 0.55, 1) infinite; will-change: transform, opacity; }
 .auth-login input:not([type="checkbox"]) { transition: border-color var(--dur-2) var(--ease-out), outline-color var(--dur-2) var(--ease-out); }
 .auth-login button.with-arrow { transition: background-color var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out); }
