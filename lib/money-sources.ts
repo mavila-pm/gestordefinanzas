@@ -30,12 +30,12 @@ export async function loadMoneySources(supabase: SupabaseClient): Promise<MoneyS
     supabase.from('accounts').select('id,alias,kind,currency,active,institution_code,bank_name,last4').order('created_at'),
     supabase.from('cards').select('id,alias,kind,currency,active,institution_code,bank_name,last4,color,expiry_month,expiry_year,credit_limit_minor,statement_day,payment_day').order('created_at'),
     supabase.from('card_accounts').select('card_id,account_id'),
-    supabase.from('account_balance_checkpoints').select('account_id,amount_minor,as_of').order('as_of', { ascending: false }).limit(500),
-    supabase.from('card_used_checkpoints').select('card_id,used_minor,as_of').order('as_of', { ascending: false }).limit(200),
+    supabase.from('account_balance_checkpoints').select('account_id,currency,amount_minor,as_of').order('as_of', { ascending: false }).limit(500),
+    supabase.from('card_used_checkpoints').select('card_id,currency,used_minor,as_of').order('as_of', { ascending: false }).limit(200),
     supabase.from('balance_snapshots').select('currency,amount_minor,bank_minor,cash_minor,as_of').order('as_of', { ascending: false }).limit(20),
   ]);
-  const accCps: Checkpoint[] = (cps.data ?? []).map((r) => ({ ownerId: r.account_id, amountMinor: Number(r.amount_minor), asOf: r.as_of }));
-  const usedCps: Checkpoint[] = (used.data ?? []).map((r) => ({ ownerId: r.card_id, amountMinor: Number(r.used_minor), asOf: r.as_of }));
+  const accCps: Checkpoint[] = (cps.data ?? []).map((r) => ({ ownerId: r.account_id, amountMinor: Number(r.amount_minor), asOf: r.as_of, currency: r.currency as Currency }));
+  const usedCps: Checkpoint[] = (used.data ?? []).map((r) => ({ ownerId: r.card_id, amountMinor: Number(r.used_minor), asOf: r.as_of, currency: r.currency as Currency }));
   // Movements after the oldest checkpoint still in use (the latest one per account / card).
   const latestPer = new Map<string, string>();
   for (const c of [...accCps, ...usedCps]) if (!latestPer.has(c.ownerId) || c.asOf > latestPer.get(c.ownerId)!) latestPer.set(c.ownerId, c.asOf);
@@ -44,6 +44,7 @@ export async function loadMoneySources(supabase: SupabaseClient): Promise<MoneyS
     ? (await supabase.from('transactions').select('id,type,status,amount_minor,currency,occurred_at,account_id,card_id')
       .gt('occurred_at', since).order('occurred_at', { ascending: false }).limit(TX_LIMIT)).data ?? []
     : [];
+  const truncated = txRows.length >= TX_LIMIT;
   const txs: LiquidityTx[] = txRows.map((t) => ({
     id: t.id, type: t.type as TransactionType, status: t.status as TransactionStatus, amountMinor: Number(t.amount_minor), currency: t.currency as Currency,
     occurredAt: t.occurred_at, accountId: t.account_id, cardId: t.card_id,
@@ -55,7 +56,7 @@ export async function loadMoneySources(supabase: SupabaseClient): Promise<MoneyS
     const s = (snaps.data ?? []).find((r) => r.currency === cur);
     return s ? { currency: cur, amountMinor: Number(s.amount_minor), bankMinor: s.bank_minor === null ? null : Number(s.bank_minor), cashMinor: s.cash_minor === null ? null : Number(s.cash_minor), asOf: s.as_of } : null;
   };
-  const liq = Object.fromEntries(CURRENCIES.map((cur) => [cur, liquidity({ currency: cur, accounts: accountRows, checkpoints: accCps, txs, cards: engineCards, declared: declared(cur) })])) as Record<Currency, Liquidity>;
+  const liq = Object.fromEntries(CURRENCIES.map((cur) => [cur, liquidity({ currency: cur, accounts: accountRows, checkpoints: accCps, txs, cards: engineCards, declared: declared(cur), truncated })])) as Record<Currency, Liquidity>;
   const balanceOf = new Map(CURRENCIES.flatMap((cur) => liq[cur].accounts.map((a) => [a.id, a] as const)));
   const cardOf = new Map((links.data ?? []).map((l) => [l.account_id, l.card_id]));
   return {

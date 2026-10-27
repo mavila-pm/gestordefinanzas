@@ -33,6 +33,8 @@ export async function saveCardAction(_prev: ActionState, form: FormData): Promis
   const { data, error } = await supabase.rpc('save_money_source', {
     p_client_ref: submissionRef(form), p_card: cardJson(card), p_card_id: null, p_accounts: accountsJson(accounts),
   });
+  // The same submission already stored (a double tap racing itself): success, never "duplicate card".
+  if (error && error.code === '23505' && /client_ref/.test(`${error.message} ${error.details ?? ''}`)) return done('Tarjeta registrada.');
   if (error) return { error: text(error.code === '23505' ? 'duplicate_card' : error.message) };
   const cardId = (data as { card_id?: string } | null)?.card_id;
   // Past unlinked movements with these digits are linked in the database (only when this card is unambiguous).

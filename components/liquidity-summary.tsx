@@ -50,6 +50,8 @@ export function LiquiditySummary({ liquidity, creditAvailable, compact = false }
                       <li key={i} className="notice warning"><span>
                         {x.code === 'account_balance' ? <>Falta el saldo de {x.alias}. <Link href={`/app/tarjetas#a-${x.accountId}`}>Completar</Link></>
                           : x.code === 'cash_destination' ? <>Retiraste {m(x.amountMinor, c)}: ¿lo llevas en efectivo? <Link href="/app/tarjetas#efectivo">Agregar efectivo</Link></>
+                          : x.code === 'unassigned' ? <>{plural(x.count, 'movimiento no dice', 'movimientos no dicen')} de qué cuenta salió o a cuál entró ({m(x.amountMinor, c)}): aún no mueven tu saldo. <Link href="/app/movimientos">Revisar</Link></>
+                          : x.code === 'truncated' ? <>Tienes muchos movimientos desde tu último saldo. Actualiza tus saldos para que la cifra sea exacta.</>
                           : <>¿A qué cuenta fue tu transferencia de {m(x.amountMinor, c)}? <Link href={`/app/movimientos/${x.txId}`}>Indicar</Link></>}
                       </span></li>
                     ))}

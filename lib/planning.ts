@@ -132,11 +132,13 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     balances[cur] = { amountMinor: Number(b.amount_minor), asOf, stale: isBalanceStale({ currency: cur, asOf }, now, transactions),
       bankMinor: b.bank_minor == null ? null : Number(b.bank_minor), cashMinor: b.cash_minor == null ? null : Number(b.cash_minor) };
   }
-  // Derived liquidity wins over the declared total (never added to it): it is current, so never stale.
+  // Derived liquidity wins over the declared total (never added to it). It is current, but a partial one (an account
+  // without balance, movements that name no account, a truncated read) is flagged stale: the plan asks to complete it
+  // instead of presenting an incomplete figure as the whole.
   for (const cur of ['PEN', 'USD'] as Currency[]) {
     const l = sources.liquidity[cur];
     if (l.source === 'accounts' && l.totalMinor !== null) {
-      balances[cur] = { amountMinor: l.totalMinor, asOf: now.toISOString(), stale: false, bankMinor: l.bankMinor, cashMinor: l.cashMinor };
+      balances[cur] = { amountMinor: l.totalMinor, asOf: now.toISOString(), stale: l.status !== 'complete', bankMinor: l.bankMinor, cashMinor: l.cashMinor };
     }
   }
   const settings: PlanningData['settings'] = {};

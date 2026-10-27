@@ -77,6 +77,10 @@ describe.skipIf(!DATABASE_URL)('money sources', () => {
       expect(await bad({ expiry_month: 5, expiry_year: null }, 'ref-bad-00005')).toBe('23514');
       expect(await bad({ institution: 'BCP', bank_name: 'Otro banco' }, 'ref-bad-00006')).toBe('23514');
       expect(await bad({ institution: '', bank_name: '12345678 banco' }, 'ref-bad-00007')).toBe('23514');
+      // Separators do not hide a card number (direct API calls skip the app's checks).
+      expect(await bad({ alias: '4111 1111 1111 1111' }, 'ref-bad-00008')).toBe('23514');
+      expect(await bad({ alias: '4111-1111-1111-1111' }, 'ref-bad-00009')).toBe('23514');
+      expect(await errorCode(c, save, ['ref-bad-00010', JSON.stringify(debit), null, JSON.stringify([{ alias: '4111 1111 1111 1111', currency: 'PEN' }])])).toBe('23514');
       // Cash is a plain pocket: no bank, no digits.
       expect(await errorCode(c, `insert into public.accounts (user_id, kind, alias, currency, last4) values ($1, 'cash', 'Efectivo', 'PEN', '1111')`, [USER_A])).toBe('23514');
     });
@@ -97,6 +101,15 @@ describe.skipIf(!DATABASE_URL)('money sources', () => {
       expect(await errorCode(c, `insert into public.accounts (user_id, kind, alias, currency) values ($1, 'cash', 'Otro efectivo', 'PEN')`, [USER_A])).toBe('23505');
       expect(await errorCode(c, `insert into public.account_balance_checkpoints (user_id, account_id, currency, amount_minor, source) values ($1, $2, 'PEN', -5, 'adjustment')`, [USER_A, a])).toBe('23514');
       expect(await errorCode(c, `insert into public.account_balance_checkpoints (user_id, account_id, currency, amount_minor, source) values ($1, $2, 'USD', 5, 'adjustment')`, [USER_A, a])).toBe('23514');
+    });
+  });
+
+  it('an account with balances keeps its currency; a debit card with accounts stays debit', async () => {
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      const r = (await c.query(save, ['ref-ident-0001', JSON.stringify(debit), null, JSON.stringify([{ alias: 'Ahorros', currency: 'PEN', balance_minor: 100 }])])).rows[0].r;
+      expect(await errorCode(c, `update public.accounts set currency = 'USD' where id = $1`, [r.account_ids[0]])).toBe('23514');
+      expect(await errorCode(c, `update public.cards set kind = 'credit' where id = $1`, [r.card_id])).toBe('23514');
+      expect(await errorCode(c, `update public.cards set alias = 'Débito nuevo' where id = $1`, [r.card_id])).toBeNull();
     });
   });
 

@@ -17,22 +17,22 @@ insert into public.institutions (code, name) values ('SCOTIABANK', 'Scotiabank P
 
 alter table public.accounts
   add column kind text not null default 'bank' check (kind in ('bank', 'cash')),
-  add column bank_name text check (char_length(btrim(bank_name)) between 1 and 40 and bank_name !~ '\d{5}'),
+  add column bank_name text check (char_length(btrim(bank_name)) between 1 and 40 and regexp_replace(bank_name, '[\s-]', '', 'g') !~ '\d{5}'),
   add constraint accounts_cash_plain check (kind = 'bank' or (institution_code is null and bank_name is null and last4 is null)),
   add constraint accounts_one_bank_label check (bank_name is null or institution_code is null),
-  add constraint accounts_alias_no_digits check (alias !~ '\d{5}') not valid; -- new rows only (existing aliases untouched)
+  add constraint accounts_alias_no_digits check (regexp_replace(alias, '[\s-]', '', 'g') !~ '\d{5}') not valid; -- new rows only (existing aliases untouched)
 -- One active "Efectivo" per currency (PEN ≠ USD): cash is one pocket, never several invented ones.
 create unique index accounts_one_cash on public.accounts (user_id, currency) where kind = 'cash' and active;
 
 alter table public.cards
   add column color text check (color in ('black', 'gray', 'blue', 'green', 'red', 'sky', 'yellow')),
-  add column bank_name text check (char_length(btrim(bank_name)) between 1 and 40 and bank_name !~ '\d{5}'),
+  add column bank_name text check (char_length(btrim(bank_name)) between 1 and 40 and regexp_replace(bank_name, '[\s-]', '', 'g') !~ '\d{5}'),
   add column expiry_month smallint check (expiry_month between 1 and 12),
   add column expiry_year smallint check (expiry_year between 2000 and 2099),
   add column client_ref text check (client_ref ~ '^[A-Za-z0-9:_-]{8,120}$'),
   add constraint cards_expiry_pair check ((expiry_month is null) = (expiry_year is null)),
   add constraint cards_one_bank_label check (bank_name is null or institution_code is null),
-  add constraint cards_alias_no_digits check (alias !~ '\d{5}') not valid; -- new rows only (existing aliases untouched)
+  add constraint cards_alias_no_digits check (regexp_replace(alias, '[\s-]', '', 'g') !~ '\d{5}') not valid; -- new rows only (existing aliases untouched)
 create unique index cards_client_ref on public.cards (user_id, client_ref) where client_ref is not null;
 
 -- ── Account balance checkpoints ───────────────────────────────────────────────────────────────────────────
@@ -150,6 +150,29 @@ end $$;
 revoke execute on function public.transactions_resolve_account() from public, anon, authenticated;
 create trigger transactions_resolve_account before insert or update of card_id on public.transactions
   for each row execute function public.transactions_resolve_account();
+
+-- Identity that balances depend on cannot change under them: an account with balances keeps its currency and kind,
+-- a debit card with accounts stays debit, a credit card with "used" checkpoints keeps kind and currency (PEN ≠ USD).
+-- Deactivate and register a new one instead.
+create function public.money_source_identity_guard() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if tg_table_name = 'accounts' and (new.currency <> old.currency or new.kind <> old.kind)
+     and exists (select 1 from public.account_balance_checkpoints c where c.account_id = old.id and c.user_id = old.user_id) then
+    raise exception 'identity_locked' using errcode = '23514';
+  end if;
+  if tg_table_name = 'cards' and (new.kind <> old.kind or new.currency <> old.currency)
+     and (exists (select 1 from public.card_accounts l where l.card_id = old.id and l.user_id = old.user_id)
+       or exists (select 1 from public.card_used_checkpoints u where u.card_id = old.id and u.user_id = old.user_id)) then
+    raise exception 'identity_locked' using errcode = '23514';
+  end if;
+  return new;
+end $$;
+revoke execute on function public.money_source_identity_guard() from public, anon, authenticated;
+create trigger accounts_identity_guard before update of currency, kind on public.accounts
+  for each row execute function public.money_source_identity_guard();
+create trigger cards_identity_guard before update of kind, currency on public.cards
+  for each row execute function public.money_source_identity_guard();
 
 -- ── RLS + grants: own rows; checkpoints append-only (a correction is a new checkpoint) ────────────────────
 alter table public.account_balance_checkpoints enable row level security;

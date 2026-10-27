@@ -111,6 +111,21 @@ describe('liquidity from accounts', () => {
     expect(run({ declared: { ...declared, currency: 'USD' } }).source).toBeNull();
   });
 
+  it('a confirmed movement with no account after the balances makes it partial, never silently complete', () => {
+    const l = run({ accounts: [acc('CASH', 'cash')], checkpoints: [cp('CASH', 50000)], txs: [tx({ amountMinor: 20000 }), tx({ type: 'income', amountMinor: 1000 })] });
+    expect(l).toMatchObject({ totalMinor: 50000, status: 'partial', missing: [{ code: 'unassigned', count: 2, amountMinor: 21000 }] });
+    // A credit card purchase names no account on purpose: it is not "unassigned".
+    const card = run({ accounts: [acc('A')], checkpoints: [cp('A', 100)], cards: [{ id: 'C', kind: 'credit', currency: 'PEN' }], txs: [tx({ type: 'credit_card_purchase', cardId: 'C' })] });
+    expect(card.status).toBe('complete');
+    // Before the first balance it is already inside it.
+    expect(run({ accounts: [acc('A')], checkpoints: [cp('A', 100)], txs: [tx({ occurredAt: '2026-10-01T00:00:00-05:00' })] }).status).toBe('complete');
+  });
+
+  it('a truncated read is flagged; a checkpoint in another currency than its account never counts', () => {
+    expect(run({ accounts: [acc('A')], checkpoints: [cp('A', 100)], truncated: true })).toMatchObject({ status: 'partial', missing: [{ code: 'truncated' }] });
+    expect(run({ accounts: [acc('A')], checkpoints: [{ ...cp('A', 100), currency: 'USD' }] }).source).toBeNull();
+  });
+
   it('inactive accounts are left out', () => {
     expect(run({ accounts: [{ ...acc('A'), active: false }], checkpoints: [cp('A', 1000)] }).source).toBeNull();
   });

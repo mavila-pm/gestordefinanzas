@@ -17,7 +17,7 @@ import type { TransactionStatus, TransactionType } from '../domain/types';
  * Movements in review or flagged as possible duplicates do not count yet; they are reported as pending.
  */
 export interface LiquidityAccount { id: string; alias: string; kind: 'bank' | 'cash'; currency: Currency; active: boolean }
-export interface Checkpoint { ownerId: string; amountMinor: number; asOf: string }
+export interface Checkpoint { ownerId: string; amountMinor: number; asOf: string; currency?: Currency }
 export interface LiquidityTx {
   id: string; type: TransactionType; status: TransactionStatus; amountMinor: number; currency: Currency; occurredAt: string;
   accountId: string | null; counterpartyAccountId?: string | null; cardId: string | null;
@@ -27,7 +27,11 @@ export interface DeclaredBalance { currency: Currency; amountMinor: number; bank
 
 export type LiquidityMissing =
   | { code: 'account_balance'; accountId: string; alias: string }
-  | { code: 'transfer_destination' | 'cash_destination'; txId: string; amountMinor: number };
+  | { code: 'transfer_destination' | 'cash_destination'; txId: string; amountMinor: number }
+  /** Confirmed movements after the balances that name no account: money moved that no balance shows yet. */
+  | { code: 'unassigned'; count: number; amountMinor: number }
+  /** More movements than the loader reads: the balance may be incomplete. */
+  | { code: 'truncated' };
 
 export interface AccountBalance { id: string; alias: string; kind: 'bank' | 'cash'; balanceMinor: number | null; asOf: string | null }
 
@@ -68,11 +72,17 @@ export function liquidity(input: {
   txs: LiquidityTx[];
   cards: LiquidityCard[];
   declared: DeclaredBalance | null;
+  /** The loader hit its movement limit. */
+  truncated?: boolean;
 }): Liquidity {
   const { currency } = input;
   const accounts = input.accounts.filter((a) => a.active && a.currency === currency);
   const ids = new Set(accounts.map((a) => a.id));
-  const latest = latestCheckpoints(input.checkpoints.filter((c) => ids.has(c.ownerId)));
+  // A checkpoint in another currency than its account (an account edited after the fact) never counts: PEN ≠ USD.
+  const latest = latestCheckpoints(input.checkpoints.filter((c) => ids.has(c.ownerId) && (!c.currency || c.currency === currency)));
+  const firstAsOf = [...latest.values()].map((c) => Date.parse(c.asOf)).sort((a, b) => a - b)[0] ?? null;
+  let unassigned = 0;
+  let unassignedMinor = 0;
   const cardKind = new Map(input.cards.map((c) => [c.id, c.kind]));
   const balances = new Map<string, number>();
   for (const [id, cp] of latest) balances.set(id, cp.amountMinor);
@@ -82,7 +92,15 @@ export function liquidity(input: {
   for (const tx of input.txs) {
     if (tx.currency !== currency) continue; // a USD movement never touches a soles account
     const touches = (tx.accountId && ids.has(tx.accountId)) || (tx.counterpartyAccountId && ids.has(tx.counterpartyAccountId));
-    if (!touches) continue;
+    if (!touches) {
+      // No account named and not a credit card movement: the money left or arrived somewhere this balance cannot see.
+      if (tx.status === 'confirmed' && !tx.accountId && firstAsOf !== null && Date.parse(tx.occurredAt) > firstAsOf
+        && balanceEffect({ ...tx, cardKind: tx.cardId ? cardKind.get(tx.cardId) ?? null : null }).missing === 'source_account') {
+        unassigned += 1;
+        unassignedMinor += tx.amountMinor;
+      }
+      continue;
+    }
     if (PENDING.includes(tx.status)) { pendingCount += 1; continue; }
     if (tx.status !== 'confirmed') continue;
     const eff = balanceEffect({ ...tx, cardKind: tx.cardId ? cardKind.get(tx.cardId) ?? null : null });
@@ -103,6 +121,8 @@ export function liquidity(input: {
   }));
   const known = list.filter((a) => a.balanceMinor !== null);
   if (known.length > 0) {
+    if (unassigned) missing.push({ code: 'unassigned', count: unassigned, amountMinor: unassignedMinor });
+    if (input.truncated) missing.push({ code: 'truncated' });
     for (const a of list) if (a.balanceMinor === null) missing.unshift({ code: 'account_balance', accountId: a.id, alias: a.alias });
     const sum = (k: 'bank' | 'cash') => {
       const of = known.filter((a) => a.kind === k);
@@ -132,7 +152,7 @@ export function liquidity(input: {
  */
 export function cardUsed(card: { id: string; currency: Currency; creditLimitMinor: number | null }, checkpoints: Checkpoint[], txs: LiquidityTx[]):
   { usedMinor: number | null; availableMinor: number | null; asOf: string | null } {
-  const cp = latestCheckpoints(checkpoints.filter((c) => c.ownerId === card.id)).get(card.id);
+  const cp = latestCheckpoints(checkpoints.filter((c) => c.ownerId === card.id && (!c.currency || c.currency === card.currency))).get(card.id);
   if (!cp) return { usedMinor: null, availableMinor: null, asOf: null };
   let used = cp.amountMinor;
   for (const tx of txs) {
