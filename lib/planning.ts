@@ -14,6 +14,7 @@ import {
 } from '../src/engine/observed';
 import { loadDecisions } from './learning';
 import { loadMoneySources } from './money-sources';
+import { goalAmount, monthlyIncome, type Goal } from '../src/engine/financial-balance';
 import type { Liquidity } from '../src/engine/liquidity';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../src/infrastructure/supabase/transaction-row';
 
@@ -37,7 +38,10 @@ export interface PlanningData {
   reserveEntries: Array<{ reserveId: string; direction: 'in' | 'out'; amountMinor: number; on: string }>;
   settledIncomes: Map<string, Set<string>>;
   balances: Partial<Record<Currency, { amountMinor: number; asOf: string; stale: boolean; bankMinor: number | null; cashMinor: number | null }>>;
-  settings: Partial<Record<Currency, { essentialsMonthlyMinor: number | null; essentialsEstimated: boolean; cushionMinor: number; allowZeroForDebt: boolean; savingsGoalMinor: number | null }>>;
+  settings: Partial<Record<Currency, { essentialsMonthlyMinor: number | null; essentialsEstimated: boolean; cushionMinor: number; allowZeroForDebt: boolean;
+    /** Effective monthly savings goal: the fixed amount, or the % of the expected monthly income (null when unknown). */
+    savingsGoalMinor: number | null;
+    savingsGoal: Goal | null; investmentGoal: Goal | null; investmentGoalId: string | null }>>;
   debts: Array<{ id: string; name: string; currency: Currency; balanceMinor: number; annualRateBp: number | null }>;
   recentIncome: { transactionId: string; amountMinor: number; currency: Currency; date: string; merchant: string | null } | null;
   suggestions: ReturnType<typeof suggestMatches>;
@@ -61,7 +65,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     supabase.from('plan_settlements').select('id,fixed_expense_id,expected_income_id,period,status,transaction_id,variance_ack,created_at,tx:transactions(amount_minor,currency,status)')
       .order('period', { ascending: false }).order('created_at', { ascending: false }).limit(500),
     supabase.from('balance_snapshots').select('currency,amount_minor,bank_minor,cash_minor,as_of').order('as_of', { ascending: false }).limit(20),
-    supabase.from('planning_settings').select('currency,essentials_monthly_minor,essentials_status,cushion_minor,allow_zero_for_debt,savings_goal_minor'),
+    supabase.from('planning_settings').select('currency,essentials_monthly_minor,essentials_status,cushion_minor,allow_zero_for_debt,savings_goal_minor,savings_goal_mode,savings_goal_bp,investment_goal_mode,investment_goal_minor,investment_goal_bp,investment_goal_investment_id'),
     supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed').gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(1000),
     loadDecisions(supabase),
     ...reserveReads(supabase),
@@ -142,7 +146,18 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     }
   }
   const settings: PlanningData['settings'] = {};
-  for (const s of set.data ?? []) settings[s.currency as Currency] = { essentialsMonthlyMinor: s.essentials_monthly_minor === null ? null : Number(s.essentials_monthly_minor), essentialsEstimated: s.essentials_status === 'estimated', cushionMinor: Number(s.cushion_minor), allowZeroForDebt: s.allow_zero_for_debt === true, savingsGoalMinor: s.savings_goal_minor == null ? null : Number(s.savings_goal_minor) };
+  const incomeRows = (inc.data ?? []).map((i) => ({ currency: i.currency as Currency, amountMinor: i.amount_minor === null ? null : Number(i.amount_minor), frequency: i.frequency }));
+  for (const s of set.data ?? []) {
+    const cur = s.currency as Currency;
+    const savingsGoal: Goal | null = s.savings_goal_mode === 'percent'
+      ? { mode: 'percent', amountMinor: null, bp: s.savings_goal_bp ?? null }
+      : s.savings_goal_minor == null ? null : { mode: 'fixed', amountMinor: Number(s.savings_goal_minor), bp: null };
+    const investmentGoal: Goal | null = s.investment_goal_mode === 'percent'
+      ? { mode: 'percent', amountMinor: null, bp: s.investment_goal_bp ?? null }
+      : s.investment_goal_minor == null ? null : { mode: 'fixed', amountMinor: Number(s.investment_goal_minor), bp: null };
+    settings[cur] = { essentialsMonthlyMinor: s.essentials_monthly_minor === null ? null : Number(s.essentials_monthly_minor), essentialsEstimated: s.essentials_status === 'estimated', cushionMinor: Number(s.cushion_minor), allowZeroForDebt: s.allow_zero_for_debt === true,
+      savingsGoalMinor: goalAmount(savingsGoal, monthlyIncome(incomeRows, cur).amountMinor), savingsGoal, investmentGoal, investmentGoalId: s.investment_goal_investment_id ?? null };
+  }
 
   const incomes: ExpectedIncome[] = (inc.data ?? []).map((i) => ({
     id: i.id, name: i.name, currency: i.currency, amountMinor: i.amount_minor === null ? null : Number(i.amount_minor), amountStatus: i.amount_status,

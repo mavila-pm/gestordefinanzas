@@ -2,20 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { velsStatus } from '../src/web/chat-scroll';
-import Image from 'next/image';
-
-/** Pre-sized derivatives of the approved illustration (brand/vels/vels-avatar-source.webp): ≥2× the shown size. */
-const AVATAR_SRC = (size: number) => `/brand/vels/vels-avatar-${size <= 32 ? 64 : size <= 64 ? 128 : 256}.png`;
+import { Isotipo } from './ui/logo';
 
 /**
- * Vels's avatar: the approved illustration, cropped to face + shoulders, in a circle. Decorative (alt="") because
- * the name "Vels" is always next to it or in the control's label. Files are already sized and optimized, so the
- * image is served as is (no runtime resize).
+ * Vels's avatar (UX audit 2026-10-15 §1.2): the Velsuno symbol in negative inside a circle — Velsuno's own assistant,
+ * with the brand's identity instead of a generic illustration. Decorative: the name "Vels" is always next to it or in
+ * the control's label. Official symbol only (components/ui/logo.tsx), never redrawn.
  */
 export function VelsAvatar({ size = 32 }: { size?: number }) {
   return (
-    <span className="vels-avatar" style={{ width: size, height: size }}>
-      <Image src={AVATAR_SRC(size)} alt="" width={size} height={size} unoptimized draggable={false} />
+    <span className="vels-avatar" style={{ width: size, height: size }} aria-hidden="true">
+      <Isotipo size={Math.round(size * 0.62)} />
     </span>
   );
 }

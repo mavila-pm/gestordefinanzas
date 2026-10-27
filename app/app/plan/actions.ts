@@ -134,7 +134,7 @@ export async function saveSavingsGoalAction(_p: ActionState, form: FormData): Pr
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
   const { error } = await supabase.from('planning_settings').upsert({ user_id: user.id, currency: parsed.value.currency,
-    savings_goal_minor: parsed.value.goalMinor, updated_at: new Date().toISOString() });
+    savings_goal_minor: parsed.value.goalMinor, savings_goal_mode: 'fixed', savings_goal_bp: null, updated_at: new Date().toISOString() });
   return error ? { error: SAVE_ERROR } : done(parsed.value.goalMinor === null ? 'Meta quitada.' : 'Meta guardada.');
 }
 

@@ -517,6 +517,12 @@ export function velsSuggestions(v: View, path: string): string[] {
   if (path.startsWith('/app/compromisos')) add('¿Qué pago primero?');
   if (path.startsWith('/app/tarjetas')) add('¿Hasta cuánto puedo usar la tarjeta?');
   if (path.startsWith('/app/movimientos') || path.startsWith('/app/analisis')) add('¿Qué cambió este mes?');
+  // Each section suggests what it is for (UX audit §2.3: contextual Vels).
+  if (path.startsWith('/app/ingresos')) add('¿Cuánto me entró este mes?');
+  if (path.startsWith('/app/gastos')) add('¿En qué estoy gastando más?');
+  if (path.startsWith('/app/deudas')) add('¿Qué deuda pago primero?');
+  if (path.startsWith('/app/balance')) add('¿Cuánto puedo ahorrar este mes?');
+  if (path.startsWith('/app/inversiones')) add('Registra un aporte a mi inversión');
   const before = p ? p.lines.filter((l) => l.kind === 'payment' || l.kind === 'overdue' || l.kind === 'debt').length : 0;
   if (before >= 3) add('Organiza mis pagos');
   add('¿Cuánto tengo disponible?');

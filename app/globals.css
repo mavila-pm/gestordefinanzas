@@ -453,8 +453,8 @@ form[aria-busy=true] button.link[type=submit]:disabled { background: none; color
 .vels-head { display: flex; align-items: center; justify-content: space-between; padding: calc(var(--space-12) + env(safe-area-inset-top)) 0 var(--space-8); }
 .vels-head h2 { margin: 0; font-size: 20px; letter-spacing: -.01em; }
 /* Vels identity: avatar (approved illustration) · name · official check · connection status. */
-.vels-avatar { display: block; flex: none; overflow: hidden; border-radius: 50%; background: var(--brand-accent); outline: 1px solid var(--border-subtle); outline-offset: -1px; }
-.vels-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; }
+.vels-avatar { display: grid; place-items: center; flex: none; overflow: hidden; border-radius: 50%; background: var(--action-bg); color: var(--action-fg); }
+.vels-avatar svg { display: block; }
 .vels-identity { display: flex; align-items: center; gap: var(--space-12); min-width: 0; }
 .vels-identity-text { display: grid; gap: 0; min-width: 0; }
 .vels-name { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 18px; line-height: 24px; letter-spacing: -.01em; }
