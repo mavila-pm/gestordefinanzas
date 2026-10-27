@@ -319,3 +319,7 @@ grant execute on function
   public.billing_flag_charge(text, text, text, bigint, text, boolean, text),
   public.billing_refund(text, text, text, bigint, text)
 to service_role;
+
+-- FK support (tests/db/fk-indexes.test.ts, migration 050): deleting a billing_orders row (account deletion cascade)
+-- sets order_id null on its ledger rows; without this index that lookup scans every person's billing_events.
+create index billing_events_order on public.billing_events (order_id);

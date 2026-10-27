@@ -7,9 +7,9 @@
 export const CULQI_CHECKOUT_SCRIPT = 'https://js.culqi.com/checkout-js'; // CONFIRMED (culqi-php README); behaviour UNVERIFIED
 
 /**
- * Origins a Content-Security-Policy would have to allow for the checkout (Velsuno sends no CSP today; see
- * docs/runbooks/billing-culqi.md). UNVERIFIED beyond js.culqi.com (script) and secure.culqi.com (tokens, from the
- * official SDK): confirm in the sandbox with the browser console before adding a CSP.
+ * Origins the Content-Security-Policy must allow for the checkout (src/web/security-headers.ts, report-only, ADR-0018;
+ * tests/csp.test.ts checks they are allowed). UNVERIFIED beyond js.culqi.com (script) and secure.culqi.com (tokens,
+ * from the official SDK): confirm in the sandbox with the browser console (CSP reports) before enforcing the CSP.
  */
 export const CULQI_CSP = {
   'script-src': ['https://js.culqi.com', 'https://3ds.culqi.com'],

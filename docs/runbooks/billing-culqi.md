@@ -99,9 +99,11 @@ actually returned: it turns each UNVERIFIED item into confirmed (update `src/bil
 10. Wrong keys on purpose (e.g. `sk_live_` on Preview) → payments disabled, log `live_key_outside_production`.
 
 ## 5. CSP domains Culqi needs
-Velsuno sends **no Content-Security-Policy** today (`next.config.ts`: X-Frame-Options DENY only applies to our pages
-being framed; Culqi opens its own iframe/modal). If a CSP is added, allow at least (UNVERIFIED beyond the first two
-rows — confirm with step 4.9; source of truth in code: `CULQI_CSP` in `src/billing/culqi-public.ts`):
+Velsuno sends a **report-only** Content-Security-Policy (`src/web/security-headers.ts`, ADR-0018) that allows
+`https://checkout.culqi.com https://js.culqi.com https://*.culqi.com` in script/style/img/connect/frame-src, which covers
+every origin below (`tests/csp.test.ts` checks it). X-Frame-Options DENY only applies to our pages being framed; Culqi
+opens its own iframe/modal. Origins (UNVERIFIED beyond the first two rows — confirm with step 4.9 and the CSP reports
+before enforcing; source of truth in code: `CULQI_CSP` in `src/billing/culqi-public.ts`):
 
 | Directive | Origins |
 |---|---|

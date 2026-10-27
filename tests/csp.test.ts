@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { buildCsp, CSP_HEADER, CSP_REPORT_PATH, cspNonce, CULQI_HOSTS, REPORTING_ENDPOINTS } from '../src/web/security-headers';
+import { CULQI_CSP } from '../src/billing/culqi-public';
 import { CSP_LOG_LINES_PER_WINDOW, cspLogLimiter, MAX_REPORT_BYTES, MAX_REPORTS, parseCspReports, readLimited, safeReportUrl, type CspViolation } from '../src/web/csp-report';
 
 /**
@@ -46,6 +47,15 @@ describe('buildCsp', () => {
       expect(d['script-src']).toContain(host);
       expect(d['frame-src']).toContain(host);
       expect(d['connect-src']).toContain(host);
+    }
+  });
+
+  it('every origin the Culqi checkout documents (CULQI_CSP, ADR-0019) is allowed by the matching directive', () => {
+    const d = directives(buildCsp(cspNonce()));
+    const allows = (list: string[], origin: string) => list.some((v) => v === origin
+      || (v.startsWith('https://*.') && origin.startsWith('https://') && origin.endsWith(v.slice('https://*'.length))));
+    for (const [directive, origins] of Object.entries(CULQI_CSP)) {
+      for (const origin of origins) expect(allows(d[directive], origin), `${directive} ${origin}`).toBe(true);
     }
   });
 
