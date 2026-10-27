@@ -55,6 +55,8 @@ declare
   v_active boolean;
   v_net bigint;
 begin
+  -- A row claiming another person's user_id is refused by RLS right after; never read (or lock) their data first.
+  if public.request_uid() is not null and new.user_id is distinct from public.request_uid() then return new; end if;
   select i.active into v_active from public.investments i where i.id = new.investment_id and i.user_id = new.user_id for update;
   if not found then return new; end if; -- not the person's investment: the composite FK rejects it
   if not v_active then raise exception 'investment_inactive' using errcode = '23514'; end if;
@@ -73,6 +75,7 @@ create trigger investment_entries_guard before insert on public.investment_entri
 create function public.investments_active_cap() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
+  if public.request_uid() is not null and new.user_id is distinct from public.request_uid() then return new; end if; -- RLS refuses it
   if new.active and (tg_op = 'INSERT' or not old.active) then
     perform pg_advisory_xact_lock(hashtextextended('investments_active:' || new.user_id::text, 0));
     if (select count(*) from public.investments i where i.user_id = new.user_id and i.active and i.id <> new.id) >= 50 then

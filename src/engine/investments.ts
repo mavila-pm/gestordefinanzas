@@ -9,8 +9,8 @@ export const KIND_LABEL: Record<InvestmentKind, string> = {
 
 export interface InvestmentPosition {
   currency: Currency;
-  /** Σ aportes − Σ retiros (real, typed by the person). */
-  contributedMinor: number;
+  /** Σ aportes − Σ retiros (real, typed by the person); null = never said how much was put in (unknown ≠ 0). */
+  contributedMinor: number | null;
   /** Last valuation the person registered ("hoy vale"); null = unknown, never the contributed amount. */
   valueMinor: number | null;
   valueOn: string | null;
@@ -24,17 +24,20 @@ export interface InvestmentPosition {
  * Manual tracking only (MOTHER §89): Velsuno never quotes, ranks or advises. A position is what the person registered.
  * Totals per currency (PEN ≠ USD); a total value is shown only when every investment of that currency has one.
  */
-export function position(currency: Currency, contributedMinor: number, valueMinor: number | null, valueOn: string | null): InvestmentPosition {
-  const gainMinor = valueMinor === null ? null : valueMinor - contributedMinor;
-  return { currency, contributedMinor, valueMinor, valueOn, gainMinor, gainBp: gainMinor !== null && contributedMinor > 0 ? Math.round((gainMinor * 10000) / contributedMinor) : null };
+export function position(currency: Currency, contributedMinor: number | null, valueMinor: number | null, valueOn: string | null): InvestmentPosition {
+  const gainMinor = valueMinor === null || contributedMinor === null ? null : valueMinor - contributedMinor;
+  return { currency, contributedMinor, valueMinor, valueOn, gainMinor, gainBp: gainMinor !== null && contributedMinor !== null && contributedMinor > 0 ? Math.round((gainMinor * 10000) / contributedMinor) : null };
 }
 
-export function totals(items: readonly InvestmentPosition[], currency: Currency): { contributedMinor: number; valueMinor: number | null; missingValue: number } {
+/** A total is shown only when every investment of that currency has it; otherwise it is unknown with a count. */
+export function totals(items: readonly InvestmentPosition[], currency: Currency): { contributedMinor: number | null; valueMinor: number | null; missingValue: number; missingContributed: number } {
   const of = items.filter((i) => i.currency === currency);
   const missingValue = of.filter((i) => i.valueMinor === null).length;
+  const missingContributed = of.filter((i) => i.contributedMinor === null).length;
   return {
-    contributedMinor: of.reduce((s, i) => s + i.contributedMinor, 0),
+    contributedMinor: missingContributed === 0 ? of.reduce((s, i) => s + (i.contributedMinor as number), 0) : null,
     valueMinor: of.length && missingValue === 0 ? of.reduce((s, i) => s + (i.valueMinor as number), 0) : null,
     missingValue,
+    missingContributed,
   };
 }

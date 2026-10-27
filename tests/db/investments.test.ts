@@ -80,6 +80,8 @@ describe.skipIf(!DATABASE_URL)('investments, goals, profile', () => {
       expect((await c.query('select count(*)::int n from public.investment_positions')).rows[0].n).toBe(0);
       expect(await errorCode(c, entry, [USER_A, id, 'contribution', 5, '2026-10-01'])).toBe('23503');
       expect(await errorCode(c, entry, [USER_B, id, 'contribution', 5, '2026-10-01'])).toBe('42501');
+      // Never an oracle on B's amounts: a withdrawal under B's id is refused by RLS, not by B's balance.
+      expect(await errorCode(c, entry, [USER_B, id, 'withdrawal', 999999999, '2026-10-01'])).toBe('42501');
       expect(await errorCode(c, `insert into public.planning_settings (user_id, currency, investment_goal_investment_id) values ($1, 'PEN', $2)`, [USER_A, id])).toBe('23503');
     });
     await asRole(pool, 'anon', null, async (c) => {

@@ -146,7 +146,8 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     }
   }
   const settings: PlanningData['settings'] = {};
-  const incomeRows = (inc.data ?? []).map((i) => ({ currency: i.currency as Currency, amountMinor: i.amount_minor === null ? null : Number(i.amount_minor), frequency: i.frequency }));
+  const incomeRows = (inc.data ?? []).map((i) => ({ currency: i.currency as Currency, amountMinor: i.amount_minor === null ? null : Number(i.amount_minor), frequency: i.frequency,
+    endedOn: i.ended_on as string | null, pausedUntil: i.paused_until as string | null }));
   for (const s of set.data ?? []) {
     const cur = s.currency as Currency;
     const savingsGoal: Goal | null = s.savings_goal_mode === 'percent'
@@ -156,7 +157,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
       ? { mode: 'percent', amountMinor: null, bp: s.investment_goal_bp ?? null }
       : s.investment_goal_minor == null ? null : { mode: 'fixed', amountMinor: Number(s.investment_goal_minor), bp: null };
     settings[cur] = { essentialsMonthlyMinor: s.essentials_monthly_minor === null ? null : Number(s.essentials_monthly_minor), essentialsEstimated: s.essentials_status === 'estimated', cushionMinor: Number(s.cushion_minor), allowZeroForDebt: s.allow_zero_for_debt === true,
-      savingsGoalMinor: goalAmount(savingsGoal, monthlyIncome(incomeRows, cur).amountMinor), savingsGoal, investmentGoal, investmentGoalId: s.investment_goal_investment_id ?? null };
+      savingsGoalMinor: goalAmount(savingsGoal, monthlyIncome(incomeRows, cur, today)), savingsGoal, investmentGoal, investmentGoalId: s.investment_goal_investment_id ?? null };
   }
 
   const incomes: ExpectedIncome[] = (inc.data ?? []).map((i) => ({

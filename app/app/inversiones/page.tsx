@@ -82,10 +82,11 @@ export default async function Investments() {
           return (
             <section key={c} className="card stack-sm" data-testid={`investments-total-${c}`}>
               <span className="muted small">Aportado{c === 'USD' ? ' en dólares' : ''}</span>
-              <strong className="liq-figure">{m(t.contributedMinor, c)}</strong>
+              <strong className="liq-figure">{t.contributedMinor === null ? 'Sin dato' : m(t.contributedMinor, c)}</strong>
+              {t.missingContributed > 0 && <small className="muted">Falta lo aportado en {t.missingContributed === 1 ? '1 inversión' : `${t.missingContributed} inversiones`}.</small>}
               <div className="balance-row"><span>Vale hoy <small className="muted">(estimado)</small></span>
                 <span className="amount">{t.valueMinor === null ? (t.missingValue ? `Falta el valor de ${t.missingValue}` : 'Sin dato') : m(t.valueMinor, c)}</span></div>
-              {t.valueMinor !== null && <div className="balance-row"><span>Diferencia</span><span className="amount">{t.valueMinor - t.contributedMinor >= 0 ? '+' : '−'}{m(Math.abs(t.valueMinor - t.contributedMinor), c)}</span></div>}
+              {t.valueMinor !== null && t.contributedMinor !== null && <div className="balance-row"><span>Diferencia</span><span className="amount">{t.valueMinor - t.contributedMinor >= 0 ? '+' : '−'}{m(Math.abs(t.valueMinor - t.contributedMinor), c)}</span></div>}
             </section>
           );
         })}
@@ -101,7 +102,7 @@ export default async function Investments() {
                   <small className="muted">{KIND_LABEL[i.kind]}{i.institution ? ` · ${i.institution}` : ''}{i.annualRateBp !== null ? ` · ${(i.annualRateBp / 100).toFixed(2)}% anual (informado)` : ''}</small></span>
                   <span className="state-chip active">{sym(i.currency)}</span></div>
                 <dl className="sub-facts">
-                  <div><dt>Aportado</dt><dd>{m(p.contributedMinor, i.currency)}</dd></div>
+                  <div><dt>Aportado</dt><dd className={p.contributedMinor === null ? 'unknown' : ''}>{p.contributedMinor === null ? 'Sin dato' : m(p.contributedMinor, i.currency)}</dd></div>
                   <div><dt>Vale hoy</dt><dd className={p.valueMinor === null ? 'unknown' : ''}>{p.valueMinor === null ? 'Sin dato' : m(p.valueMinor, i.currency)}{p.valueOn && <small className="muted"> al {shortDate(p.valueOn)}</small>}</dd></div>
                   <div><dt>Diferencia</dt><dd className={p.gainMinor === null ? 'unknown' : ''}>{p.gainMinor === null ? 'Sin dato' : `${p.gainMinor >= 0 ? '+' : '−'}${m(Math.abs(p.gainMinor), i.currency)}`}{p.gainBp !== null && <small className="muted"> {pct(p.gainBp)}</small>}</dd></div>
                 </dl>
@@ -113,7 +114,7 @@ export default async function Investments() {
                 <div className="sub-actions">
                   <EntrySheet i={i} kind="valuation" />
                   <EntrySheet i={i} kind="contribution" />
-                  {p.contributedMinor > 0 && <EntrySheet i={i} kind="withdrawal" />}
+                  {p.contributedMinor !== null && p.contributedMinor > 0 && <EntrySheet i={i} kind="withdrawal" />}
                   <ActionForm action={archiveInvestmentAction} className="inline" label={`Archivar ${i.name}`}>
                     <input type="hidden" name="investmentId" value={i.id} />
                     <button type="submit" className="link small muted-link">Archivar</button>

@@ -77,8 +77,8 @@ export default async function Balance() {
       {currencies.map((c) => {
         const s = planning.settings[c];
         const b = financialBalance({
-          currency: c,
-          incomes: planning.incomes.map((i) => ({ currency: i.currency, amountMinor: i.amountMinor, frequency: i.frequency })),
+          currency: c, today: planning.today,
+          incomes: planning.incomes.map((i) => ({ currency: i.currency, amountMinor: i.amountMinor, frequency: i.frequency, endedOn: i.endedOn, pausedUntil: i.pausedUntil })),
           budgets: budgets.map((x) => ({ currency: x.currency, amountMinor: x.amountMinor })),
           fixed: fixed.filter((f) => f.active && !f.endedOn).map((f) => ({ currency: f.currency as Currency, amountMinor: f.amountMinor, frequency: f.frequency })),
           debts: debts.filter((d) => d.active).map((d) => ({ currency: d.currency as Currency, installmentMinor: d.installmentMinor, balanceMinor: d.balanceMinor })),

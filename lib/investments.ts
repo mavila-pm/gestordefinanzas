@@ -20,7 +20,8 @@ export async function loadInvestments(supabase: SupabaseClient): Promise<Investm
     const cur = i.currency as Currency;
     return {
       id: i.id, name: i.name, kind: i.kind as InvestmentKind, currency: cur, institution: i.institution, annualRateBp: i.annual_rate_bp,
-      position: position(cur, p ? Number(p.contributed_minor) : 0, p?.value_minor == null ? null : Number(p.value_minor), p?.value_on ?? null),
+      // No aporte or retiro registered = the person never said how much was put in: unknown, never 0.
+      position: position(cur, (ent.data ?? []).some((e) => e.investment_id === i.id && e.kind !== 'valuation') && p ? Number(p.contributed_minor) : null, p?.value_minor == null ? null : Number(p.value_minor), p?.value_on ?? null),
       entries: (ent.data ?? []).filter((e) => e.investment_id === i.id).slice(0, 6)
         .map((e) => ({ kind: e.kind, amountMinor: Number(e.amount_minor), onDate: e.on_date })),
     };

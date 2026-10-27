@@ -11,10 +11,13 @@ import type { Currency } from '../domain/money';
 export type Frequency = 'monthly' | 'semimonthly' | 'biweekly' | 'weekly';
 const PER_MONTH: Record<Frequency, number> = { monthly: 1, semimonthly: 2, biweekly: 26 / 12, weekly: 52 / 12 };
 
+export interface IncomeRow { currency: Currency; amountMinor: number | null; frequency: Frequency; endedOn?: string | null; pausedUntil?: string | null }
 export interface Goal { mode: 'fixed' | 'percent'; amountMinor: number | null; bp: number | null }
 export interface BalanceInput {
   currency: Currency;
-  incomes: ReadonlyArray<{ currency: Currency; amountMinor: number | null; frequency: Frequency }>;
+  incomes: ReadonlyArray<IncomeRow>;
+  /** Lima today: an ended income (endedOn ≤ today) or one paused past today does not count. */
+  today: string;
   budgets: ReadonlyArray<{ currency: Currency; amountMinor: number }>;
   fixed: ReadonlyArray<{ currency: Currency; amountMinor: number | null; frequency: string }>;
   debts: ReadonlyArray<{ currency: Currency; installmentMinor: number | null; balanceMinor: number }>;
@@ -32,16 +35,17 @@ export interface FinancialBalance {
   unassignedMinor: number | null;
 }
 
-export function monthlyIncome(incomes: BalanceInput['incomes'], currency: Currency): { amountMinor: number | null; unknown: number } {
-  const of = incomes.filter((i) => i.currency === currency);
+export function monthlyIncome(incomes: readonly IncomeRow[], currency: Currency, today: string): { amountMinor: number | null; unknown: number } {
+  const of = incomes.filter((i) => i.currency === currency && !(i.endedOn && i.endedOn <= today) && !(i.pausedUntil && i.pausedUntil > today));
   const known = of.filter((i) => i.amountMinor !== null);
   return { amountMinor: known.length ? Math.round(known.reduce((s, i) => s + (i.amountMinor as number) * PER_MONTH[i.frequency], 0)) : null, unknown: of.length - known.length };
 }
 
-export function goalAmount(g: Goal | null, incomeMinor: number | null): number | null {
+/** A % goal needs the whole income base: with an income whose amount is unknown, the goal is unknown too (never a part). */
+export function goalAmount(g: Goal | null, income: { amountMinor: number | null; unknown: number }): number | null {
   if (!g) return null;
   if (g.mode === 'fixed') return g.amountMinor;
-  return g.bp !== null && incomeMinor !== null ? Math.round((incomeMinor * g.bp) / 10000) : null;
+  return g.bp !== null && income.amountMinor !== null && income.unknown === 0 ? Math.round((income.amountMinor * g.bp) / 10000) : null;
 }
 
 /** Monthly equivalent of a fixed payment; one with another rhythm (yearly, every 2 or 3 months) is spread over the months. */
@@ -49,12 +53,12 @@ const FIXED_PER_MONTH: Record<string, number> = { monthly: 1, bimonthly: 1 / 2, 
 
 export function financialBalance(input: BalanceInput): FinancialBalance {
   const c = input.currency;
-  const inc = monthlyIncome(input.incomes, c);
+  const inc = monthlyIncome(input.incomes, c, input.today);
   const fixed = input.fixed.filter((f) => f.currency === c);
   const debts = input.debts.filter((d) => d.currency === c && d.balanceMinor > 0);
   const sum = (xs: number[]) => xs.reduce((s, v) => s + v, 0);
-  const savings = goalAmount(input.savings, inc.amountMinor);
-  const investment = goalAmount(input.investment, inc.amountMinor);
+  const savings = goalAmount(input.savings, inc);
+  const investment = goalAmount(input.investment, inc);
   const lines: BalanceLine[] = [
     { key: 'budgets', amountMinor: sum(input.budgets.filter((b) => b.currency === c).map((b) => b.amountMinor)), unknownCount: 0 },
     { key: 'fixed', amountMinor: sum(fixed.filter((f) => f.amountMinor !== null).map((f) => Math.round((f.amountMinor as number) * (FIXED_PER_MONTH[f.frequency] ?? 1)))), unknownCount: fixed.filter((f) => f.amountMinor === null).length },
