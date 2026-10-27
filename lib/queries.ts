@@ -9,7 +9,7 @@ import type { Transaction } from '../src/domain/types';
 import { parseIngestionCodes } from '../src/engine/review-reasons';
 import { buildUserContext } from '../src/engine/user-context';
 import type { UserContext } from '../src/engine/ingest';
-import { entitlementsFor, planConfigFrom, type SubscriptionRow } from '../src/domain/entitlements';
+import { entitlementsFor, planConfigFrom, SUBSCRIPTION_COLUMNS, type SubscriptionRow } from '../src/domain/entitlements';
 
 /** Read helpers for the signed-in user. They run with the user's session: RLS scopes every query. */
 
@@ -123,7 +123,7 @@ export async function loadRecurring(supabase: SupabaseClient, month: string, fix
 /** Server-side entitlements for the signed-in user (spec §84): never decided in the browser. */
 export async function loadEntitlements(supabase: SupabaseClient, now = new Date()) {
   const [sub, cfg] = await Promise.all([
-    supabase.from('subscriptions').select('plan,status,trial_started_at,trial_ends_at,current_period_end').maybeSingle(),
+    supabase.from('subscriptions').select(SUBSCRIPTION_COLUMNS).maybeSingle(),
     supabase.from('plan_config').select('key,value'),
   ]);
   const config = planConfigFrom(cfg.data ?? []);

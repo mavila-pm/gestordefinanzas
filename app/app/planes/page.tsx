@@ -14,7 +14,7 @@ export default async function Plans() {
   const [{ prices, monthly2027 }, state, { entitlements: e, config }] = await Promise.all([loadPrices(supabase), loadBillingState(supabase), loadEntitlements(supabase)]);
   const usd = (m: number) => formatMoney({ amountMinor: m, currency: 'USD' });
   const saving = annualSavingPercent(prices.monthly, prices.annual);
-  const paid = state.billingPlan !== null && ['active', 'trialing', 'past_due'].includes(state.status ?? '');
+  const paid = state.paid;
   const trial = !state.trialUsed && !paid;
 
   return (

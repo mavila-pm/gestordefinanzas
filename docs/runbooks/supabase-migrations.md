@@ -71,6 +71,18 @@
 | 20261020000052_partial_settlements.sql | **PENDING — not applied; PO applies it** (contains DROP CONSTRAINT status check + DROP INDEX plan_settlements_obligation_period; no DROP-free equivalent): status + 'partial', one closing row per (payment, month), advisory-locked guard (no skip over abonos, `period` in the trigger), plain FK index plan_settlements_obligation; debt_payments ledger + `record_debt_payment` (SECURITY DEFINER owned by app_writer, execute: authenticated). SQL Editor → paste → Run | — |
 | 20261020000053_reserves.sql | **PENDING — not applied** Apartados: reserves + append-only reserve_entries (guard: never more out than saved, archived empty, linked movement same currency; max 50 active per person) + reserve_balances view (with `active`); own-row RLS, explicit grants; plain index per FK | — |
 
+### Written, NOT applied yet (billing before Culqi goes live, ADR-0019)
+Apply in order after `npm run test:db` passes, then verify RLS + grants with one compact query (no anon/authenticated
+grants on `billing_events` / `billing_customers`; the new functions executable by `service_role` only, except
+`billing_plan_state` and `billing_renewal_open`, which `app_writer` also runs). Owner checklist:
+`docs/runbooks/billing-culqi.md`.
+
+| File | What | Contains DROP |
+|---|---|---|
+| 20261020000054_billing_ledger_rule.sql | order states processing/refunded + livemode/terms_version/processing_at; subscriptions cancel_at_period_end/canceled_at/livemode/billing amount+currency/provider_customer_ref + unique (provider, provider_ref); billing_events (append-only ledger, trigger) and billing_customers (server only); plan_config billing_grace_days = 3; billing_plan_state() = THE entitlement rule; ai_effective_plan uses it | replaces the two status CHECK constraints of 046 (`ALTER TABLE … DROP CONSTRAINT`, no data) |
+| 20261020000055_billing_order_flow.sql | one lock order (advisory first); billing_renewal_open() (a Mensual/Anual the provider can still charge → subscription_still_open: no new order, charge or activation over it); billing_create_order never supersedes a processing order and refuses a new one while it exists, at any age (payment_in_progress); billing_begin_charge (pending → processing, test mode only for demo accounts); billing_fail_order (needs_refund only when money was taken); billing_activate (Vitalicio; processing activates at any age) | no |
+| 20261020000056_billing_lifecycle.sql | billing_save_customer, billing_activate_subscription (provider dates, trial length checked, never over an open renewal), billing_record_renewal, billing_mark_past_due, billing_cancel (cancel at period end), billing_flag_charge (a charge of a subscription no row holds → needs_refund once; 'ours' or review), billing_refund (also matches flagged charges); each idempotent per provider reference | no |
+
 ## RLS probe on the real project
 A single `DO` block creates two probe users and data, acts as User A with `set local role authenticated`
 + `request.jwt.claims` (the PostgREST mechanism), records each result, and ends with `raise exception`

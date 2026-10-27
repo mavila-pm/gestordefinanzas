@@ -1,27 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type pg from 'pg';
+import { activateSub, beginCharge, orderFor, resetBilling } from './billing-helpers';
 import { asRole, DATABASE_URL, errorCode, errorMessage, makePool, USER_A, USER_B } from './helpers';
-
-/** Create an order as the user and COMMIT it (asRole always rolls back). */
-async function orderFor(pool: pg.Pool, user: string, plan: string): Promise<string> {
-  const c = await pool.connect();
-  try {
-    await c.query('begin');
-    await c.query('set local role authenticated');
-    await c.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: user, role: 'authenticated' })]);
-    const id = (await c.query('select public.billing_create_order($1, public.billing_price($1)) as id', [plan])).rows[0].id as string;
-    await c.query('commit');
-    return id;
-  } finally { c.release(); }
-}
 
 describe.skipIf(!DATABASE_URL)('billing: plans, orders, demo purchase, server-only activation', () => {
   let pool: pg.Pool;
   beforeAll(() => { pool = makePool(); });
-  beforeEach(async () => {
-    await pool.query('delete from auth.users');
-    await pool.query(`insert into auth.users (id, email) values ($1, 'a@test.local'), ($2, 'b@test.local')`, [USER_A, USER_B]);
-  });
+  beforeEach(async () => { await resetBilling(pool); });
   afterAll(async () => { await pool?.end(); });
 
   it('prices come from the server: Mensual US$ 4 until 2026 and US$ 9 from 2027 (Lima), Anual 59, Vitalicio 198', async () => {
@@ -88,7 +73,10 @@ describe.skipIf(!DATABASE_URL)('billing: plans, orders, demo purchase, server-on
       expect(await errorMessage(c, `select public.billing_create_order('monthly', public.billing_price('monthly'))`)).toBe('already_lifetime');
     });
     const monthly = await orderFor(pool, USER_B, 'monthly');
-    expect((await pool.query(`select public.billing_activate($1, 'culqi', 'sub_1', (select amount_minor from public.billing_orders where id = $1), 'USD') as s`, [monthly])).rows[0].s).toBe('trialing');
+    // Recurring plans are activated only with the provider's subscription and dates (ADR-0019).
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'sxn_1', (select amount_minor from public.billing_orders where id = $1), 'USD')`, [monthly])).rejects.toThrow('recurring_needs_subscription');
+    await beginCharge(pool, monthly, USER_B);
+    expect(await activateSub(pool, monthly, { sub: 'sxn_test_b1' })).toBe('trialing');
     const sub = (await pool.query('select status, billing_plan, trial_ends_at, current_period_end from public.subscriptions where user_id = $1', [USER_B])).rows[0];
     expect(sub.status).toBe('trialing');
     expect(Math.round((sub.trial_ends_at.getTime() - Date.now()) / 86_400_000)).toBe(14);
@@ -102,10 +90,9 @@ describe.skipIf(!DATABASE_URL)('billing: plans, orders, demo purchase, server-on
     const life = await orderFor(pool, USER_A, 'lifetime');
     const monthly = await orderFor(pool, USER_A, 'monthly');
     expect((await pool.query('select status, failure from public.billing_orders where id = $1', [life])).rows[0]).toEqual({ status: 'failed', failure: 'superseded' });
-    const act = (id: string, ref: string, amount = '(select amount_minor from public.billing_orders where id = $1)', cur = "'USD'") =>
-      pool.query(`select public.billing_activate($1, 'culqi', '${ref}', ${amount}, ${cur}) as s`, [id]);
-    await expect(act(life, 'c1')).rejects.toThrow('order_not_pending');
-    expect((await act(monthly, 'c2')).rows[0].s).toBe('trialing');
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'chr_c1', 19800, 'USD')`, [life])).rejects.toThrow('order_not_pending');
+    await beginCharge(pool, monthly, USER_A);
+    expect(await activateSub(pool, monthly, { sub: 'sxn_test_c2' })).toBe('trialing');
     // With a paid plan in place, nothing else can be bought or activated over it.
     await asRole(pool, 'authenticated', USER_A, async (c) => {
       expect(await errorMessage(c, `select public.billing_create_order('lifetime', public.billing_price('lifetime'))`)).toBe('already_plus');
@@ -113,16 +100,19 @@ describe.skipIf(!DATABASE_URL)('billing: plans, orders, demo purchase, server-on
   });
 
   it('activation checks what the provider charged, needs a reference, expires, and re-checks the trial', async () => {
-    const o = await orderFor(pool, USER_A, 'annual');
-    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'r1', 100, 'USD')`, [o])).rejects.toThrow('amount_mismatch');
-    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'r1', 5900, 'PEN')`, [o])).rejects.toThrow('amount_mismatch');
-    await expect(pool.query(`select public.billing_activate($1, 'culqi', null, 5900, 'USD')`, [o])).rejects.toThrow('bad_reference');
-    // A card-less trial started between ordering and paying: the order's trial is no longer available.
-    await asRole(pool, 'authenticated', USER_A, async (c) => { await c.query('select public.start_plus_trial()'); await c.query('commit'); await c.query('begin'); });
-    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'r1', 5900, 'USD')`, [o])).rejects.toThrow('trial_no_longer_available');
-    const stale = await orderFor(pool, USER_B, 'lifetime');
+    const o = await orderFor(pool, USER_A, 'lifetime');
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'chr_r1', 100, 'USD')`, [o])).rejects.toThrow('amount_mismatch');
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'chr_r1', 19800, 'PEN')`, [o])).rejects.toThrow('amount_mismatch');
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', null, 19800, 'USD')`, [o])).rejects.toThrow('bad_reference');
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'chr r1', 19800, 'USD')`, [o])).rejects.toThrow('bad_reference');
+    // A card-less trial started between ordering and paying: the order's trial is no longer available, and this is
+    // decided before any charge (billing_begin_charge).
+    const a = await orderFor(pool, USER_B, 'annual');
+    await asRole(pool, 'authenticated', USER_B, async (c) => { await c.query('select public.start_plus_trial()'); await c.query('commit'); await c.query('begin'); });
+    await expect(beginCharge(pool, a, USER_B)).rejects.toThrow('trial_no_longer_available');
+    const stale = await orderFor(pool, USER_A, 'lifetime');
     await pool.query(`update public.billing_orders set created_at = now() - interval '2 hours' where id = $1`, [stale]);
-    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'r2', 19800, 'USD')`, [stale])).rejects.toThrow('order_expired');
+    await expect(pool.query(`select public.billing_activate($1, 'culqi', 'chr_r2', 19800, 'USD')`, [stale])).rejects.toThrow('order_expired');
   });
 
   it('parallel order creation for the same person is serialised (no two pending orders)', async () => {
