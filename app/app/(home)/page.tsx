@@ -21,6 +21,7 @@ import { EXISTING_ACCOUNT_NOTICE, limaMonth, limaMonthRange } from '../../../src
 import { TxRow } from '../../../components/tx-row';
 import { Icon } from '../../../components/ui/icon';
 import { ComingUp, FreeHero } from '../../../components/free-hero';
+import { LiquiditySummary } from '../../../components/liquidity-summary';
 import { RegisterMenu } from '../../../components/register-menu';
 import { SavingsGoal } from '../../../components/savings-goal';
 import { TrendBars } from '../../../components/trend-bars';
@@ -108,6 +109,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     .sort((a, b) => a.date!.localeCompare(b.date!))[0] ?? null;
   const facts: CreditCardFacts[] = cards.map((c) => ({ name: c.name, currency: c.currency, limitMinor: c.position.limitMinor, usedMinor: c.position.usedMinor }));
   const lines = (['PEN', 'USD'] as const).map((c) => creditUse(facts, c)).filter((x) => x !== null);
+  // Credit availability per currency (línea − usado, registered data only): shown apart from liquidity, never added.
+  const creditAvailable: Partial<Record<Currency, number>> = {};
+  for (const c of cards) if (c.position.bankAvailableMinor !== null) creditAvailable[c.currency] = (creditAvailable[c.currency] ?? 0) + c.position.bankAvailableMinor;
   // Overdue = a planned payment past its date with no payment seen (plan engine), per currency, never mixed.
   const plans = isCurrent ? (['PEN', 'USD'] as const).filter((c) => planning.obligations.some((o) => o.currency === c)).map((c) => planFor(planning, c)) : [];
   const overdue = plans.length ? plans.reduce((n, p) => n + p.lines.filter((l) => l.kind === 'overdue').length, 0) : null;
@@ -139,8 +143,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       <main className="stack narrow-md" data-testid="welcome">
         {existing}
         {head}
+        <section className="card stack-sm" data-testid="first-sources">
+          <h2>Primero, tus cuentas y tarjetas</h2>
+          <p className="muted">Agrega tu tarjeta de débito con sus cuentas, tu efectivo y tus tarjetas de crédito. De ahí sale tu liquidez y tus gastos la actualizan solos.</p>
+          <div><Link href="/app/tarjetas" className="button">Agregar cuentas y tarjetas</Link></div>
+        </section>
         <section className="card stack-sm">
-          <h2>Empieza con tu primer movimiento</h2>
+          <h2>Luego, tu primer movimiento</h2>
           <p className="muted">Cuéntaselo a Vels con tus palabras o regístralo en un minuto.</p>
           <div><RegisterMenu className="button" /></div>
         </section>
@@ -172,6 +181,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       )}
 
       {milestone && <section className="milestone" data-testid="milestone" aria-label="Cierre de mes"><p>{milestone.text}</p></section>}
+
+      {/* First: how much money there is today (Cuentas y tarjetas, ADR-0020), per currency; credit apart, never added. */}
+      {isCurrent && (
+        <section className="stack-sm" aria-labelledby="h-liq" data-testid="home-liquidity">
+          <div className="row"><h2 id="h-liq">Tu liquidez</h2><Link href="/app/tarjetas" className="quiet">Cuentas y tarjetas</Link></div>
+          <LiquiditySummary liquidity={planning.liquidity} creditAvailable={creditAvailable} />
+        </section>
+      )}
 
       {/* Top: what can be used until the next income, then the month in four figures (PEN). */}
       <div className={`dash-top${available ? '' : ' solo'}`}>

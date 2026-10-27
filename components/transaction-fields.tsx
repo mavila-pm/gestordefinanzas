@@ -49,7 +49,7 @@ export function TransactionFields({ types, catalog, values }: { types: readonly 
           </select>
         </label>
         {catalog.accounts.length > 0 && (
-          <label className="stack-sm"><span>Cuenta</span>
+          <label className="stack-sm"><span>Cuenta o efectivo</span>
             <select name="accountId" defaultValue={values.accountId}>
               <option value="">Sin cuenta</option>
               {catalog.accounts.map((a) => <option key={a.id} value={a.id}>{a.alias}{a.last4 ? ` ****${a.last4}` : ''}</option>)}
@@ -57,6 +57,7 @@ export function TransactionFields({ types, catalog, values }: { types: readonly 
           </label>
         )}
       </div>
+      <small className="muted">De aquí sale o entra el dinero: así tu saldo se actualiza solo. Con débito basta la tarjeta si tiene una cuenta en esa moneda.</small>
     </>
   );
 }

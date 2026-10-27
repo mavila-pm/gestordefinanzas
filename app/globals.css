@@ -867,6 +867,32 @@ button:disabled { transition-duration: 0ms; }
 html[data-theme="dark"] .card-visual[data-tone="credit"] { background: var(--surface-elevated); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--border-subtle); }
 /* Text on Cítrico stays dark in both themes (same rule as .badge). */
 html[data-theme="dark"] .card-visual[data-tone="account"], html[data-theme="dark"] .acc-dot:not([data-currency="USD"]) { color: var(--bg-primary); }
+/* Colour the person chose (CR-001): derived from brand tokens, readable ink in both themes. Overrides the tone. */
+.card-visual[data-color], .swatch[data-color] { --cv-ink: white; }
+.card-visual[data-color="black"], .swatch[data-color="black"] { --cv-bg: color-mix(in srgb, var(--semantic-transfer) 8%, black); }
+.card-visual[data-color="gray"], .swatch[data-color="gray"] { --cv-bg: color-mix(in srgb, var(--border-control) 72%, black); }
+.card-visual[data-color="blue"], .swatch[data-color="blue"] { --cv-bg: color-mix(in srgb, var(--semantic-transfer) 72%, black); }
+.card-visual[data-color="green"], .swatch[data-color="green"] { --cv-bg: color-mix(in srgb, var(--semantic-income) 72%, black); }
+.card-visual[data-color="red"], .swatch[data-color="red"] { --cv-bg: color-mix(in srgb, var(--semantic-error) 72%, black); }
+.card-visual[data-color="sky"], .swatch[data-color="sky"] { --cv-bg: color-mix(in srgb, var(--semantic-transfer) 38%, white); --cv-ink: black; }
+.card-visual[data-color="yellow"], .swatch[data-color="yellow"] { --cv-bg: var(--brand-accent); --cv-ink: black; }
+.card-visual[data-color], html[data-theme="dark"] .card-visual[data-color] { background: var(--cv-bg); color: var(--cv-ink); box-shadow: 0 1px 2px color-mix(in srgb, black 18%, transparent); }
+.cv-exp { margin-left: var(--space-12); font-size: .8em; letter-spacing: .04em; opacity: .8; }
+.swatches { display: flex; flex-wrap: wrap; gap: var(--space-8); }
+.swatch { position: relative; width: 44px; height: 44px; border-radius: 50%; background: var(--cv-bg); cursor: pointer;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 18%, transparent); transition: transform var(--dur-1) var(--ease-out); }
+.swatch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.swatch:has(input:checked) { outline: 3px solid var(--text-primary); outline-offset: 2px; }
+.swatch:has(input:focus-visible) { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+@media (hover: hover) { .swatch:hover { transform: scale(1.06); } }
+.account-row { padding: var(--space-12); border-radius: 12px; background: var(--bg-secondary); }
+.account-row legend { font-weight: 600; padding: 0; margin-bottom: var(--space-4); }
+.liq-grid { display: grid; gap: var(--space-12); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.liq-figure { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.balance-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-12); padding: var(--space-8) 0; border-top: 1px solid var(--border-subtle); }
+.balance-row:first-child { border-top: 0; }
+.balance-row .amount { font-variant-numeric: tabular-nums; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .swatch:hover { transform: none; } }
 .cv-top, .cv-bottom { display: flex; justify-content: space-between; align-items: center; gap: var(--space-8); min-width: 0; }
 .cv-bank { font-weight: 700; letter-spacing: .02em; } .cv-type { font-size: 12px; opacity: .78; font-weight: 600; }
 .cv-chip { width: 34px; height: 24px; border-radius: 6px; background: color-mix(in srgb, currentColor 22%, transparent); }

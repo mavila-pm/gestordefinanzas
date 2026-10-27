@@ -13,11 +13,15 @@ import {
   type EssentialsSuggestion, type IncomeMatch, type ObservedAmount, type TimelineItem,
 } from '../src/engine/observed';
 import { loadDecisions } from './learning';
+import { loadMoneySources } from './money-sources';
+import type { Liquidity } from '../src/engine/liquidity';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../src/infrastructure/supabase/transaction-row';
 
 const limaDate = (iso: string) => new Date(Date.parse(iso) - 5 * 3600_000).toISOString().slice(0, 10);
 
 export interface PlanningData {
+  /** Liquidity per currency from Cuentas y tarjetas (ADR-0020); source null/declared until accounts have balances. */
+  liquidity: Record<Currency, Liquidity>;
   today: string;
   obligations: Obligation[];
   obligationRows: Array<Obligation & { active: boolean; notes: string | null }>;
@@ -50,7 +54,7 @@ export interface PlanningData {
 export async function loadPlanningData(supabase: SupabaseClient, now = new Date()): Promise<PlanningData> {
   const today = limaToday(now);
   const since = new Date(now.getTime() - 45 * 86_400_000).toISOString();
-  const [fx, debts, inc, settle, bal, set, txs, decided, res, resBal, debtPay, resMoves] = await Promise.all([
+  const [fx, debts, inc, settle, bal, set, txs, decided, res, resBal, debtPay, resMoves, sources] = await Promise.all([
     supabase.from('fixed_expenses').select('id,name,kind,currency,amount_minor,amount_status,frequency,anchor_month,due_day,due_day_max,target_day,notes,active,created_at,paused_until,ended_on'),
     supabase.from('debts').select('id,name,currency,balance_minor,annual_rate_bp,installment_minor,installments_total,installments_paid,due_day,active,created_at,last_payment_on'),
     supabase.from('expected_incomes').select('id,name,currency,amount_minor,amount_status,frequency,day_of_month,day_max,second_day,anchor_date,paused_until,ended_on').eq('active', true),
@@ -65,6 +69,8 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     supabase.from('debt_payments').select('debt_id,period,amount_minor,settles').gte('period', addDays(today, -62).slice(0, 7)).limit(1000),
     // Apartado entries of the same window as the movements: a plan from a recent income subtracts what was set aside after it.
     supabase.from('reserve_entries').select('reserve_id,direction,amount_minor,created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(1000),
+    // Liquidity from Cuentas y tarjetas (ADR-0020): replaces the declared total once an account has a balance.
+    loadMoneySources(supabase),
   ]);
 
   const obligationRows = (fx.data ?? []).map((r) => ({
@@ -126,6 +132,13 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     balances[cur] = { amountMinor: Number(b.amount_minor), asOf, stale: isBalanceStale({ currency: cur, asOf }, now, transactions),
       bankMinor: b.bank_minor == null ? null : Number(b.bank_minor), cashMinor: b.cash_minor == null ? null : Number(b.cash_minor) };
   }
+  // Derived liquidity wins over the declared total (never added to it): it is current, so never stale.
+  for (const cur of ['PEN', 'USD'] as Currency[]) {
+    const l = sources.liquidity[cur];
+    if (l.source === 'accounts' && l.totalMinor !== null) {
+      balances[cur] = { amountMinor: l.totalMinor, asOf: now.toISOString(), stale: false, bankMinor: l.bankMinor, cashMinor: l.cashMinor };
+    }
+  }
   const settings: PlanningData['settings'] = {};
   for (const s of set.data ?? []) settings[s.currency as Currency] = { essentialsMonthlyMinor: s.essentials_monthly_minor === null ? null : Number(s.essentials_monthly_minor), essentialsEstimated: s.essentials_status === 'estimated', cushionMinor: Number(s.cushion_minor), allowZeroForDebt: s.allow_zero_for_debt === true, savingsGoalMinor: s.savings_goal_minor == null ? null : Number(s.savings_goal_minor) };
 
@@ -141,6 +154,7 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
   const obligations: Obligation[] = [...obligationRows.filter((o) => o.active), ...debtObligations];
 
   return {
+    liquidity: sources.liquidity,
     today, obligations, obligationRows, incomes, settledObligations, settlements, partialPaid, settledIncomes, balances, settings,
     reserves: toReserves(res.data, resBal.data),
     reserveEntries: (resMoves.data ?? []).filter((e) => e.direction === 'in' || e.direction === 'out')
