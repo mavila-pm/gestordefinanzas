@@ -9,7 +9,7 @@ export const metadata = { title: 'Entrar · Velsuno' };
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
   const { next, error } = await searchParams;
   return (
-    <AuthScreen title="Entra a Velsuno">
+    <AuthScreen title="Entra a Velsuno" lead="Qué bueno tenerte de vuelta." variant="login">
       {error === 'link' && (
         <p role="alert" className="notice error" data-testid="link-error">
           <span>Este enlace ya no sirve: venció o ya se usó. <Link href="/signup">Pide uno nuevo</Link> o entra con tu contraseña.</span>
@@ -21,11 +21,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         submit="Entrar"
         hidden={{ next: safeNextPath(next) }}
         fields={[
-          { name: 'email', label: 'Correo electrónico', type: 'email', autoComplete: 'email' },
+          { name: 'email', label: 'Correo electrónico', type: 'email', autoComplete: 'email', placeholder: 'tu@correo.com' },
           { name: 'password', label: 'Contraseña', type: 'password', autoComplete: 'current-password' },
         ]}
+        afterFields={<p className="auth-login-forgot"><Link href="/forgot-password">¿Olvidaste tu contraseña?</Link></p>}
+        submitArrow
       />
-      <p className="auth-links"><Link href="/forgot-password">¿Olvidaste tu contraseña?</Link><Link href="/signup">Crear cuenta</Link></p>
+      <p className="auth-login-signup">¿Aún no tienes cuenta? <Link href="/signup">Crear cuenta</Link></p>
       <p className="auth-legal"><Link href="/terminos">Términos y condiciones</Link><span aria-hidden="true"> · </span><Link href="/privacidad">Política de privacidad</Link></p>
     </AuthScreen>
   );

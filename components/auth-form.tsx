@@ -4,9 +4,10 @@ import { useActionState, useId, useState } from 'react';
 import type { FormState } from '../app/auth/actions';
 import { PasswordInput } from './password-input';
 import { CapField } from './cap-field';
+import { Icon } from './ui/icon';
 import type { CapScope } from '../src/web/cap';
 
-interface Field { name: string; label: string; type: string; autoComplete: string; hint?: string; minLength?: number }
+interface Field { name: string; label: string; type: string; autoComplete: string; hint?: string; minLength?: number; placeholder?: string }
 
 export function AuthForm(props: {
   action: (prev: FormState, form: FormData) => Promise<FormState>;
@@ -15,6 +16,10 @@ export function AuthForm(props: {
   hidden?: Record<string, string>;
   /** Public auth forms: Cap anti-bot check, verified again by the server action. */
   cap?: CapScope;
+  /** Shown right after the fields, before the anti-bot check (e.g. the login's "¿Olvidaste tu contraseña?"). */
+  afterFields?: React.ReactNode;
+  /** Arrow after the submit label (login). */
+  submitArrow?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(props.action, {});
   // Controlled: React resets a form after its action; what the person typed must survive an error.
@@ -34,7 +39,7 @@ export function AuthForm(props: {
             {f.type === 'password'
               ? <PasswordInput id={fid} name={f.name} autoComplete={f.autoComplete as 'current-password' | 'new-password'} describedBy={describedBy} invalid={!!state.error}
                   value={values[f.name] ?? ''} onChange={set(f.name)} />
-              : <input id={fid} name={f.name} type={f.type} autoComplete={f.autoComplete} required minLength={f.minLength}
+              : <input id={fid} name={f.name} type={f.type} autoComplete={f.autoComplete} required minLength={f.minLength} placeholder={f.placeholder}
                   value={values[f.name] ?? ''} onChange={(e) => set(f.name)(e.target.value)}
                   inputMode={f.type === 'email' ? 'email' : undefined} autoCapitalize={f.type === 'email' ? 'none' : undefined} spellCheck={false}
                   aria-invalid={state.error ? true : undefined} aria-describedby={describedBy} />}
@@ -42,10 +47,14 @@ export function AuthForm(props: {
           </div>
         );
       })}
+      {props.afterFields}
       {props.cap && <CapField scope={props.cap} resetKey={state.error || state.message ? state : undefined} />}
       {state.error && <p role="alert" className="error" id={errorId}>{state.error}</p>}
       {state.message && <p role="status" className="notice positive">{state.message}</p>}
-      <button type="submit" disabled={pending} className="wide">{pending ? 'Un momento…' : props.submit}</button>
+      <button type="submit" disabled={pending} className={props.submitArrow ? 'wide with-arrow' : 'wide'}>
+        <span>{pending ? 'Un momento…' : props.submit}</span>
+        {props.submitArrow && <Icon name="arrow-right" size={20} />}
+      </button>
     </form>
   );
 }
