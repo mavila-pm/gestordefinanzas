@@ -21,7 +21,7 @@ function applied(): AppliedPlan {
 describe('applied plan (ADR-0013)', () => {
   it('keeps committed, reserved, unknown and realized apart; unknown is never 0', () => {
     const a = applied();
-    const r = reconcile(a, '2026-09-29', new Map());
+    const r = reconcile(a, '2026-09-29', { paid: new Map() });
     expect(r.committedMinor).toBe(150000);
     expect(r.realizedMinor).toBe(0);
     expect(r.unknownCount).toBe(1);
@@ -31,15 +31,41 @@ describe('applied plan (ADR-0013)', () => {
 
   it('a line is realized only by a real settlement of the same obligation and period', () => {
     const a = applied();
-    expect(reconcile(a, '2026-09-29', new Map([[O, new Set(['2026-09'])]])).realizedMinor).toBe(0);
-    const r = reconcile(a, '2026-10-06', new Map([[O, new Set(['2026-10'])]]));
+    expect(reconcile(a, '2026-09-29', { paid: new Map([[O, new Set(['2026-09'])]]) }).realizedMinor).toBe(0);
+    const r = reconcile(a, '2026-10-06', { paid: new Map([[O, new Set(['2026-10'])]]), paidMinor: new Map([[O, new Map([['2026-10', 150000]])]]) });
     expect(r.realizedMinor).toBe(150000);
     expect(r.committedMinor).toBe(0);
     expect(r.lines.find((l) => l.label === 'Alquiler')?.state).toBe('realized');
   });
 
+  it('realizado is the REAL amount, never the planned one; skipped is neither realized nor pending (ADR-0017)', () => {
+    const a = applied();
+    const paid = { paid: new Map([[O, new Set(['2026-10'])]]) };
+    // Closed with a smaller real payment ("pago completo" of S/ 1,400): realized 1,400, not 1,500.
+    expect(reconcile(a, '2026-10-06', { ...paid, paidMinor: new Map([[O, new Map([['2026-10', 140000]])]]) }).realizedMinor).toBe(140000);
+    // Closed but the movement cannot be read: unknown, never the planned amount.
+    const unread = reconcile(a, '2026-10-06', paid);
+    expect(unread.realizedMinor).toBe(0);
+    expect(unread.unknownCount).toBe(2);
+    const skipped = reconcile(a, '2026-10-06', { paid: new Map(), skipped: new Map([[O, new Set(['2026-10'])]]) });
+    expect(skipped.lines.find((l) => l.label === 'Alquiler')?.state).toBe('skipped');
+    expect(skipped.realizedMinor + skipped.committedMinor).toBe(0);
+  });
+
+  it('an abono after applying: realized = the abono, committed = what is left', () => {
+    const r = reconcile(applied(), '2026-10-01', { paid: new Map(), paidMinor: new Map([[O, new Map([['2026-10', 50000]])]]) });
+    expect(r.realizedMinor).toBe(50000);
+    expect(r.committedMinor).toBe(100000);
+    // An abono made before applying was already left out of the line: it does not lower it twice.
+    const before = applied();
+    before.lines = before.lines.map((l) => (l.label === 'Alquiler' ? { ...l, amountMinor: 100000, paidMinor: 50000 } : l));
+    const r2 = reconcile(before, '2026-10-01', { paid: new Map(), paidMinor: new Map([[O, new Map([['2026-10', 70000]])]]) });
+    expect(r2.committedMinor).toBe(80000);
+    expect(r2.realizedMinor).toBe(70000);
+  });
+
   it('unpaid past its date → late; horizon passed → expired', () => {
-    const r = reconcile(applied(), '2026-10-20', new Map());
+    const r = reconcile(applied(), '2026-10-20', { paid: new Map() });
     expect(r.lines.find((l) => l.label === 'Alquiler')?.state).toBe('late');
     expect(r.expired).toBe(true);
   });

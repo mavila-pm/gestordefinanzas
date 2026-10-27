@@ -33,7 +33,7 @@ export async function loadSubscriptions(supabase: SupabaseClient): Promise<Subsc
     ? await supabase.from('plan_settlements').select('fixed_expense_id,period,status,transaction_id,tx:transactions(amount_minor,currency,occurred_at,merchant_raw,status)')
       .in('fixed_expense_id', ids).order('period', { ascending: false }).limit(1000)
     : { data: [] };
-  const settlements: SettlementFact[] = ((st.data ?? []) as unknown as Array<{ fixed_expense_id: string; period: string; status: 'paid' | 'skipped'; transaction_id: string | null;
+  const settlements: SettlementFact[] = ((st.data ?? []) as unknown as Array<{ fixed_expense_id: string; period: string; status: SettlementFact['status']; transaction_id: string | null;
     tx: { amount_minor: number; currency: Currency; occurred_at: string; merchant_raw: string | null; status: string } | null }>).map((x) => {
     // Only a confirmed movement is a real payment; anything else is shown without an amount.
     const tx = x.tx && x.tx.status === 'confirmed' ? x.tx : null;

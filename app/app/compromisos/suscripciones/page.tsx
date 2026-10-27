@@ -12,7 +12,7 @@ import { addDays, limaToday, shortDate } from '../../../../src/domain/dates';
 import { formatMoney, type Currency } from '../../../../src/domain/money';
 import { plural } from '../../../../src/domain/plural';
 import { providerBySlug } from '../../../../src/domain/subscriptions';
-import { knownSum, monthlyEquivalentMinor, nextCharge, paymentHistory, subscriptionState, subscriptionTotals, type SubscriptionRow } from '../../../../src/engine/subscriptions';
+import { closedPeriods, knownSum, monthlyEquivalentMinor, nextCharge, paymentHistory, subscriptionState, subscriptionTotals, type SubscriptionRow } from '../../../../src/engine/subscriptions';
 import { isUuid } from '../../../../src/web/transaction-input';
 import { markObligationPaidAction } from '../../plan/actions';
 import { convertToSubscriptionAction, saveSubscriptionAction } from './actions';
@@ -34,8 +34,7 @@ export default async function Subscriptions({ searchParams }: { searchParams: Pr
   const [data, plan] = await Promise.all([loadSubscriptions(supabase), loadPlanningData(supabase)]);
   const today = limaToday();
   const { subs, settlements, instruments } = data;
-  const settledBy = new Map<string, Set<string>>();
-  for (const x of settlements) (settledBy.get(x.obligationId) ?? settledBy.set(x.obligationId, new Set()).get(x.obligationId)!).add(x.period);
+  const settledBy = closedPeriods(settlements);
   const live = subs.filter((s) => subscriptionState(s, today) !== 'ended');
   const ended = subs.filter((s) => subscriptionState(s, today) === 'ended');
   const sorted = live.map((s) => ({ s, next: nextCharge(s, today, settledBy.get(s.id) ?? new Set()) }))
@@ -108,10 +107,10 @@ export default async function Subscriptions({ searchParams }: { searchParams: Pr
                 <thead><tr><th scope="col">Periodo</th><th scope="col">Fecha</th><th scope="col">Importe</th><th scope="col">Origen</th></tr></thead>
                 <tbody>
                   {history.map((h) => (
-                    <tr key={h.period}>
+                    <tr key={`${h.period}-${h.transactionId ?? h.status}`}>
                       <th scope="row">{periodLabel(h.period)}</th>
                       <td>{h.occurredOn ? shortDate(h.occurredOn) : '—'}</td>
-                      <td>{h.status === 'skipped' ? <span className="muted">Omitido</span> : h.amountMinor === null ? <span className="muted">Sin dato</span> : money(h.amountMinor, h.currency ?? s.currency)}</td>
+                      <td>{h.status === 'skipped' ? <span className="muted">Omitido</span> : h.amountMinor === null ? <span className="muted">Sin dato</span> : <>{money(h.amountMinor, h.currency ?? s.currency)}{h.status === 'partial' ? <span className="muted"> · abono</span> : null}</>}</td>
                       <td>{h.status === 'skipped' ? <span className="muted">No se pagó este periodo</span> : h.transactionId ? <Link href={`/app/movimientos/${h.transactionId}`}>{h.merchant ?? 'Ver movimiento'}</Link> : <span className="muted">Sin movimiento</span>}</td>
                     </tr>
                   ))}

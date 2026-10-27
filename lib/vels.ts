@@ -1,7 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadSubscriptions } from './subscriptions';
-import { monthlyEquivalentMinor, nextCharge, subscriptionState } from '../src/engine/subscriptions';
+import { closedPeriods, monthlyEquivalentMinor, nextCharge, subscriptionState } from '../src/engine/subscriptions';
 import { answer, compactView, detectIntent, proactiveNote, STYLE_INSTRUCTION, styleAnswer, velsSuggestions, type Answer, type View } from '../src/ai/vels-answers';
 import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
@@ -19,6 +19,8 @@ import { infer, STOP_TEXT } from './ai';
 import { logLearning } from './learning';
 import { isReplay } from './idempotency';
 import { applyPlan } from './plan-applications';
+import { settleIncome, settleObligation } from './settlements';
+import { moveReserve, reserveMoveText } from './reserves';
 import { loadCardViews } from './cards';
 import { loadMessages, readImages } from './onboarding';
 import { loadPlanningData, planFor, planInputFor, planTimeline } from './planning';
@@ -42,8 +44,7 @@ async function view(supabase: SupabaseClient): Promise<View> {
     loadSubscriptions(supabase).catch(() => null),
   ]);
   const year = d.today.slice(0, 4);
-  const settledBy = new Map<string, Set<string>>();
-  for (const x of subs?.settlements ?? []) (settledBy.get(x.obligationId) ?? settledBy.set(x.obligationId, new Set()).get(x.obligationId)!).add(x.period);
+  const settledBy = closedPeriods(subs?.settlements ?? []);
   const currencies = [...new Set<'PEN' | 'USD'>(['PEN', ...d.obligations.map((o) => o.currency), ...d.incomes.map((i) => i.currency), ...(Object.keys(d.balances) as Array<'PEN' | 'USD'>)])];
   return {
     today: d.today,
@@ -58,10 +59,13 @@ async function view(supabase: SupabaseClient): Promise<View> {
     timeline: planTimeline(d, 14),
     inputs: Object.fromEntries(currencies.map((c) => [c, planInputFor(d, c)])),
     subscriptions: (subs?.subs ?? []).filter((x) => subscriptionState(x, d.today) !== 'ended').map((x) => {
-      const paid = (subs?.settlements ?? []).filter((p) => p.obligationId === x.id && p.status === 'paid' && p.amountMinor !== null && p.currency === x.currency && p.occurredOn?.startsWith(year));
+      // Real movements only (abonos included); skipped never counts as paid. Charges = distinct periods (abonos of one
+      // charge are one charge).
+      const paid = (subs?.settlements ?? []).filter((p) => p.obligationId === x.id && p.status !== 'skipped' && p.amountMinor !== null && p.currency === x.currency && p.occurredOn?.startsWith(year));
       return { id: x.id, name: x.name, currency: x.currency, amountMinor: x.amountMinor, monthlyMinor: monthlyEquivalentMinor(x),
-        nextDate: nextCharge(x, d.today, settledBy.get(x.id) ?? new Set())?.date ?? null, paidYearMinor: paid.reduce((n, p) => n + p.amountMinor!, 0), paidYearCount: paid.length };
+        nextDate: nextCharge(x, d.today, settledBy.get(x.id) ?? new Set())?.date ?? null, paidYearMinor: paid.reduce((n, p) => n + p.amountMinor!, 0), paidYearCount: new Set(paid.map((p) => p.period)).size };
     }),
+    reserves: d.reserves,
     debtLinks: d.debts.map((x) => ({ ...x, obligationId: d.obligationRows.find((o) => o.active && o.kind === 'card' && o.currency === x.currency && fold(o.name) === fold(x.name))?.id ?? null })),
   };
 }
@@ -73,7 +77,7 @@ function toCard(a: Answer): MessageCard | null {
   const links = (a.actions ?? []).filter((x) => x.type === 'link') as Array<{ label: string; href: string }>;
   // Writes proposed by Vels carry a one-time reference: two tabs / a replayed request store the row once (ADR-0012).
   const acts = (a.actions ?? []).filter((x) => x.type === 'act')
-    .map((x) => (x.type === 'act' && (x.act === 'create_debt' || x.act === 'apply_plan') ? { ...x, fields: { ...x.fields, ref: `vels:${crypto.randomUUID()}` } } : x)) as unknown as MessageCard['acts'];
+    .map((x) => (x.type === 'act' && (x.act === 'create_debt' || x.act === 'apply_plan' || x.act === 'reserve_in' || x.act === 'reserve_out') ? { ...x, fields: { ...x.fields, ref: `vels:${crypto.randomUUID()}` } } : x)) as unknown as MessageCard['acts'];
   const replies = (a.actions ?? []).filter((x) => x.type === 'reply').map((x) => x.label);
   if (links.length) card.links = links;
   if (acts?.length) card.acts = acts;
@@ -226,9 +230,22 @@ export async function velsAct(supabase: SupabaseClient, userId: string, act: str
     return error ? 'No pude actualizarlo.' : 'Listo, actualizado.';
   }
   if (act === 'mark_paid') {
-    if (![fields.obligationId, fields.transactionId].every((x) => /^[0-9a-f-]{36}$/.test(x ?? '')) || !/^\d{4}-\d{2}$/.test(fields.period ?? '')) return 'No pude marcarlo.';
-    const { error } = await supabase.from('plan_settlements').insert({ user_id: userId, fixed_expense_id: fields.obligationId, period: fields.period, transaction_id: fields.transactionId });
-    return error ? 'No pude marcarlo. Puede que ya esté enlazado.' : 'Listo, marcado como pagado.';
+    // Fields come from the button's JSON (client): the shared settle path re-checks everything (ADR-0017).
+    const r = await settleObligation(supabase, userId, { obligationId: fields.obligationId, transactionId: fields.transactionId, period: fields.period, mode: fields.mode });
+    if (r.ok && r.status === 'partial') return r.remainingMinor === null ? 'Listo, registré el abono. Falta confirmar el monto total.' : `Listo, registré el abono. Te faltan ${money(r.remainingMinor, r.currency)}.`;
+    if (r.ok) return 'Listo, marcado como pagado.';
+    return r.error === 'not_payment' ? 'Ese movimiento no es un pago confirmado en la misma moneda.' : r.error === 'duplicate' ? 'Ya estaba enlazado.' : 'No pude marcarlo.';
+  }
+  if (act === 'reserve_in' || act === 'reserve_out') {
+    // Apartar / Usar (ADR-0017): fields come from the button's JSON (client), so the amount and the apartado are
+    // re-checked by the shared write path and the SQL guard; it is an internal allocation, never income or expense.
+    const direction = act === 'reserve_in' ? 'in' : 'out';
+    const amount = /^\d{1,12}$/.test(fields.amount ?? '') ? Number(fields.amount) : NaN;
+    const r = await moveReserve(supabase, userId, { reserveId: fields.reserveId, direction, amountMinor: amount,
+      clientRef: /^vels:[0-9a-f-]{36}$/.test(fields.ref ?? '') ? fields.ref! : null });
+    if (!r.ok && r.error === 'invalid') return 'No pude hacerlo.';
+    const t = reserveMoveText(r, direction, amount, money);
+    return 'message' in t ? `Listo. ${t.message}` : t.error;
   }
   if (act === 'create_debt') {
     // Confirmation required (ADR-0011 class D): a debt the person owes — pending, never marked paid.
@@ -278,11 +295,8 @@ export async function velsAct(supabase: SupabaseClient, userId: string, act: str
     return on ? 'Listo. Lo tendré en cuenta al sugerirte abonos.' : 'Listo. Mantengo tu colchón.';
   }
   if (act === 'link_income') {
-    if (![fields.incomeId, fields.transactionId].every((x) => /^[0-9a-f-]{36}$/.test(x ?? '')) || !/^\d{4}-(0[1-9]|1[0-2])(-\d{2})?$/.test(fields.period ?? '')) return 'No pude registrarlo.';
-    const { data: tx } = await supabase.from('transactions').select('type,status').eq('id', fields.transactionId!).maybeSingle();
-    if (!tx || tx.type !== 'income' || tx.status !== 'confirmed') return 'Ese movimiento no es un ingreso confirmado.';
-    const { error } = await supabase.from('plan_settlements').insert({ user_id: userId, expected_income_id: fields.incomeId, period: fields.period, transaction_id: fields.transactionId });
-    if (error) return error.code === '23505' ? 'Ese ingreso ya estaba registrado.' : 'No pude registrarlo.';
+    const r = await settleIncome(supabase, userId, { incomeId: fields.incomeId, transactionId: fields.transactionId, period: fields.period });
+    if (!r.ok) return r.error === 'duplicate' ? 'Ese ingreso ya estaba registrado.' : r.error === 'not_income' ? 'Ese movimiento no es un ingreso confirmado en la misma moneda.' : 'No pude registrarlo.';
     const a = answer({ k: 'free' }, await view(supabase));
     return `Listo, ingreso registrado.${a && !a.pending ? ` ${a.text}` : ''}`;
   }

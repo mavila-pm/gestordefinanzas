@@ -6,14 +6,14 @@ import { Sheet } from '../../../components/ui/sheet';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { loadCatalog, loadCommitmentData, loadEntitlements, loadRecurring } from '../../../lib/queries';
 import { formatMoney } from '../../../src/domain/money';
-import { debtProgress, monthCommitments, totalsByCurrency } from '../../../src/engine/commitments';
+import { debtInstallmentDue, debtProgress, monthCommitments, totalsByCurrency } from '../../../src/engine/commitments';
 import { limaMonth } from '../../../src/web/auth-input';
 import { monthLabel } from '../../../src/web/labels';
 import { formatLimaDateTime } from '../../../src/web/transaction-input';
 import { deactivateCommitmentAction, debtPaymentAction, saveDebtAction, saveFixedExpenseAction } from '../actions';
 import { removeObligationAction, saveObligationAction, skipOccurrenceAction, unlinkSettlementAction } from '../plan/actions';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
-import { openOccurrence } from '../../../src/engine/planning';
+import { occurrenceState, openOccurrence, remainingMinor } from '../../../src/engine/planning';
 import { addDays } from '../../../src/domain/dates';
 import { ObligationFields } from '../../../components/obligation-fields';
 import { loadPlanningData } from '../../../lib/planning';
@@ -29,19 +29,24 @@ const CUR = <><option value="PEN">Soles (S/)</option><option value="USD">Dólare
 export default async function Commitments({ searchParams }: { searchParams: Promise<{ cuota?: string }> }) {
   const { cuota } = await searchParams;
   const supabase = await createSupabaseServerClient();
-  const [{ fixed, debts }, , { entitlements }, plan, hist] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase), loadEntitlements(supabase), loadPlanningData(supabase),
-    supabase.from('plan_settlements').select('id,fixed_expense_id,period,tx:transactions(amount_minor)').not('fixed_expense_id', 'is', null).order('period', { ascending: false }).limit(300)]);
+  const [{ fixed, debts }, , { entitlements }, plan] = await Promise.all([loadCommitmentData(supabase), loadCatalog(supabase), loadEntitlements(supabase), loadPlanningData(supabase)]);
   // Real history per payment (what was actually paid, by month): editing the plan never rewrites it.
-  const history = new Map<string, Array<{ period: string; amountMinor: number | null }>>();
-  const settlementId = new Map<string, string>();
-  for (const h of (hist.data ?? []) as unknown as Array<{ id: string; fixed_expense_id: string; period: string; tx: { amount_minor: number } | null }>) {
-    settlementId.set(`${h.fixed_expense_id}:${h.period}`, h.id);
-    const list = history.get(h.fixed_expense_id) ?? [];
-    if (list.length < 6) list.push({ period: h.period, amountMinor: h.tx ? Number(h.tx.amount_minor) : null });
-    history.set(h.fixed_expense_id, list);
+  const history = new Map<string, typeof plan.settlements>();
+  const settlementId = new Map<string, string>(); // newest settlement of an occurrence: "Deshacer" undoes that one
+  for (const h of plan.settlements) {
+    if (!settlementId.has(`${h.obligationId}:${h.period}`)) settlementId.set(`${h.obligationId}:${h.period}`, h.id);
+    const list = history.get(h.obligationId) ?? [];
+    if (list.length < 6) list.push(h);
+    history.set(h.obligationId, list);
   }
   const rows = new Map(plan.obligationRows.map((o) => [o.id, o]));
-  const paidThisMonth = (id: string) => plan.settledObligations.get(id)?.has(limaMonth()) ?? false;
+  // A debt's installment due this month (the installment, or what was owed at the start of the month), from the plan.
+  const debtDue = new Map(plan.obligations.filter((o) => o.source === 'debt').map((o) => [o.id, o.amountMinor]));
+  // Skipped ≠ paid (ADR-0017): a debt installment is settled once that month's registered payments add up to it
+  // (before that they are abonos); a planned payment by its settlement rows.
+  const stateOf = (c: { kind: 'fixed' | 'debt'; id: string; dueDate: string; amountMinor: number | null }) => c.kind === 'debt'
+    ? (plan.settledObligations.get(c.id)?.has(c.dueDate.slice(0, 7)) ? 'paid' : plan.partialPaid.get(c.id)?.has(c.dueDate.slice(0, 7)) ? 'partial' : 'open')
+    : occurrenceState(plan.settlements, c.id, c.dueDate.slice(0, 7), rows.get(c.id)?.amountStatus === 'confirmed' ? c.amountMinor : null);
   const strategies = compareDebtStrategies(plan.debts.filter((x) => x.currency === 'PEN'));
   // "¿En cuánto salgo de deudas?" — simulated for the monthly amount the person types (GET, nothing is written).
   const budgetMinor = cuota ? parseAmountToMinor(cuota) : null;
@@ -56,7 +61,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
   // Próximos: from today, this month and the first days of next month (≈ 5 weeks), in date order.
   const nextMonth = previousMonth(month, -1);
   const horizon = addDays(today, 35);
-  const upcoming = [...items.filter((c) => c.daysUntil >= 0 || !paidThisMonth(c.id)), ...monthCommitments(nextMonth, today, fixed, debts)]
+  const upcoming = [...items.filter((c) => c.daysUntil >= 0 || stateOf(c) === 'open' || stateOf(c) === 'partial'), ...monthCommitments(nextMonth, today, fixed, debts)]
     .filter((c) => c.dueDate <= horizon)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.name.localeCompare(b.name));
   const activeFixed = fixed.filter((f) => f.active);
@@ -83,24 +88,38 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
         <section aria-labelledby="h-next" className="stack-sm">
           <h2 id="h-next">Próximos</h2>
           <ul className="list card next-list" data-testid="commitment-list" style={{ paddingTop: 4, paddingBottom: 4 }}>
-            {upcoming.map((c) => (
-              <li key={`${c.kind}-${c.id}-${c.dueDate}`}>
-                <span className="next-day">{shortDate(c.dueDate)}</span>
-                <span className="setting-text"><span>{c.name}</span>
-                  {(c.daysUntil < 0 || c.daysUntil <= 3) && <small className={c.daysUntil < 0 ? 'error' : 'warn'}>
-                    {c.daysUntil < 0 ? 'Venció' : c.daysUntil === 0 ? 'Vence hoy' : `Vence en ${plural(c.daysUntil, 'día', 'días')}`}</small>}</span>
-                <span className="actions" style={{ gap: 8 }}>
-                  {c.dueDate.startsWith(month) && paidThisMonth(c.id) && <span className="tag positive-tag">Pagado</span>}
-                  {c.dueDate.startsWith(month) && settlementId.has(`${c.id}:${month}`) && (
-                    <ActionForm action={unlinkSettlementAction} className="inline" label={`Deshacer ${c.name}`}>
-                      <input type="hidden" name="id" value={settlementId.get(`${c.id}:${month}`)} />
-                      <button type="submit" className="link small-link">Deshacer</button>
-                    </ActionForm>
-                  )}
-                  <span className="amount">{c.amountMinor === null ? <span className="muted">Por confirmar</span> : formatMoney({ amountMinor: c.amountMinor, currency: c.currency })}</span>
-                </span>
-              </li>
-            ))}
+            {upcoming.map((c) => {
+              const period = c.dueDate.slice(0, 7);
+              const state = stateOf(c);
+              const undo = c.kind === 'fixed' ? settlementId.get(`${c.id}:${period}`) : undefined;
+              const done = state === 'paid' || state === 'skipped';
+              // Abonos (real movements) vs the plan: "Pagaste S/ 500 de S/ 1,500" and what is still owed.
+              const abono = state === 'partial' ? plan.partialPaid.get(c.id)?.get(period) ?? 0 : 0;
+              const planned = c.kind === 'debt' && period === month ? debtDue.get(c.id) ?? c.amountMinor : c.amountMinor;
+              const left = state === 'partial' ? remainingMinor(planned, abono, c.kind === 'fixed' ? rows.get(c.id)?.amountStatus : 'confirmed') : null;
+              const m = (v: number) => formatMoney({ amountMinor: v, currency: c.currency });
+              return (
+                <li key={`${c.kind}-${c.id}-${c.dueDate}`} data-state={state}>
+                  <span className="next-day">{shortDate(c.dueDate)}</span>
+                  <span className="setting-text"><span>{c.name}</span>
+                    {state === 'partial' && abono > 0 && <small className="muted">Pagaste {m(abono)}{planned !== null ? ` de ${c.kind === 'fixed' && rows.get(c.id)?.amountStatus === 'estimated' ? '≈ ' : ''}${m(planned)}` : ''}</small>}
+                    {!done && (c.daysUntil < 0 || c.daysUntil <= 3) && <small className={c.daysUntil < 0 ? 'error' : 'warn'}>
+                      {c.daysUntil < 0 ? 'Venció' : c.daysUntil === 0 ? 'Vence hoy' : `Vence en ${plural(c.daysUntil, 'día', 'días')}`}</small>}</span>
+                  <span className="actions" style={{ gap: 8 }}>
+                    {state === 'paid' && <span className="tag positive-tag">Pagado</span>}
+                    {state === 'skipped' && <span className="tag">Omitido</span>}
+                    {state === 'partial' && <span className="tag review">{left === null ? 'Falta el total' : `Faltan ${m(left)}`}</span>}
+                    {undo && (
+                      <ActionForm action={unlinkSettlementAction} className="inline" label={`Deshacer ${c.name}`}>
+                        <input type="hidden" name="id" value={undo} />
+                        <button type="submit" className="link small-link">Deshacer</button>
+                      </ActionForm>
+                    )}
+                    <span className="amount">{c.amountMinor === null ? <span className="muted">Por confirmar</span> : formatMoney({ amountMinor: c.amountMinor, currency: c.currency })}</span>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -133,7 +152,7 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                           <button type="submit" className="wide">Guardar</button>
                         </ActionForm>
                         <small className="muted">Los cambios aplican desde ahora. Lo ya pagado no cambia.</small>
-                        {open && (
+                        {open && !plan.partialPaid.get(f.id)?.has(open.period) && (
                           <ActionForm action={skipOccurrenceAction} className="inline" label={`Omitir ${f.name} ${open.period}`} closeOnSuccess>
                             <input type="hidden" name="obligationId" value={f.id} /><input type="hidden" name="period" value={open.period} />
                             <button type="submit" className="quiet">No lo pago {open.dueDate ? `el ${shortDate(open.dueDate)}` : 'este mes'}</button>
@@ -143,7 +162,8 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                         {past.length > 0 && (
                           <details><summary>Historial</summary>
                             <ul className="list" data-testid="obligation-history">{past.map((h) => (
-                              <li key={h.period}><span>{h.period}</span><span className="amount">{h.amountMinor === null ? 'Omitido' : formatMoney({ amountMinor: h.amountMinor, currency: f.currency })}</span></li>
+                              <li key={h.id}><span>{h.period}{h.status === 'partial' ? <small className="muted"> · abono</small> : null}</span>
+                                <span className="amount">{h.status === 'skipped' ? 'Omitido' : h.amountMinor === null ? <span className="muted">Sin monto</span> : formatMoney({ amountMinor: h.amountMinor, currency: f.currency })}</span></li>
                             ))}</ul>
                           </details>
                         )}
@@ -202,6 +222,9 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
             {activeDebts.map((d) => {
               const p = debtProgress(d);
               const m = (v: number) => formatMoney({ amountMinor: v, currency: d.currency });
+              // What is left of this month's installment after its abonos (prefilled; the person can type any amount).
+              const monthPaid = plan.settledObligations.get(d.id)?.has(month) ? 0 : plan.partialPaid.get(d.id)?.get(month) ?? 0;
+              const left = d.installmentMinor ? debtInstallmentDue(d.installmentMinor, d.balanceMinor, monthPaid).leftMinor : null;
               return (
                 <li key={d.id} className="budget" data-testid="debt">
                   <div className="row" style={{ alignItems: 'baseline' }}><strong>{d.name}{d.lender ? ` · ${d.lender}` : ''}</strong><span className="amount">Saldo {m(d.balanceMinor)}</span></div>
@@ -216,7 +239,8 @@ export default async function Commitments({ searchParams }: { searchParams: Prom
                           <ActionForm action={debtPaymentAction} label={`Pago ${d.name}`} closeOnSuccess>
                             <input type="hidden" name="id" value={d.id} />
                             <label className="stack-sm"><span>Monto pagado</span>
-                              <input name="amount" required inputMode="decimal" autoComplete="off" defaultValue={d.installmentMinor ? (d.installmentMinor / 100).toFixed(2) : ''} /></label>
+                              <input name="amount" required inputMode="decimal" autoComplete="off" defaultValue={left !== null ? (left / 100).toFixed(2) : ''} /></label>
+                            {d.installmentMinor ? <small className="muted">{monthPaid > 0 ? `Ya abonaste ${m(monthPaid)} a la cuota de este mes. ` : ''}Si pagas menos que la cuota, queda como abono hasta completarla.</small> : null}
                             <button type="submit" className="wide">Registrar pago</button>
                           </ActionForm>
                         </div>

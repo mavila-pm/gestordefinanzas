@@ -5,10 +5,11 @@ import { Sheet } from '../../../components/ui/sheet';
 import { essentialsFor, loadEssentialRows, loadPlanningData, planFor } from '../../../lib/planning';
 import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import { formatMoney, type Currency } from '../../../src/domain/money';
-import type { Plan, PlanLine } from '../../../src/engine/planning';
+import { reserveOverlaps, type Plan, type PlanLine } from '../../../src/engine/planning';
 import { addDays } from '../../../src/domain/dates';
 import { Lifecycle, lifecycleNote } from '../../../components/recurrence';
 import { SavingsGoal } from '../../../components/savings-goal';
+import { Reserves } from '../../../components/reserves';
 import { loadCatalog } from '../../../lib/queries';
 import { loadPreferences } from '../../../lib/preferences';
 import { monthlySummary } from '../../../src/engine/monthly-summary';
@@ -38,13 +39,18 @@ function Decide({ kind, subject, value, decision, label }: { kind: string; subje
   );
 }
 
+/** "Pagaste S/ 500.00 de S/ 1,500.00 · faltan S/ 1,000.00": real abonos vs the plan (ADR-0017); unknown price said as such. */
+const abonoNote = (l: PlanLine, c: Currency) => !l.paidMinor ? null
+  : l.plannedMinor == null || l.amountMinor === null ? `Pagaste ${formatMoney({ amountMinor: l.paidMinor, currency: c })} · falta confirmar el total`
+    : `Pagaste ${formatMoney({ amountMinor: l.paidMinor, currency: c })} de ${formatMoney({ amountMinor: l.plannedMinor, currency: c })} · faltan ${formatMoney({ amountMinor: l.amountMinor, currency: c })}`;
+
 function LineRow({ l, c }: { l: PlanLine; c: Currency }) {
   const when = l.date ? (l.dateMax ? `${shortDate(l.date)}–${shortDate(l.dateMax)} aprox.` : shortDate(l.date)) : null;
   return (
     <li>
       <span className="setting-text">
         <span>{l.label}</span>
-        <small className={l.kind === 'overdue' ? 'error' : 'muted'}>{[l.kind === 'overdue' ? 'Venció' : when ? `Pagar el ${when}` : null, l.note].filter(Boolean).join(' · ')}</small>
+        <small className={l.kind === 'overdue' ? 'error' : 'muted'}>{[l.kind === 'overdue' ? 'Venció' : when ? `Pagar el ${when}` : null, abonoNote(l, c), l.note].filter(Boolean).join(' · ')}</small>
       </span>
       <span className="amount">{l.amountMinor === null ? <span className="muted">por confirmar</span> : <>−<Money v={l.amountMinor} c={c} /></>}</span>
     </li>
@@ -75,7 +81,7 @@ function Headline({ p, testId }: { p: Plan; testId: string }) {
       <p className="figure" data-testid={`${testId}-amount`}>{negative ? 'Faltan ' : ''}<Money v={Math.abs(p.freeMinor)} c={c} /></p>
       <small style={{ opacity: .85 }}>
         {p.nextIncome ? `Hasta tu próximo ingreso, el ${shortDate(p.nextIncome.date)}${p.nextIncome.dateMax ? `–${shortDate(p.nextIncome.dateMax)}` : ''}. ` : ''}
-        Ya separamos <strong><Money v={p.reservedMinor} c={c} /></strong> para tus pagos.
+        Ya separamos <strong><Money v={p.reservedMinor} c={c} /></strong> para tus pagos{p.lines.some((l) => l.reserveId) ? ' y apartados' : ''}.
       </small>
       {p.status !== 'confirmed' && p.missing.length > 0 && <small style={{ opacity: .85 }}>{p.missing.length === 1 ? 'Falta 1 dato por confirmar.' : `Faltan ${p.missing.length} datos por confirmar.`}</small>}
     </section>
@@ -184,6 +190,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
       })}
 
       <SavingsGoal netMinor={pen.netCashFlowMinor} goalMinor={d.settings.PEN?.savingsGoalMinor ?? null} estimated={pen.savingsLabel === 'estimated'} />
+      <Reserves reserves={d.reserves} today={d.today} overlaps={reserveOverlaps(d.reserves, d.obligations, d.today)} />
 
       {d.suggestions.length > 0 && (
         <section className="stack-sm" aria-label="Pagos detectados" data-testid="match-suggestions">
@@ -191,16 +198,29 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
           {d.suggestions.slice(0, 3).map((s) => {
             const t = d.transactionsById.get(s.transactionId);
             const o = obligationsById.get(s.obligationId);
+            const cur = o?.currency ?? 'PEN';
+            const paidSoFar = d.partialPaid.get(s.obligationId)?.get(s.period) ?? 0;
+            const settleForm = (mode: 'full' | 'partial', label: string, text: string, cls: string) => (
+              <ActionForm action={markObligationPaidAction} className="inline" label={label}>
+                <input type="hidden" name="obligationId" value={s.obligationId} />
+                <input type="hidden" name="transactionId" value={s.transactionId} />
+                <input type="hidden" name="period" value={s.period} />
+                <input type="hidden" name="mode" value={mode} />
+                <button type="submit" className={cls}>{text}</button>
+              </ActionForm>
+            );
             return (
-              <div key={s.transactionId} className="source row">
-                <span className="setting-text"><span>{t?.merchant ?? 'Movimiento'} · <Money v={t?.amountMinor ?? null} c={o?.currency ?? 'PEN'} /> · {t ? shortDate(t.occurredOn) : ''}</span>
-                  <small className="muted">Parece el pago de {s.name}.</small></span>
-                <ActionForm action={markObligationPaidAction} className="inline" label={`Confirmar pago de ${s.name}`}>
-                  <input type="hidden" name="obligationId" value={s.obligationId} />
-                  <input type="hidden" name="transactionId" value={s.transactionId} />
-                  <input type="hidden" name="period" value={s.period} />
-                  <button type="submit" className="quiet">Sí, es ese</button>
-                </ActionForm>
+              <div key={s.transactionId} className="source row" data-testid="match-suggestion">
+                <span className="setting-text"><span>{t?.merchant ?? 'Movimiento'} · <Money v={t?.amountMinor ?? null} c={cur} /> · {t ? shortDate(t.occurredOn) : ''}</span>
+                  <small className="muted">{s.partial
+                    ? <>Parece un pago de {s.name} ({paidSoFar && s.remainingMinor === null ? <>ya pagaste <Money v={paidSoFar} c={cur} /></> : <>{paidSoFar ? 'faltan ' : ''}<Money v={s.remainingMinor ?? null} c={cur} /></>}). ¿Fue el pago completo o un abono?</>
+                    : <>Parece el pago de {s.name}.</>}</small></span>
+                {s.partial
+                  ? <div className="actions">
+                      {settleForm('partial', `Registrar abono de ${s.name}`, 'Fue un abono', 'quiet')}
+                      {settleForm('full', `Confirmar pago de ${s.name}`, 'Pago completo', 'link small-link')}
+                    </div>
+                  : settleForm('full', `Confirmar pago de ${s.name}`, 'Sí, es ese', 'quiet')}
               </div>
             );
           })}

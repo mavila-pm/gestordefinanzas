@@ -1,8 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Currency } from '../src/domain/money';
 import { financialEffect } from '../src/domain/financial-effect';
-import { buildPlan, detectVariations, suggestMatches, type ExpectedIncome, type Obligation, type Plan, type PlanInput } from '../src/engine/planning';
-import { limaToday } from '../src/domain/dates';
+import {
+  abonosByOccurrence, buildPlan, detectVariations, isBalanceStale, setAsideSince, suggestMatches, type ExpectedIncome, type Obligation, type PaidFact, type Plan, type PlanInput, type Reserve, type SettlementRow,
+} from '../src/engine/planning';
+import { reserveReads, toReserves } from './reserves';
+import { addDays, limaToday } from '../src/domain/dates';
+import { debtInstallmentDue, debtMonths } from '../src/engine/commitments';
 import {
   essentialSpendByMonth, essentialsSuggestion, isSuppressed, observedAmountsForUnknown, suggestIncomeMatches, timeline,
   type Decision,
@@ -12,7 +16,6 @@ import { loadDecisions } from './learning';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../src/infrastructure/supabase/transaction-row';
 
 const limaDate = (iso: string) => new Date(Date.parse(iso) - 5 * 3600_000).toISOString().slice(0, 10);
-const STALE_DAYS = 7;
 
 export interface PlanningData {
   today: string;
@@ -20,6 +23,14 @@ export interface PlanningData {
   obligationRows: Array<Obligation & { active: boolean; notes: string | null }>;
   incomes: ExpectedIncome[];
   settledObligations: Map<string, Set<string>>;
+  /** Every settlement row of a planned payment (paid / partial / skipped), newest first: what really happened. */
+  settlements: Array<SettlementRow & { id: string; transactionId: string | null; createdAt: string }>;
+  /** Real abonos of still-open occurrences: obligationId → period → Σ (confirmed, same currency). */
+  partialPaid: Map<string, Map<string, number>>;
+  /** Active Apartados with their saved amount (Σ of real entries); every plan subtracts its own currency's. */
+  reserves: Reserve[];
+  /** Apartado entries of the last 45 days (Lima date): an income-based plan subtracts those made after the income. */
+  reserveEntries: Array<{ reserveId: string; direction: 'in' | 'out'; amountMinor: number; on: string }>;
   settledIncomes: Map<string, Set<string>>;
   balances: Partial<Record<Currency, { amountMinor: number; asOf: string; stale: boolean; bankMinor: number | null; cashMinor: number | null }>>;
   settings: Partial<Record<Currency, { essentialsMonthlyMinor: number | null; essentialsEstimated: boolean; cushionMinor: number; allowZeroForDebt: boolean; savingsGoalMinor: number | null }>>;
@@ -39,15 +50,21 @@ export interface PlanningData {
 export async function loadPlanningData(supabase: SupabaseClient, now = new Date()): Promise<PlanningData> {
   const today = limaToday(now);
   const since = new Date(now.getTime() - 45 * 86_400_000).toISOString();
-  const [fx, debts, inc, settle, bal, set, txs, decided] = await Promise.all([
+  const [fx, debts, inc, settle, bal, set, txs, decided, res, resBal, debtPay, resMoves] = await Promise.all([
     supabase.from('fixed_expenses').select('id,name,kind,currency,amount_minor,amount_status,frequency,anchor_month,due_day,due_day_max,target_day,notes,active,created_at,paused_until,ended_on'),
     supabase.from('debts').select('id,name,currency,balance_minor,annual_rate_bp,installment_minor,installments_total,installments_paid,due_day,active,created_at,last_payment_on'),
     supabase.from('expected_incomes').select('id,name,currency,amount_minor,amount_status,frequency,day_of_month,day_max,second_day,anchor_date,paused_until,ended_on').eq('active', true),
-    supabase.from('plan_settlements').select('fixed_expense_id,expected_income_id,period,transaction_id,variance_ack,tx:transactions(amount_minor)').order('period', { ascending: false }).limit(500),
+    supabase.from('plan_settlements').select('id,fixed_expense_id,expected_income_id,period,status,transaction_id,variance_ack,created_at,tx:transactions(amount_minor,currency,status)')
+      .order('period', { ascending: false }).order('created_at', { ascending: false }).limit(500),
     supabase.from('balance_snapshots').select('currency,amount_minor,bank_minor,cash_minor,as_of').order('as_of', { ascending: false }).limit(20),
     supabase.from('planning_settings').select('currency,essentials_monthly_minor,essentials_status,cushion_minor,allow_zero_for_debt,savings_goal_minor'),
     supabase.from('transactions').select(TRANSACTION_SELECT).eq('status', 'confirmed').gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(1000),
     loadDecisions(supabase),
+    ...reserveReads(supabase),
+    // Debt abonos of the last ~2 months (ledger, migration 052): the plan reserves only what is left of an installment.
+    supabase.from('debt_payments').select('debt_id,period,amount_minor,settles').gte('period', addDays(today, -62).slice(0, 7)).limit(1000),
+    // Apartado entries of the same window as the movements: a plan from a recent income subtracts what was set aside after it.
+    supabase.from('reserve_entries').select('reserve_id,direction,amount_minor,created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(1000),
   ]);
 
   const obligationRows = (fx.data ?? []).map((r) => ({
@@ -58,29 +75,46 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     pausedUntil: r.paused_until as string | null, endedOn: r.ended_on as string | null,
   }));
   const debtRows = debts.data ?? [];
+  // Debt installments (ADR-0017 §D): settled months and this month's abonos come from the ledger (plus the legacy
+  // last_payment_on month); the installment due is the installment, or what was owed at the start of the month.
+  const debtLedger = debtMonths((debtPay.data ?? []).map((p) => ({ debtId: p.debt_id as string, period: p.period as string, amountMinor: Number(p.amount_minor), settles: p.settles === true })),
+    debtRows.map((d) => ({ debtId: d.id as string, lastPaymentOn: d.last_payment_on ? String(d.last_payment_on) : null })));
+  const month = today.slice(0, 7);
   const debtObligations: Obligation[] = debtRows
     .filter((d) => d.active && d.installment_minor && Number(d.balance_minor) > 0 && (d.installments_total === null || d.installments_paid < d.installments_total))
     .map((d) => ({
-      id: d.id, source: 'debt', name: d.name, kind: 'loan', currency: d.currency, amountMinor: Math.min(Number(d.installment_minor), Number(d.balance_minor)),
+      id: d.id, source: 'debt', name: d.name, kind: 'loan', currency: d.currency,
+      amountMinor: debtInstallmentDue(Number(d.installment_minor), Number(d.balance_minor), debtLedger.abonos.get(d.id)?.get(month) ?? 0).dueMinor,
       amountStatus: 'confirmed', frequency: 'monthly', anchorMonth: null, dueDay: d.due_day, dueDayMax: null, targetDay: null, since: limaDate(d.created_at),
     }));
 
   const settledObligations = new Map<string, Set<string>>();
   const settledIncomes = new Map<string, Set<string>>();
-  const paid: Array<{ obligationId: string; period: string; actualMinor: number; acknowledged: boolean }> = [];
+  const paid: PaidFact[] = [];
   const linked = new Set<string>();
+  const settlements: PlanningData['settlements'] = [];
+  const abonoRows: Parameters<typeof abonosByOccurrence>[0][number][] = [];
+  const currencyOf = new Map(obligationRows.map((o) => [o.id, o.currency]));
   const add = (m: Map<string, Set<string>>, k: string, v: string) => { if (!m.has(k)) m.set(k, new Set()); m.get(k)!.add(v); };
   for (const s of settle.data ?? []) {
     if (s.transaction_id) linked.add(s.transaction_id);
     if (s.fixed_expense_id) {
-      add(settledObligations, s.fixed_expense_id, s.period);
-      const amount = (s.tx as unknown as { amount_minor: number } | null)?.amount_minor;
-      if (amount != null) paid.push({ obligationId: s.fixed_expense_id, period: s.period, actualMinor: Number(amount), acknowledged: s.variance_ack });
+      // Closed = paid or skipped. An abono ('partial') leaves the occurrence open for what remains (ADR-0017).
+      if (s.status !== 'partial') add(settledObligations, s.fixed_expense_id, s.period);
+      const t = s.tx as unknown as { amount_minor: number; currency: Currency; status: string } | null;
+      // A real amount only from a confirmed movement in the payment's own currency (PEN ≠ USD); otherwise unknown.
+      const amount = t && t.status === 'confirmed' && t.currency === currencyOf.get(s.fixed_expense_id) ? Number(t.amount_minor) : null;
+      settlements.push({ id: s.id, obligationId: s.fixed_expense_id, period: s.period, status: s.status, amountMinor: amount, transactionId: s.transaction_id, createdAt: s.created_at });
+      abonoRows.push({ obligationId: s.fixed_expense_id, period: s.period, status: s.status, amountMinor: t ? Number(t.amount_minor) : null, currency: t?.currency ?? null, txConfirmed: t?.status === 'confirmed' });
+      if (amount !== null && s.status !== 'skipped') paid.push({ obligationId: s.fixed_expense_id, period: s.period, actualMinor: amount, acknowledged: s.variance_ack, status: s.status });
     }
     if (s.expected_income_id) add(settledIncomes, s.expected_income_id, s.period);
   }
-  // A debt payment registered in Próximos pagos settles that month's installment.
-  for (const d of debtRows) if (d.last_payment_on) add(settledObligations, d.id, String(d.last_payment_on).slice(0, 7));
+  const partialPaid = abonosByOccurrence(abonoRows, currencyOf);
+  // A debt payment registered in Próximos pagos settles that month's installment once the month's payments add up
+  // to it; before that, they are abonos and the plan keeps only what is left (a debt's id never collides with a payment's).
+  for (const [id, periods] of debtLedger.settled) for (const p of periods) add(settledObligations, id, p);
+  for (const [id, periods] of debtLedger.abonos) partialPaid.set(id, new Map(periods));
 
   const transactions = ((txs.data ?? []) as unknown as TransactionRow[]).map(rowToTransaction);
   const balances: PlanningData['balances'] = {};
@@ -88,10 +122,8 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
     const cur = b.currency as Currency;
     if (balances[cur]) continue;
     const asOf = b.as_of as string;
-    // Stale: old, or money moved in the account after it (credit card purchases don't move the account).
-    const moved = transactions.some((t) => t.currency === cur && Date.parse(t.occurredAt) > Date.parse(asOf) && t.type !== 'credit_card_purchase'
-      && ['income', 'expense', 'transfer_to_cash', 'expense_reduction'].includes(financialEffect(t.type)));
-    balances[cur] = { amountMinor: Number(b.amount_minor), asOf, stale: moved || Date.parse(asOf) < now.getTime() - STALE_DAYS * 86_400_000,
+    // Stale: old, or money moved in the account after it (pure rule, tested: isBalanceStale).
+    balances[cur] = { amountMinor: Number(b.amount_minor), asOf, stale: isBalanceStale({ currency: cur, asOf }, now, transactions),
       bankMinor: b.bank_minor == null ? null : Number(b.bank_minor), cashMinor: b.cash_minor == null ? null : Number(b.cash_minor) };
   }
   const settings: PlanningData['settings'] = {};
@@ -109,10 +141,13 @@ export async function loadPlanningData(supabase: SupabaseClient, now = new Date(
   const obligations: Obligation[] = [...obligationRows.filter((o) => o.active), ...debtObligations];
 
   return {
-    today, obligations, obligationRows, incomes, settledObligations, settledIncomes, balances, settings,
+    today, obligations, obligationRows, incomes, settledObligations, settlements, partialPaid, settledIncomes, balances, settings,
+    reserves: toReserves(res.data, resBal.data),
+    reserveEntries: (resMoves.data ?? []).filter((e) => e.direction === 'in' || e.direction === 'out')
+      .map((e) => ({ reserveId: e.reserve_id as string, direction: e.direction as 'in' | 'out', amountMinor: Number(e.amount_minor), on: limaDate(e.created_at as string) })),
     debts: debtRows.filter((d) => d.active).map((d) => ({ id: d.id, name: d.name, currency: d.currency, balanceMinor: Number(d.balance_minor), annualRateBp: d.annual_rate_bp })),
     recentIncome: top ? { transactionId: top.id, amountMinor: top.amountMinor, currency: top.currency, date: limaDate(top.occurredAt), merchant: top.merchantRaw } : null,
-    suggestions: suggestMatches(obligationRows.filter((o) => o.active), outflows, settledObligations, linked),
+    suggestions: suggestMatches(obligationRows.filter((o) => o.active), outflows, settledObligations, linked, partialPaid),
     variations: detectVariations(obligationRows.filter((o) => o.active), paid),
     // "No es ese" / "Ahora no": the person's decisions hide a suggestion (never the data behind it).
     incomeMatches: suggestIncomeMatches(incomes, transactions.filter((t) => t.type === 'income')
@@ -134,22 +169,25 @@ export function planFor(d: PlanningData, currency: Currency, base: 'balance' | {
 export function planInputFor(d: PlanningData, currency: Currency, base: 'balance' | { transactionId: string } = 'balance'): PlanInput {
   const s = d.settings[currency];
   let planBase: PlanInput['base'] = null;
+  let setAsideSinceIncome: PlanInput['setAsideSinceIncome'];
   if (base === 'balance') {
     const b = d.balances[currency];
     planBase = b ? { kind: 'balance', amountMinor: b.amountMinor, asOf: b.asOf, stale: b.stale, bankMinor: b.bankMinor, cashMinor: b.cashMinor } : null;
   } else {
     const t = d.transactionsById.get(base.transactionId);
     planBase = t ? { kind: 'income', amountMinor: t.amountMinor, date: t.occurredOn } : null;
+    if (t) setAsideSinceIncome = setAsideSince(d.reserveEntries, t.occurredOn);
   }
   return ({
-    currency, today: d.today, base: planBase, obligations: d.obligations, settledObligations: d.settledObligations,
+    currency, today: d.today, base: planBase, obligations: d.obligations, settledObligations: d.settledObligations, partialPaid: d.partialPaid, reserves: d.reserves,
+    ...(setAsideSinceIncome ? { setAsideSinceIncome } : {}),
     incomes: d.incomes, settledIncomes: d.settledIncomes, essentialsMonthlyMinor: s?.essentialsMonthlyMinor ?? null, essentialsEstimated: s?.essentialsEstimated ?? false, cushionMinor: s?.cushionMinor ?? 0,
   });
 }
 
 /** What comes, in date order: expected incomes and unpaid planned payments (all currencies, each kept apart). */
 export function planTimeline(d: PlanningData, days = 35): TimelineItem[] {
-  return timeline({ today: d.today, obligations: d.obligations, incomes: d.incomes, settledObligations: d.settledObligations, settledIncomes: d.settledIncomes }, days);
+  return timeline({ today: d.today, obligations: d.obligations, incomes: d.incomes, settledObligations: d.settledObligations, settledIncomes: d.settledIncomes, partialPaid: d.partialPaid }, days);
 }
 
 /**

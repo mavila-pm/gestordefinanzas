@@ -1,6 +1,7 @@
 # ADR-0005 — Cash-flow planning: obligations, next income and "Dinero libre"
 
-Status: Accepted (TASK-022). Date: 2026-09-28.
+Status: Accepted (TASK-022). Date: 2026-09-28. Extended by ADR-0017 (partial payments, Apartados; the time-aware reserve
+for infrequent payments there is pending PO approval — the proportional rule below stays in force until then).
 
 ## Decision
 - **One obligation domain.** `fixed_expenses` is the recurring obligation template (evolved: kind, amount status

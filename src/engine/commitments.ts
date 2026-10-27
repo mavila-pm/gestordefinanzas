@@ -58,3 +58,37 @@ export function debtProgress(d: Pick<Debt, 'principalMinor' | 'balanceMinor'>): 
   const paid = Math.max(0, d.principalMinor - d.balanceMinor);
   return { paidMinor: paid, ratio: Math.min(1, paid / d.principalMinor) };
 }
+
+/**
+ * Debt abonos (ADR-0017 §D). The SQL function record_debt_payment (migration 052) writes each payment to a ledger and
+ * settles the month's installment when that month's payments ADD UP to what was due; this is the same rule for the
+ * plan. Due = the installment, or what was owed at the start of the month (balance + this month's payments) when that
+ * is smaller. Left = due − this month's payments, never below 0. Unknown installment → unknown (never 0).
+ */
+export function debtInstallmentDue(installmentMinor: number | null, balanceMinor: number, monthPaidMinor: number): { dueMinor: number | null; leftMinor: number | null } {
+  if (installmentMinor === null) return { dueMinor: null, leftMinor: null };
+  const due = Math.min(installmentMinor, balanceMinor + monthPaidMinor);
+  return { dueMinor: due, leftMinor: Math.max(0, due - monthPaidMinor) };
+}
+
+/**
+ * Per debt, from the ledger rows: the months whose installment is settled (a row that settled it, or the legacy
+ * last_payment_on month of payments registered before the ledger), and the abonos of the months still open
+ * (debtId → period → Σ real amounts). An abono of a settled month is not subtracted again.
+ */
+export function debtMonths(
+  payments: ReadonlyArray<{ debtId: string; period: string; amountMinor: number; settles: boolean }>,
+  legacy: ReadonlyArray<{ debtId: string; lastPaymentOn: string | null }> = [],
+): { settled: Map<string, Set<string>>; abonos: Map<string, Map<string, number>> } {
+  const settled = new Map<string, Set<string>>();
+  const mark = (id: string, period: string) => (settled.get(id) ?? settled.set(id, new Set()).get(id)!).add(period);
+  for (const l of legacy) if (l.lastPaymentOn) mark(l.debtId, l.lastPaymentOn.slice(0, 7));
+  for (const p of payments) if (p.settles) mark(p.debtId, p.period);
+  const abonos = new Map<string, Map<string, number>>();
+  for (const p of payments) {
+    if (settled.get(p.debtId)?.has(p.period) || !Number.isSafeInteger(p.amountMinor) || p.amountMinor <= 0) continue;
+    const m = abonos.get(p.debtId) ?? abonos.set(p.debtId, new Map()).get(p.debtId)!;
+    m.set(p.period, (m.get(p.period) ?? 0) + p.amountMinor);
+  }
+  return { settled, abonos };
+}

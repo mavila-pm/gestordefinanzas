@@ -1,7 +1,7 @@
 import { addDays, daysBetween, longDate, shortDate } from '../domain/dates';
 import type { Currency } from '../domain/money';
 import type { IncomeMatch, TimelineItem } from '../engine/observed';
-import { compareDebtStrategies, simulatePurchase, type MatchSuggestion, type Plan, type PlanInput } from '../engine/planning';
+import { compareDebtStrategies, reserveProgress, simulatePurchase, type MatchSuggestion, type Plan, type PlanInput, type Reserve } from '../engine/planning';
 import { cardCycle, changeBill, delayIncome, extraDebtPayment, payDebt, type ScenarioResult } from '../engine/scenarios';
 import type { AssistantAct } from './conversation';
 import type { CardPosition } from '../engine/cards';
@@ -21,13 +21,65 @@ export type Intent =
   | { k: 'card_limit' } | { k: 'organize' } | { k: 'pay_min' } | { k: 'owe'; amountMinor: number; currency: Currency; lender: string }
   | { k: 'estimate_basics'; amountMinor: number } | { k: 'apply_plan' }
   | { k: 'subs_total' } | { k: 'subs_paid'; name: string } | { k: 'subs_pause'; name: string }
-  | { k: 'pref_zero_debt'; on: boolean } | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number };
+  | { k: 'pref_zero_debt'; on: boolean } | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number }
+  | { k: 'reserve_status'; name: string; explicit: boolean } | { k: 'reserve_move'; name: string; direction: 'in' | 'out'; amountMinor: number; currency: Currency | null; explicit: boolean };
 
 const NAMES = ['carro', 'auto', 'alquiler', 'internet', 'luz', 'agua', 'gas', 'celular', 'telefono', 'tarjeta', 'seguro', 'colegio', 'universidad', 'netflix', 'spotify', 'gimnasio', 'prestamo', 'cable'];
 const nameIn = (t: string) => NAMES.find((n) => new RegExp(`\\b${n}\\b`).test(t)) ?? null;
 
+/**
+ * Apartados (ADR-0017), local and deterministic: "¿cuánto llevo para el viaje?", "aparta 200 para el viaje",
+ * "usa 100 del viaje". Only the name and the amount are read here; the apartado is found in the engine's view and a
+ * move is only ever a proposal card (the write happens when the person taps it).
+ */
+const AMOUNT_TOKEN = String.raw`((?:s\/\.?|us\$|\$)?\s*\d[\d.,]*(?:\s*(?:mil|lucas?|soles|sol|dolares|dolar))?)`;
+const ART = '(?:el |la |los |las |mi |mis )?';
+const RESERVE_WORD = String.raw`(?:apartado |ahorro |fondo )`;
+const RESERVE_IN = new RegExp(String.raw`^(?:aparta|apartame|separa|separame|guarda|guardame|reserva|reservame|ahorra) ${AMOUNT_TOKEN} (?:para|en|al|a) ${ART}${RESERVE_WORD}?(?:(?:del?|para) ${ART})?([a-z0-9ñ][a-z0-9ñ ]{1,39})$`);
+const RESERVE_OUT = new RegExp(String.raw`^(?:saca|sacame|usa|uso|retira|retirame|toma) ${AMOUNT_TOKEN} (?:del?|de la|de mi|de los|de las) ${RESERVE_WORD}?(?:(?:del?|para) ${ART})?([a-z0-9ñ][a-z0-9ñ ]{1,39})$`);
+const RESERVE_STATUS = new RegExp(String.raw`^(?:y )?cuanto (?:llevo|tengo|he juntado|junte|ahorre|he ahorrado|he apartado|aparte|he separado|separe|hay)(?: (apartado|ahorrado|juntado|separado))? (?:para|en|del?) ${ART}${RESERVE_WORD}?(?:(?:del?|para) ${ART})?([a-z0-9ñ][a-z0-9ñ ]{1,39})$`);
+const RESERVE_HOW = new RegExp(String.raw`^(?:y )?como (?:va|vamos con|voy con) ${ART}(?:apartado|ahorro|fondo) (?:del?|para) ${ART}([a-z0-9ñ][a-z0-9ñ ]{1,39})$`);
+// "¿Cuánto tengo para gastar hoy / de deuda / en la tarjeta?", "saca 200 del cajero", "ahorra 200 al mes" are other
+// questions (free money, balance, debts, cash): a name that STARTS with one of these words is never an apartado.
+const NOT_A_RESERVE = /^(?:gastar|comer|vivir|pagar|llegar|mes|fin de mes|semana|fin de semana|quincena|cuenta|cuentas|banco|bcp|interbank|bbva|scotiabank|yape|plin|efectivo|cajero|tarjeta|tarjetas|deuda|deudas|saldo|total|libre|disponible|hoy|ahora|mano)\b/;
+const EXPLICIT_RESERVE = /\b(apartado|ahorro|fondo)\b/;
+const notAReserve = (name: string) => NOT_A_RESERVE.test(name.replace(/^(?:el|la|los|las|mi|mis) /, ''));
+
+/**
+ * Explicit apartado questions ("cuánto tengo apartado para…", "aparta 200 para…", "saca 50 del apartado…") are
+ * read before the other detectors; the generic shapes ("cuánto tengo para X", "usa 100 de X") only when nothing else
+ * matched, and answer() replies to them only when X is one of the person's apartados (otherwise not ours: null).
+ */
+type ReserveIntent = Extract<Intent, { k: 'reserve_status' | 'reserve_move' }>;
+function reserveIntent(t: string): ReserveIntent | null {
+  const q = t.replace(/[¿?¡!]/g, '').replace(/[.,;\s]+$/, '').replace(/[,\s]+(por favor|porfa|pls|plis)$/, '').replace(/[.,;]+$/, '').trim();
+  const move = q.match(RESERVE_IN) ?? q.match(RESERVE_OUT);
+  if (move) {
+    const a = findAmounts(move[1]!)[0];
+    const name = move[2]!.trim();
+    if (!a || a.minor <= 0 || notAReserve(name)) return null;
+    return { k: 'reserve_move', name, direction: RESERVE_IN.test(q) ? 'in' : 'out', amountMinor: a.minor, currency: a.currency,
+      explicit: EXPLICIT_RESERVE.test(q) || /^apart/.test(q) };
+  }
+  const st = q.match(RESERVE_STATUS);
+  if (st) {
+    const name = st[2]!.trim();
+    if (notAReserve(name)) return null;
+    return { k: 'reserve_status', name, explicit: !!st[1] || EXPLICIT_RESERVE.test(q) };
+  }
+  const how = q.match(RESERVE_HOW);
+  return how ? { k: 'reserve_status', name: how[1]!.trim(), explicit: true } : null;
+}
+
 export function detectIntent(message: string): Intent {
   const t = fold(message);
+  const reserve = reserveIntent(t);
+  if (reserve?.explicit) return reserve;
+  const other = detectOther(t);
+  return other.k === 'unknown' && reserve ? reserve : other;
+}
+
+function detectOther(t: string): Intent {
   const amount = findAmounts(t)[0];
   const name = nameIn(t);
   // Mis suscripciones: totals, what was paid for one service, and pausing (only in Velsuno; never cancels the service).
@@ -99,6 +151,8 @@ export interface View {
   /** Plan inputs per currency, for what-if scenarios (simulated copies; nothing is written). */
   inputs?: Partial<Record<Currency, PlanInput>>;
   debtLinks?: Array<{ id: string; name: string; currency: Currency; balanceMinor: number; annualRateBp: number | null; obligationId: string | null }>;
+  /** Apartados (active) with their saved amount, from the engine's loader (ADR-0017). */
+  reserves?: Reserve[];
   /** Mis suscripciones (not ended): analytical monthly cost, next charge, and what was really paid this year. */
   subscriptions?: Array<{ id: string; name: string; currency: Currency; amountMinor: number | null; monthlyMinor: number | null; nextDate: string | null; paidYearMinor: number; paidYearCount: number }>;
 }
@@ -109,6 +163,18 @@ export type Action =
 export interface Answer { title?: string; text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' }
 
 const primary = (v: View) => v.plans.find((p) => p.base) ?? v.plans[0] ?? null;
+const RESERVES_LINK: Action = { type: 'link', label: 'Ver apartados', href: '/app/plan' };
+/**
+ * The person's apartado by name: exact (accents and case folded) first, then one whose name contains the asked words
+ * or is contained in them, whole words only ("viaje" ↔ "viaje a cusco"; an apartado "a" never matches "gastar").
+ */
+function findReserves(v: View, name: string, currency: Currency | null = null): Reserve[] {
+  const words = (s: string) => ` ${fold(s).replace(/[^a-z0-9ñ]+/g, ' ').trim()} `;
+  const n = words(name);
+  const all = (v.reserves ?? []).filter((r) => currency === null || r.currency === currency);
+  const exact = all.filter((r) => words(r.name) === n);
+  return exact.length ? exact : all.filter((r) => n.trim() !== '' && words(r.name).trim() !== '' && (words(r.name).includes(n) || n.includes(words(r.name))));
+}
 const PLAN_LINK: Action = { type: 'link', label: 'Ver Dinero disponible', href: '/app/plan' };
 /** Confirmation button for "Aplicar plan": carries what the person saw so a changed plan is not saved blindly. */
 const applyAct = (p: Plan): Action => ({ type: 'act', label: 'Aplicar plan', act: 'apply_plan', fields: { currency: p.currency, free: String(p.freeMinor), reserved: String(p.reservedMinor) } });
@@ -161,7 +227,9 @@ export function answer(intent: Intent, v: View): Answer | null {
       if (!lines.length) return { text: intent.range === 'week' ? 'Esta semana no tienes pagos pendientes.' : 'No tienes pagos pendientes antes de tu próximo ingreso.' };
       return {
         text: intent.range === 'week' ? 'Esto viene esta semana:' : 'Esto tienes que pagar antes de tu próximo ingreso:',
-        rows: lines.slice(0, 6).map(({ l, cur }) => ({ label: `${l.label}${l.kind === 'overdue' ? ' (vencido)' : ''}`, value: `${l.amountMinor === null ? 'monto por confirmar' : money(l.amountMinor, cur)}${l.date ? ` · ${shortDate(l.date)}` : ''}` })),
+        // Partly paid: what is still owed, and the real abono (engine numbers, ADR-0017).
+        rows: lines.slice(0, 6).map(({ l, cur }) => ({ label: `${l.label}${l.kind === 'overdue' ? ' (vencido)' : ''}`,
+          value: `${l.amountMinor === null ? 'monto por confirmar' : `${l.paidMinor ? 'faltan ' : ''}${money(l.amountMinor, cur)}`}${l.paidMinor ? ` (pagaste ${money(l.paidMinor, cur)})` : ''}${l.date ? ` · ${shortDate(l.date)}` : ''}` })),
         actions: [{ type: 'link', label: 'Ver próximos pagos', href: '/app/compromisos' }],
       };
     }
@@ -194,7 +262,13 @@ export function answer(intent: Intent, v: View): Answer | null {
       const o = v.obligations.find((x) => fold(x.name).includes(intent.name));
       if (!o) return { text: `No tengo registrado un pago de ${intent.name}. ¿Quieres agregarlo?`, actions: [{ type: 'link', label: 'Agregar pago', href: '/app/compromisos' }] };
       const s = v.suggestions.find((x) => x.obligationId === o.id);
-      if (s) return { text: `Encontré un movimiento que parece el pago de ${o.name}. ¿Es este?`, actions: [{ type: 'act', label: 'Sí, marcar pagado', act: 'mark_paid', fields: { obligationId: o.id, transactionId: s.transactionId, period: s.period } }] };
+      const fields = (mode: 'full' | 'partial'): Record<string, string> => ({ obligationId: o.id, transactionId: s?.transactionId ?? '', period: s?.period ?? '', mode });
+      // Smaller than what is owed: the person says whether it was the whole payment or an abono (ADR-0017); never assumed.
+      if (s?.partial && s.amountMinor !== undefined) {
+        return { text: `Encontré un movimiento de ${money(s.amountMinor, o.currency)} que parece un pago de ${o.name}${s.remainingMinor != null ? ` (${s.remainingMinor === o.amountMinor ? 'son' : 'faltan'} ${money(s.remainingMinor, o.currency)})` : ''}. ¿Fue el pago completo o un abono?`,
+          actions: [{ type: 'act', label: 'Fue un abono', act: 'mark_paid', fields: fields('partial') }, { type: 'act', label: 'Pago completo', act: 'mark_paid', fields: fields('full') }] };
+      }
+      if (s) return { text: `Encontré un movimiento que parece el pago de ${o.name}. ¿Es este?`, actions: [{ type: 'act', label: 'Sí, marcar pagado', act: 'mark_paid', fields: fields('full') }] };
       return { text: `Cuando vea el movimiento del pago de ${o.name}, lo enlazo. Si fue en efectivo, regístralo como movimiento.`, actions: [{ type: 'link', label: 'Registrar movimiento', href: '/app/movimientos/nuevo' }] };
     }
     case 'update_amount': {
@@ -358,6 +432,40 @@ export function answer(intent: Intent, v: View): Answer | null {
         rows: [{ label: p.freeMinor >= 0 ? 'Te queda disponible' : 'Faltan', value: money(Math.abs(p.freeMinor), p.currency) }],
         actions: [applyAct(p), PLAN_LINK],
       };
+    }
+    case 'reserve_status': {
+      const found = findReserves(v, intent.name);
+      if (!found.length) {
+        // Not one of the person's apartados: only say so when the question was clearly about one; otherwise not ours.
+        return intent.explicit ? { text: `No tengo un apartado para ${intent.name}. ¿Lo creas en Dinero disponible?`, actions: [{ type: 'link', label: 'Crear apartado', href: '/app/plan' }] } : null;
+      }
+      if (found.length > 1) return { text: `Tienes ${found.length} apartados con ese nombre: ${found.map((r) => `${r.name} (${money(r.savedMinor, r.currency)})`).join(', ')}.`, actions: [RESERVES_LINK] };
+      const r = found[0]!;
+      const pr = reserveProgress(r, v.today);
+      const m = (x: number) => money(x, r.currency);
+      if (pr.targetMinor === null) return { text: `Llevas ${m(pr.savedMinor)} apartados para ${r.name}. No tiene meta.`, actions: [RESERVES_LINK] };
+      const head = `Llevas ${m(pr.savedMinor)} de ${m(pr.targetMinor)} para ${r.name}`;
+      if (pr.reached) return { text: `${head}. Ya llegaste a tu meta.`, actions: [RESERVES_LINK] };
+      const plan = pr.monthlyMinor !== null && r.targetDate
+        ? pr.late ? ` La fecha (${shortDate(r.targetDate)}) ya pasó.` : pr.monthsLeft === 1 ? ` Aparta ${m(pr.monthlyMinor)} antes del ${shortDate(r.targetDate)}.` : ` Si apartas ${m(pr.monthlyMinor)} al mes, llegas al ${shortDate(r.targetDate)}.`
+        : '';
+      return { text: `${head}: te faltan ${m(pr.remainingMinor!)}.${plan}`, actions: [RESERVES_LINK] };
+    }
+    case 'reserve_move': {
+      const found = findReserves(v, intent.name);
+      // "usa 100 de X" / "guarda 500 para X" without the word apartado and no apartado X: another question, not ours.
+      if (!found.length) return intent.explicit ? { text: `No tengo un apartado para ${intent.name}. Créalo en Dinero disponible y luego me dices cuánto apartar.`, actions: [{ type: 'link', label: 'Crear apartado', href: '/app/plan' }] } : null;
+      const same = intent.currency ? found.filter((r) => r.currency === intent.currency) : found;
+      if (!same.length) return { text: `Tu apartado ${found[0]!.name} es en ${found[0]!.currency === 'PEN' ? 'soles' : 'dólares'}: no mezclo monedas.`, actions: [RESERVES_LINK] };
+      if (same.length > 1) return { text: `Tienes ${same.length} apartados con ese nombre. Hazlo desde Dinero disponible para elegir cuál.`, actions: [RESERVES_LINK] };
+      const r = same[0]!;
+      const m = (x: number) => money(x, r.currency);
+      // A proposal only: the write happens when the person taps it (velsAct → the same path as the screen).
+      if (intent.direction === 'out' && intent.amountMinor > r.savedMinor) return { text: `Solo tienes ${m(r.savedMinor)} apartados en ${r.name}.`, actions: [RESERVES_LINK] };
+      const fields = { reserveId: r.id, amount: String(intent.amountMinor) };
+      return intent.direction === 'in'
+        ? { text: `¿Aparto ${m(intent.amountMinor)} para ${r.name}? No es un gasto: sigue en tu saldo, pero deja de estar disponible.`, actions: [{ type: 'act', label: 'Sí, apartar', act: 'reserve_in', fields }] }
+        : { text: `¿Uso ${m(intent.amountMinor)} de ${r.name}? Vuelve a estar disponible en tu saldo.`, actions: [{ type: 'act', label: 'Sí, usar', act: 'reserve_out', fields }] };
     }
     case 'estimate_basics':
       return { text: `¿Uso ${money(intent.amountMinor, 'PEN')} al mes para lo básico? Queda como estimado.`,

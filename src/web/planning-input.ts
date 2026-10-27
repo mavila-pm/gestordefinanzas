@@ -112,3 +112,39 @@ export function parseSavingsGoalForm(get: Get): Result<{ currency: 'PEN' | 'USD'
   return { ok: true, value: { currency, goalMinor: goal } };
 }
 
+
+/**
+ * Apartado (named reserve, ADR-0017): name, currency, optional target and optional date (a date needs a target:
+ * without an amount there is nothing to plan for). The date is today or later. Unknown target stays null, never 0.
+ */
+export interface ReserveForm { name: string; currency: 'PEN' | 'USD'; targetMinor: number | null; targetDate: string | null }
+const MAX_MINOR = 100_000_000_000;
+const validDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+/** minDate: the earliest date accepted (today when creating; null when editing, so a passed date can stay). */
+export function parseReserveForm(get: Get, minDate: string | null): Result<ReserveForm> {
+  const name = str(get('name')).replace(/\s+/g, ' ');
+  if (!name || name.length > 40 || /[<>\u0000-\u001f]/.test(name)) return { ok: false, error: 'Ponle un nombre (hasta 40 caracteres).' };
+  const currency = cur(get('currency'));
+  if (!currency) return { ok: false, error: 'Elige soles o dólares.' };
+  const t = str(get('target'));
+  const targetMinor = t ? parseAmountToMinor(t) : null;
+  if (t && (targetMinor === null || targetMinor > MAX_MINOR)) return { ok: false, error: 'Revisa la meta (por ejemplo 1200).' };
+  const d = str(get('targetDate'));
+  if (d && !validDate(d)) return { ok: false, error: 'Revisa la fecha.' };
+  if (d && targetMinor === null) return { ok: false, error: 'Para poner una fecha, indica cuánto quieres juntar.' };
+  if (d && minDate && d < minDate) return { ok: false, error: 'La fecha debe ser hoy o después.' };
+  return { ok: true, value: { name, currency, targetMinor, targetDate: d || null } };
+}
+
+/** "Apartar" (in) / "Usar" (out): an amount moved inside the person's own money. Never an income nor an expense. */
+export interface ReserveEntryForm { reserveId: string; direction: 'in' | 'out'; amountMinor: number }
+export function parseReserveEntryForm(get: Get): Result<ReserveEntryForm> {
+  const reserveId = str(get('reserveId'));
+  const direction = get('direction');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reserveId) || (direction !== 'in' && direction !== 'out')) {
+    return { ok: false, error: 'No se guardó. Intenta de nuevo.' };
+  }
+  const amountMinor = parseAmountToMinor(str(get('amount')));
+  if (amountMinor === null || amountMinor > MAX_MINOR) return { ok: false, error: 'Escribe un monto, por ejemplo 200.' };
+  return { ok: true, value: { reserveId, direction, amountMinor } };
+}

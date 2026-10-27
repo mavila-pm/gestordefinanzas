@@ -1,6 +1,6 @@
 import type { Currency } from '../domain/money';
 import { addDays, daysBetween } from '../domain/dates';
-import { incomeOccurrencesBetween, occurrencesBetween, type ExpectedIncome, type Obligation } from './planning';
+import { closedPaidTotals, incomeOccurrencesBetween, occurrencesBetween, remainingMinor, type ExpectedIncome, type Obligation, type PaidFact } from './planning';
 
 /**
  * Observed facts vs declared plans (ADR-0007). Everything here is a SUGGESTION the person confirms; nothing is
@@ -72,14 +72,16 @@ export function suggestIncomeMatches(
 // ── Observed amounts for payments whose amount is unknown ("No sé cuánto pago de internet") ───────────────
 export interface ObservedAmount { obligationId: string; name: string; currency: Currency; observedMinor: number; period: string }
 
-/** Unknown stays unknown until a real, linked payment shows the amount; then we SUGGEST it (never 0, never silent). */
-export function observedAmountsForUnknown(
-  obligations: readonly Obligation[], paid: ReadonlyArray<{ obligationId: string; period: string; actualMinor: number; acknowledged?: boolean }>,
-): ObservedAmount[] {
+/**
+ * Unknown stays unknown until a real, linked payment shows the amount; then we SUGGEST it (never 0, never silent).
+ * Only a closed occurrence counts (the real total of its movements): an abono alone is not the price.
+ */
+export function observedAmountsForUnknown(obligations: readonly Obligation[], paid: readonly PaidFact[]): ObservedAmount[] {
   const out: ObservedAmount[] = [];
+  const closed = closedPaidTotals(paid);
   for (const o of obligations) {
     if (o.source !== 'obligation' || (o.amountMinor !== null && o.amountStatus !== 'unknown')) continue;
-    const last = paid.filter((p) => p.obligationId === o.id).sort((a, b) => b.period.localeCompare(a.period))[0];
+    const last = closed.filter((p) => p.obligationId === o.id).sort((a, b) => b.period.localeCompare(a.period))[0];
     // "Mantener sin monto" acknowledged this payment: do not ask again until a newer one arrives.
     if (last && last.actualMinor > 0 && !last.acknowledged) out.push({ obligationId: o.id, name: o.name, currency: o.currency, observedMinor: last.actualMinor, period: last.period });
   }
@@ -135,16 +137,20 @@ export function essentialSpendByMonth(
 // ── Timeline: what comes, in date order, from today ──────────────────────────────────────────────────────
 export interface TimelineItem {
   date: string | null; dateMax: string | null; kind: 'income' | 'payment' | 'debt'; label: string; currency: Currency;
-  amountMinor: number | null; amountStatus: 'confirmed' | 'estimated' | 'unknown'; overdue: boolean; refId: string;
+  /** What is still owed (planned − real abonos); paidMinor: the real abonos of this occurrence, when there are any. */
+  amountMinor: number | null; amountStatus: 'confirmed' | 'estimated' | 'unknown'; overdue: boolean; refId: string; paidMinor?: number;
 }
 
 /**
  * Expected incomes and planned payments between today and `days` ahead (default 35), plus unpaid items overdue
- * within the last month. Expected ≠ received and planned ≠ paid: settled occurrences are left out,
- * and every item keeps its status. Items with an unknown date are listed last (date null).
+ * within the last month. Expected ≠ received and planned ≠ paid: settled occurrences are left out, partially paid
+ * ones show what remains, and every item keeps its status. Items with an unknown date are listed last (date null).
  */
 export function timeline(
-  input: { today: string; obligations: readonly Obligation[]; incomes: readonly ExpectedIncome[]; settledObligations: ReadonlyMap<string, ReadonlySet<string>>; settledIncomes: ReadonlyMap<string, ReadonlySet<string>> },
+  input: {
+    today: string; obligations: readonly Obligation[]; incomes: readonly ExpectedIncome[]; settledObligations: ReadonlyMap<string, ReadonlySet<string>>;
+    settledIncomes: ReadonlyMap<string, ReadonlySet<string>>; partialPaid?: ReadonlyMap<string, ReadonlyMap<string, number>>;
+  },
   days = 35,
 ): TimelineItem[] {
   const { today } = input;
@@ -156,10 +162,14 @@ export function timeline(
     let undatedListed = false;
     for (const x of occurrencesBetween(o, from, to)) {
       if (input.settledObligations.get(o.id)?.has(x.period) || x.period < o.since.slice(0, 7) || (x.dueDate !== null && x.dueDate < o.since)) continue;
+      const abono = input.partialPaid?.get(o.id)?.get(x.period) ?? 0;
+      const owed = remainingMinor(x.amountMinor, abono, x.amountStatus);
+      if (owed === 0) continue; // real abonos already cover it
       const last = x.dueDateMax ?? x.dueDate;
       const item: TimelineItem = {
         date: x.dueDate, dateMax: x.dueDateMax, kind: o.source === 'debt' ? 'debt' : 'payment', label: o.name, currency: o.currency,
-        amountMinor: x.amountMinor, amountStatus: x.amountMinor === null ? 'unknown' : x.amountStatus, overdue: last !== null && last < today, refId: o.id,
+        amountMinor: owed, amountStatus: owed === null ? 'unknown' : x.amountStatus, overdue: last !== null && last < today, refId: o.id,
+        ...(abono > 0 ? { paidMinor: abono } : {}),
       };
       if (x.dueDate === null) { if (!undatedListed) undated.push(item); undatedListed = true; continue; }
       if (x.dueDate >= from) items.push(item);

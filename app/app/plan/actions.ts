@@ -11,12 +11,18 @@ import { isReplay, ref } from '../../../lib/idempotency';
 import { loadPlanningData } from '../../../lib/planning';
 import { addDays, limaToday } from '../../../src/domain/dates';
 import { createSupabaseServerClient, authUser } from '../../../lib/supabase/server';
-import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseSavingsGoalForm, parseSettingsForm } from '../../../src/web/planning-input';
+import { parseBalanceForm, parseIncomeForm, parseObligationForm, parseReserveEntryForm, parseReserveForm, parseSavingsGoalForm, parseSettingsForm } from '../../../src/web/planning-input';
+import { moveReserve, reserveMoveText } from '../../../lib/reserves';
 import { isUuid } from '../../../src/web/transaction-input';
-import { financialEffect } from '../../../src/domain/financial-effect';
+import { settleIncome, settleObligation, type SettleError } from '../../../lib/settlements';
+import { formatMoney } from '../../../src/domain/money';
 import type { ActionState } from '../actions';
 
 const SAVE_ERROR = 'No se guardó. Intenta de nuevo.';
+const SETTLE_ERROR: Record<SettleError, string> = {
+  invalid: SAVE_ERROR, failed: SAVE_ERROR, duplicate: 'Ese pago ya estaba registrado.',
+  not_payment: 'Ese movimiento no es un pago confirmado en la misma moneda.', not_income: 'Ese movimiento no es un ingreso confirmado en la misma moneda.',
+};
 async function session() {
   const supabase = await createSupabaseServerClient();
   const user = await authUser(supabase);
@@ -148,43 +154,25 @@ export async function saveSettingsAction(_p: ActionState, form: FormData): Promi
   return done('Guardado.');
 }
 
-/** "Parece la cuota del carro" -> the person confirms: the real movement settles that month's payment. */
+/** "Parece la cuota del carro" -> the person confirms: the real movement settles that month's payment (lib/settlements.ts). */
 export async function markObligationPaidAction(_p: ActionState, form: FormData): Promise<ActionState> {
-  const obligationId = form.get('obligationId');
-  const transactionId = form.get('transactionId');
-  const period = form.get('period');
-  if (!isUuid(obligationId) || !isUuid(transactionId) || typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
-  // Only a confirmed outgoing movement in the payment's own currency can settle it (PEN ≠ USD; an income never pays a bill).
-  const [{ data: tx }, { data: ob }] = await Promise.all([
-    supabase.from('transactions').select('type,status,currency,direction').eq('id', transactionId).maybeSingle(),
-    supabase.from('fixed_expenses').select('currency').eq('id', obligationId).maybeSingle(),
-  ]);
-  if (!tx || !ob || tx.status !== 'confirmed' || tx.direction !== 'outflow' || tx.currency !== ob.currency || financialEffect(tx.type) === 'income') {
-    return { error: 'Ese movimiento no es un pago confirmado en la misma moneda.' };
-  }
-  const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, fixed_expense_id: obligationId, period, transaction_id: transactionId });
-  if (error) return { error: error.code === '23505' ? 'Ese pago ya estaba registrado.' : SAVE_ERROR };
+  const r = await settleObligation(supabase, user.id, { obligationId: form.get('obligationId'), transactionId: form.get('transactionId'), period: form.get('period'), mode: form.get('mode') });
+  if (!r.ok) return { error: SETTLE_ERROR[r.error] };
+  if (r.status === 'partial') return done(r.remainingMinor === null ? 'Abono registrado. Falta confirmar el monto total.' : `Abono registrado. Faltan ${formatMoney({ amountMinor: r.remainingMinor, currency: r.currency })}.`);
   return done('Pago confirmado. El siguiente ya está en tus próximos pagos.');
 }
 
 /**
  * "Parece tu sueldo de octubre" -> the person confirms: the real deposit settles that expected income, so the plan
- * horizon moves to the next one. Only an income movement can settle an income (checked here; RLS checks ownership).
+ * horizon moves to the next one. Only a confirmed income in the same currency can settle it (lib/settlements.ts).
  */
 export async function linkIncomeAction(_p: ActionState, form: FormData): Promise<ActionState> {
-  const incomeId = form.get('incomeId');
-  const transactionId = form.get('transactionId');
-  const period = form.get('period');
-  if (!isUuid(incomeId) || !isUuid(transactionId) || typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])(-\d{2})?$/.test(period)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
-  const { data: tx } = await supabase.from('transactions').select('type,status').eq('id', transactionId).maybeSingle();
-  if (!tx || tx.type !== 'income' || tx.status !== 'confirmed') return { error: 'Ese movimiento no es un ingreso confirmado.' };
-  const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, expected_income_id: incomeId, period, transaction_id: transactionId });
-  if (error) return { error: error.code === '23505' ? 'Ese ingreso ya estaba registrado.' : SAVE_ERROR };
-  await logLearning(supabase, user.id, 'income', 'accepted', incomeId, { period, transactionId });
+  const r = await settleIncome(supabase, user.id, { incomeId: form.get('incomeId'), transactionId: form.get('transactionId'), period: form.get('period') });
+  if (!r.ok) return { error: r.error === 'duplicate' ? 'Ese ingreso ya estaba registrado.' : SETTLE_ERROR[r.error] };
   return done('Listo. Planificamos hasta el siguiente.');
 }
 
@@ -228,11 +216,16 @@ export async function unlinkSettlementAction(_p: ActionState, form: FormData): P
   if (!isUuid(id)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
-  const { data, error } = await supabase.from('plan_settlements').delete().eq('id', id).select('id,period,fixed_expense_id,expected_income_id,transaction_id');
+  const { data, error } = await supabase.from('plan_settlements').delete().eq('id', id).select('id,period,status,fixed_expense_id,expected_income_id,transaction_id');
   if (error || !data?.length) return { error: SAVE_ERROR };
   const r = data[0]!;
   await logLearning(supabase, user.id, 'settlement', 'invalidated', r.id, { period: r.period, obligationId: r.fixed_expense_id, incomeId: r.expected_income_id, transactionId: r.transaction_id });
-  return done('Deshecho. Vuelve a estar pendiente.');
+  // Review m5: "pendiente" only when nothing of that month is left; other abonos keep it partly paid.
+  if (r.status === 'partial') return done('Quitamos ese abono.');
+  const { data: left } = r.fixed_expense_id
+    ? await supabase.from('plan_settlements').select('id').eq('fixed_expense_id', r.fixed_expense_id).eq('period', r.period).eq('status', 'partial').limit(1)
+    : { data: [] };
+  return done(left?.length ? 'Deshecho. Quedan los abonos que ya hiciste ese mes.' : 'Deshecho. Vuelve a estar pendiente.');
 }
 
 /** "Ahora no" / "Descartar" / "No es ese" on a suggestion: hides it (the data behind it stays as it is). */
@@ -282,8 +275,64 @@ export async function skipOccurrenceAction(_p: ActionState, form: FormData): Pro
   if (!isUuid(obligationId) || typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return { error: SAVE_ERROR };
   const { supabase, user } = await session();
   if (!user) return { error: SAVE_ERROR };
+  // A month with an abono was partly paid: "Omitido" would hide real money. Undo the abono first, or complete it.
+  const { data: abonos } = await supabase.from('plan_settlements').select('id').eq('fixed_expense_id', obligationId).eq('period', period).eq('status', 'partial').limit(1);
+  const HAS_ABONO = 'Ese mes ya tiene un abono. Deshazlo o completa el pago.';
+  if (abonos?.length) return { error: HAS_ABONO };
   const { error } = await supabase.from('plan_settlements').insert({ user_id: user.id, fixed_expense_id: obligationId, period, status: 'skipped' });
-  if (error) return { error: error.code === '23505' ? 'Ese mes ya estaba resuelto.' : SAVE_ERROR };
+  // The database refuses it too (migration 052: an abono committed meanwhile, another tab) → same message.
+  if (error) return { error: error.code === '23505' ? 'Ese mes ya estaba resuelto.' : error.code === '23514' && /occurrence_has_abonos/.test(error.message) ? HAS_ABONO : SAVE_ERROR };
   await logLearning(supabase, user.id, 'settlement', 'dismissed', obligationId, { period, status: 'skipped' });
   return done('Listo. Este mes no cuenta.');
+}
+
+// ── Apartados (ADR-0017): money set aside with a name. Internal allocations: never an income nor an expense ─────
+const RESERVE_DUP = 'Ya tienes un apartado con ese nombre en esa moneda.';
+const RESERVE_LIMIT = 'Llegaste a 50 apartados. Archiva uno vacío para crear otro.';
+
+/** Create (client_ref: a double submit stores one) or edit name, target and date. The currency never changes. */
+export async function saveReserveAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const editing = isUuid(id);
+  const parsed = parseReserveForm((k) => form.get(k), editing ? null : limaToday());
+  if (!parsed.ok) return { error: parsed.error };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const v = parsed.value;
+  if (editing) {
+    const { data, error } = await supabase.from('reserves')
+      .update({ name: v.name, target_minor: v.targetMinor, target_date: v.targetDate, updated_at: new Date().toISOString() })
+      .eq('id', id).eq('active', true).select('id');
+    if (error) return { error: error.code === '23505' ? RESERVE_DUP : SAVE_ERROR };
+    return data?.length ? done('Apartado actualizado.') : { error: SAVE_ERROR };
+  }
+  const { error } = await supabase.from('reserves').insert({
+    user_id: user.id, name: v.name, currency: v.currency, target_minor: v.targetMinor, target_date: v.targetDate, client_ref: ref(form),
+  });
+  if (error && !isReplay(error)) {
+    return { error: error.code === '23505' ? RESERVE_DUP : error.code === '23514' && /reserve_limit/.test(error.message) ? RESERVE_LIMIT : SAVE_ERROR };
+  }
+  return done(`Listo, creaste el apartado ${v.name}.`);
+}
+
+/** "Apartar" / "Usar": the amount is parsed here; the SQL guard refuses taking out more than is saved. */
+export async function reserveEntryAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const parsed = parseReserveEntryForm((k) => form.get(k));
+  if (!parsed.ok) return { error: parsed.error };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const r = await moveReserve(supabase, user.id, { ...parsed.value, clientRef: ref(form) });
+  const text = reserveMoveText(r, parsed.value.direction, parsed.value.amountMinor);
+  return 'error' in text ? { error: text.error } : done(text.message);
+}
+
+/** Archive an empty apartado (history kept). With money in it the SQL guard refuses: use it first. */
+export async function archiveReserveAction(_p: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  if (!isUuid(id)) return { error: SAVE_ERROR };
+  const { supabase, user } = await session();
+  if (!user) return { error: SAVE_ERROR };
+  const { data, error } = await supabase.from('reserves').update({ active: false, updated_at: new Date().toISOString() }).eq('id', id).eq('active', true).select('id');
+  if (error) return { error: error.code === '23514' ? 'Todavía tiene dinero apartado. Úsalo primero y luego archívalo.' : SAVE_ERROR };
+  return data?.length ? done('Apartado archivado.') : { error: SAVE_ERROR };
 }
