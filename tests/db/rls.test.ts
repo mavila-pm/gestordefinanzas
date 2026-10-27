@@ -153,6 +153,8 @@ const AUTHENTICATED_DEFINER = [
   'import_add_source', 'import_insert_transaction', 'import_record_event', 'link_card_history', 'login_attempt',
   'login_succeeded', 'my_registration', 'reset_demo_ai_onboarding', 'review_transaction', 'rotate_email_connection',
   'set_demo_plan', 'set_transaction_split', 'start_plus_trial',
+  // record_debt_payment (front C, 052): debt payment ledger write; owner from request_uid(), debt must be the caller's (ADR-0017).
+  'record_debt_payment',
 ].sort();
 
 describe.skipIf(!DATABASE_URL)('function EXECUTE grants (guard for future functions)', () => {
