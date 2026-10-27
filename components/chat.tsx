@@ -168,9 +168,11 @@ function useTypedHint(input: React.RefObject<HTMLTextAreaElement | null>, exampl
 
 export function Chat(props: { initial: ChatMessage[]; send: Send; camera: boolean; placeholder: string; label: string; suggestions?: string[];
   /** First visit: the opening messages arrive one by one (three dots, then each line). */
-  intro?: boolean; examples?: string[] }) {
+  intro?: boolean; examples?: string[];
+  /** Start of the person's sentence when they arrive from a section ("Recibí ", "Gasté "): editable, never sent alone. */
+  draft?: string }) {
   const [state, formAction, pending] = useActionState(props.send, { messages: props.initial });
-  const [text, setText] = useState('');
+  const [text, setText] = useState(props.draft ?? '');
   const [hint, setHint] = useState(props.placeholder);
   const list = useRef<HTMLOListElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);

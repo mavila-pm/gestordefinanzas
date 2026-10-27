@@ -3,7 +3,7 @@
 import Link, { useLinkStatus } from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon } from './icon';
-import { MOBILE, REVIEW, SIDEBAR, UNDER_MORE, type Item } from './nav-items';
+import { GROUPS, MOBILE, REVIEW, UNDER_MORE, type Item } from './nav-items';
 
 /** Marks the tapped item while its page loads: the tap answers at once, even before the server does. */
 function Pending() {
@@ -37,8 +37,15 @@ function Links({ items, path, pending, testBadge }: { items: Item[]; path: strin
 export function SidebarNav({ pending }: { pending: number }) {
   const path = usePathname();
   return (
-    <nav aria-label="Principal">
-      <ul className="nav-list"><Links items={pending > 0 ? [SIDEBAR[0]!, SIDEBAR[1]!, REVIEW, ...SIDEBAR.slice(2)] : SIDEBAR} path={path} pending={pending} testBadge /></ul>
+    <nav aria-label="Principal" className="nav-groups">
+      {GROUPS.map((g, i) => (
+        <div key={g.title} className="nav-group">
+          <p className="nav-group-title" id={`nav-g-${i}`}>{g.title}</p>
+          <ul className="nav-list" aria-labelledby={`nav-g-${i}`}>
+            <Links items={i === 0 && pending > 0 ? [...g.items.slice(0, 2), REVIEW, ...g.items.slice(2)] : g.items} path={path} pending={pending} testBadge={i === 0} />
+          </ul>
+        </div>
+      ))}
     </nav>
   );
 }
@@ -54,7 +61,7 @@ export function BottomNav({ pending }: { pending: number }) {
             <Icon name={item.icon} size={22} />
             <span>{item.label}</span>
             <Pending />
-            {item.match === '/app/movimientos' && pending > 0 && <span className="badge" aria-label={`${pending} por revisar`}>{pending}</span>}
+            {item.match === '/app/mas' && pending > 0 && <span className="badge" aria-label={`${pending} por revisar`}>{pending}</span>}
           </Link>
         );
       })}

@@ -10,7 +10,17 @@ export const metadata: Metadata = { title: 'Vels · Velsuno' };
 
 
 /** Vels full page (ADR-0011; route kept as /app/preguntar for existing links). Same core as the Vels bubble. */
-export default async function VelsPage() {
+/** Arriving from a section's "Contárselo a Vels": the sentence starts for the person, so a bare "5000 de Negocio 1" is clear. */
+const TOPIC: Record<string, { draft: string; placeholder: string }> = {
+  ingreso: { draft: 'Recibí ', placeholder: 'Ej. Recibí 5000 soles de Negocio 1' },
+  gasto: { draft: 'Gasté ', placeholder: 'Ej. Gasté 45 en almuerzo con mi débito' },
+  deuda: { draft: 'Debo ', placeholder: 'Ej. Debo 1200 a Roberto, le pago 100 al mes' },
+  inversion: { draft: 'Invertí ', placeholder: 'Ej. Invertí 2000 en un fondo mutuo' },
+};
+
+export default async function VelsPage({ searchParams }: { searchParams: Promise<{ tema?: string }> }) {
+  const { tema } = await searchParams;
+  const topic = tema ? TOPIC[tema] : undefined;
   const supabase = await createSupabaseServerClient();
   const { messages, suggestions, greeting } = await velsOpen(supabase, '/app/preguntar');
   const welcome: ChatMessage = { id: 'welcome', role: 'velsuno', body: greeting, card: null };
@@ -21,7 +31,7 @@ export default async function VelsPage() {
         {messages.length > 0 && <form action={clearAssistantAction}><button type="submit" className="link">Limpiar conversación</button></form>}
       </div>
       <Chat initial={messages.length ? messages : [welcome]} suggestions={suggestions} send={assistantAction} camera label="Conversación con Vels"
-        placeholder="Escríbele a Vels" />
+        placeholder={topic?.placeholder ?? 'Escríbele a Vels'} draft={topic?.draft} />
     </main>
   );
 }

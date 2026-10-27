@@ -9,8 +9,10 @@ import { createManualAction } from '../../actions';
 
 export const metadata = { title: 'Nuevo movimiento' };
 
-export default async function NewTransaction({ searchParams }: { searchParams: Promise<{ ok?: string }> }) {
-  const { ok } = await searchParams;
+export default async function NewTransaction({ searchParams }: { searchParams: Promise<{ ok?: string; tipo?: string }> }) {
+  const { ok, tipo } = await searchParams;
+  // From Ingresos / Gastos: the type comes chosen (the person can still change it).
+  const type = (MANUAL_TYPES as readonly string[]).includes(tipo ?? '') ? tipo as (typeof MANUAL_TYPES)[number] : 'expense';
   const supabase = await createSupabaseServerClient();
   const [catalog, prefs] = await Promise.all([loadCatalog(supabase), loadPreferences(supabase)]);
   // Ajustes → Finanzas: the main currency and account are proposed; the person can change them here.
@@ -21,7 +23,7 @@ export default async function NewTransaction({ searchParams }: { searchParams: P
 
   return (
     <main className="stack narrow-md">
-      <h1>Nuevo movimiento</h1>
+      <h1>{type === 'income' ? 'Nuevo ingreso' : type === 'expense' ? 'Nuevo gasto' : 'Nuevo movimiento'}</h1>
       {ok === '1' && <p role="status" className="notice positive">Movimiento registrado. Puedes registrar otro.</p>}
       <section className="card">
         <ActionForm action={createManualAction} label="Registrar movimiento">
@@ -29,7 +31,7 @@ export default async function NewTransaction({ searchParams }: { searchParams: P
           <TransactionFields
             types={MANUAL_TYPES}
             catalog={{ ...catalog, cards: activeOnly(catalog.cards), accounts: activeOnly(catalog.accounts) }}
-            values={{ type: 'expense', amount: '', currency: account?.currency ?? prefs.primaryCurrency, date, time, description: '', categoryId: '', cardId: '', accountId: account?.id ?? '' }}
+            values={{ type, amount: '', currency: account?.currency ?? prefs.primaryCurrency, date, time, description: '', categoryId: '', cardId: '', accountId: account?.id ?? '' }}
           />
           <button type="submit" className="wide">Registrar</button>
         </ActionForm>
