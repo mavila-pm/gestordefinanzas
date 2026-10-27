@@ -59,7 +59,7 @@ function Deactivate({ id, kind, name }: { id: string; kind: 'card' | 'account'; 
 function BalanceSheet({ a }: { a: SourceAccount }) {
   const cash = a.kind === 'cash';
   return (
-    <Sheet label={a.balanceMinor === null ? 'Agregar saldo' : 'Actualizar'} triggerClassName="quiet" triggerLabel={`Saldo de ${a.alias}`}
+    <Sheet label={a.balanceMinor === null ? 'Agregar saldo' : 'Actualizar'} triggerClassName="link small" triggerLabel={`Saldo de ${a.alias}`}
       title={cash ? `Efectivo${a.currency === 'USD' ? ' en dólares' : ''}` : `Saldo · ${a.alias}`}
       subtitle={cash ? 'Cuánto tienes en efectivo ahora.' : 'El saldo que ves hoy en la app de tu banco.'}>
       <div className="sheet-body">
@@ -80,7 +80,7 @@ function AccountLine({ a }: { a: SourceAccount }) {
     <div className="balance-row" id={`a-${a.id}`}>
       <span className="setting-text"><strong>{a.alias}</strong>
         <small className="muted">{a.currency === 'USD' ? 'Dólares' : 'Soles'}{a.balanceAsOf ? ` · desde el ${shortDate(a.balanceAsOf.slice(0, 10))}` : ''}</small></span>
-      <span className="row"><span className={`amount${a.balanceMinor === null ? ' muted' : ''}`}>{m(a.balanceMinor, a.currency) ?? 'Sin saldo'}</span><BalanceSheet a={a} /></span>
+      <span className="bal-right"><span className={`amount${a.balanceMinor === null ? ' muted' : ''}`}>{m(a.balanceMinor, a.currency) ?? 'Sin saldo'}</span><BalanceSheet a={a} /></span>
     </div>
   );
 }
@@ -140,7 +140,7 @@ export default async function CardsAndAccounts({ searchParams }: { searchParams:
         </div>
         <div className="actions">
           <Sheet label={<><Icon name="add" size={18} />Agregar tarjeta</>} triggerClassName="button" title="Nueva tarjeta" subtitle="Nunca pongas el número completo, CVV, PIN ni claves." testId="card-sheet">
-            <div className="sheet-body"><ActionForm action={saveCardAction} label="Registrar tarjeta" closeOnSuccess><CardFormFields /></ActionForm></div>
+            <div className="sheet-body"><ActionForm action={saveCardAction} label="Registrar tarjeta" closeOnSuccess resetOnSuccess><CardFormFields /></ActionForm></div>
           </Sheet>
         </div>
       </header>
@@ -199,7 +199,7 @@ export default async function CardsAndAccounts({ searchParams }: { searchParams:
                     <>
                       <dl className="sub-facts">
                         <Fact label="Línea total" value={m(limit, cur)} />
-                        <Fact label="Línea usada" value={m(used, cur)} note={card.usedAsOf ? 'se actualiza con tus compras y pagos' : view?.statement?.usedAsOf ? `al ${shortDate(view.statement.usedAsOf.slice(0, 10))}` : undefined} />
+                        <Fact label="Línea usada" value={m(used, cur)} note={card.usedAsOf ? '· al día' : view?.statement?.usedAsOf ? `al ${shortDate(view.statement.usedAsOf.slice(0, 10))}` : undefined} />
                         <Fact label="Disponible del banco" value={m(available, cur)} note={usePct !== null ? `· usas el ${usePct}%` : undefined} />
                         <Fact label="Por pagar este ciclo" value={p?.billed ? m(p.billed.amountMinor, cur) : null} note={p?.billed && p.billed.status === 'estimated' ? '· estimado' : undefined} />
                         <Fact label="Pago mínimo" value={p?.billed ? m(p.billed.minimumMinor, cur) : null} />
@@ -225,7 +225,7 @@ export default async function CardsAndAccounts({ searchParams }: { searchParams:
                   <div className="sub-actions">
                     {card.kind === 'debit' && (
                       <Sheet label={<><Icon name="add" size={18} />Agregar cuenta a tarjeta</>} triggerClassName="quiet" title={`Cuentas · ${card.alias}`} subtitle="Nombre, moneda y saldo de hoy." testId="card-accounts-sheet">
-                        <div className="sheet-body"><ActionForm action={addCardAccountsAction} label={`Cuentas de ${card.alias}`} closeOnSuccess><CardAccountsFields cardId={card.id} /></ActionForm></div>
+                        <div className="sheet-body"><ActionForm action={addCardAccountsAction} label={`Cuentas de ${card.alias}`} closeOnSuccess resetOnSuccess><CardAccountsFields cardId={card.id} /></ActionForm></div>
                       </Sheet>
                     )}
                     {card.kind === 'credit' && (

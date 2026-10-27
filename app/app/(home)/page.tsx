@@ -22,6 +22,7 @@ import { TxRow } from '../../../components/tx-row';
 import { Icon } from '../../../components/ui/icon';
 import { ComingUp, FreeHero } from '../../../components/free-hero';
 import { LiquiditySummary } from '../../../components/liquidity-summary';
+import { loadMoneySources } from '../../../lib/money-sources';
 import { RegisterMenu } from '../../../components/register-menu';
 import { SavingsGoal } from '../../../components/savings-goal';
 import { TrendBars } from '../../../components/trend-bars';
@@ -139,17 +140,25 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   );
 
   if (firstTime) {
+    const sources = await loadMoneySources(supabase);
+    const hasSources = sources.accounts.some((a) => a.active) || sources.cards.some((c) => c.active);
     return (
       <main className="stack narrow-md" data-testid="welcome">
         {existing}
         {head}
-        <section className="card stack-sm" data-testid="first-sources">
+        {hasSources && (
+          <section className="stack-sm" aria-labelledby="h-liq" data-testid="home-liquidity">
+            <h2 id="h-liq">Tu liquidez</h2>
+            <LiquiditySummary liquidity={sources.liquidity} />
+          </section>
+        )}
+        {!hasSources && <section className="card stack-sm" data-testid="first-sources">
           <h2>Primero, tus cuentas y tarjetas</h2>
           <p className="muted">Agrega tu tarjeta de débito con sus cuentas, tu efectivo y tus tarjetas de crédito. De ahí sale tu liquidez y tus gastos la actualizan solos.</p>
           <div><Link href="/app/tarjetas" className="button">Agregar cuentas y tarjetas</Link></div>
-        </section>
+        </section>}
         <section className="card stack-sm">
-          <h2>Luego, tu primer movimiento</h2>
+          <h2>{hasSources ? 'Ahora, tu primer movimiento' : 'Luego, tu primer movimiento'}</h2>
           <p className="muted">Cuéntaselo a Vels con tus palabras o regístralo en un minuto.</p>
           <div><RegisterMenu className="button" /></div>
         </section>

@@ -891,7 +891,10 @@ html[data-theme="dark"] .card-visual[data-tone="account"], html[data-theme="dark
 .liq-figure { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .balance-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-12); padding: var(--space-8) 0; border-top: 1px solid var(--border-subtle); }
 .balance-row:first-child { border-top: 0; }
-.balance-row .amount { font-variant-numeric: tabular-nums; font-weight: 600; }
+.balance-row .amount { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.balance-row .setting-text { min-width: 0; }
+.bal-right { display: grid; justify-items: end; gap: 2px; flex-shrink: 0; }
+.bal-right .link { min-height: 44px; padding: 0 var(--space-4); }
 @media (prefers-reduced-motion: reduce) { .swatch:hover { transform: none; } }
 .cv-top, .cv-bottom { display: flex; justify-content: space-between; align-items: center; gap: var(--space-8); min-width: 0; }
 .cv-bank { font-weight: 700; letter-spacing: .02em; } .cv-type { font-size: 12px; opacity: .78; font-weight: 600; }

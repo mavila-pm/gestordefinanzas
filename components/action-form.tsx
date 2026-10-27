@@ -16,6 +16,8 @@ export function ActionForm(props: {
   closeOnSuccess?: boolean;
   /** Saves as soon as a control changes (switches, segmented choices): no separate "Guardar" button. */
   autoSubmit?: boolean;
+  /** Create forms: after a success the fields start over (steps, typed values), ready for the next item. */
+  resetOnSuccess?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(props.action, {});
   const sheet = useSheet();
@@ -34,7 +36,7 @@ export function ActionForm(props: {
     <form action={formAction} className={props.className ?? 'stack'} aria-label={props.label} aria-busy={pending}
       onChange={props.autoSubmit ? (e) => e.currentTarget.requestSubmit() : undefined}>
       <input type="hidden" name="client_ref" value={clientRef} />
-      <fieldset disabled={pending} className="bare">{props.children}</fieldset>
+      <fieldset key={props.resetOnSuccess ? clientRef : undefined} disabled={pending} className="bare">{props.children}</fieldset>
       {state.error && <p role="alert" className="error">{state.error}</p>}
       {state.message && !props.closeOnSuccess && <p role="status" className="ok">{state.message}</p>}
     </form>
