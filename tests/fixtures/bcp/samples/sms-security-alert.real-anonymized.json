@@ -1,0 +1,11 @@
+{
+  "fixtureStatus": "REAL_ANONYMIZED",
+  "evidence": "Product Owner sample 2026-09-27: sender 19896 and wording observed; card digits and amount redacted.",
+  "raw": {
+    "channel": "sms",
+    "sender": "19896",
+    "body": "BCP Alertas: Detectamos una operación inusual con tu tarjeta terminada en ****1234 por S/ **.**. [Información de validación anonimizada]",
+    "receivedAt": "2026-09-24T15:00:00Z"
+  },
+  "expected": { "outcome": "non_transactional" }
+}

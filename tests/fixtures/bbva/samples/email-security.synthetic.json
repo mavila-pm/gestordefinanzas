@@ -1,0 +1,13 @@
+{
+  "fixtureStatus": "SYNTHETIC_FIXTURE",
+  "evidence": "Invented security notice (no BBVA email observed). Notices are traced, never turned into movements.",
+  "raw": {
+    "channel": "email",
+    "externalEventId": "<bbva-sample-security-1@bbva.test>",
+    "sender": "BBVA Notificaciones <avisos@bbva-sintetico.example>",
+    "subject": "Nuevo inicio de sesión en tu Banca por Internet BBVA",
+    "body": "Hola, CLIENTE DE PRUEBA\nDetectamos un nuevo inicio de sesión en tu Banca por Internet.\nSi no fuiste tú, comunícate con nosotros.\nBBVA Perú (texto sintético de prueba)",
+    "receivedAt": "2026-09-20T15:00:00Z"
+  },
+  "expected": { "outcome": "non_transactional" }
+}

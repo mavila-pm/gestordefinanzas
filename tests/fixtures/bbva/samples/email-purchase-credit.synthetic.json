@@ -1,0 +1,20 @@
+{
+  "fixtureStatus": "SYNTHETIC_FIXTURE",
+  "evidence": "Invented wording and sender (reserved .example domain). No BBVA email has been observed.",
+  "raw": {
+    "channel": "email",
+    "externalEventId": "<bbva-sample-purchase-1@bbva.test>",
+    "sender": "BBVA Notificaciones <avisos@bbva-sintetico.example>",
+    "subject": "Compra realizada con tu Tarjeta de Crédito BBVA",
+    "body": "Hola, CLIENTE DE PRUEBA\nCompra realizada con tu Tarjeta de Crédito BBVA.\nImporte: S/ 45.90\nComercio: TAMBO MIRAFLORES\nTarjeta: **** 1234\nFecha: 15/09/2026\nHora: 20:30\nNúmero de operación: 900001\nBBVA Perú (texto sintético de prueba)",
+    "receivedAt": "2026-09-16T01:31:00Z"
+  },
+  "expected": {
+    "outcome": "created",
+    "transaction": {
+      "institution": "BBVA", "type": "credit_card_purchase", "direction": "outflow", "amountMinor": 4590, "currency": "PEN",
+      "occurredAt": "2026-09-15T20:30:00-05:00", "cardLast4": "1234", "merchantNormalized": "TAMBO MIRAFLORES",
+      "category": "Alimentación", "status": "review_required"
+    }
+  }
+}

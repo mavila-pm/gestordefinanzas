@@ -1,0 +1,14 @@
+{
+  "fixtureStatus": "SYNTHETIC_FIXTURE",
+  "evidence": "Invented BBVA app notification text pasted by the person (title line + text). No real notification observed.",
+  "raw": {
+    "channel": "sms",
+    "sender": "user-import:sms",
+    "body": "BBVA\nEnviaste S/ 500.00 a la cuenta *9001 el 10/09/2026 a las 10:00.",
+    "receivedAt": "2026-09-10T15:01:00Z"
+  },
+  "expected": {
+    "outcome": "created",
+    "transaction": { "institution": "BBVA", "type": "internal_transfer", "direction": "neutral", "amountMinor": 50000, "status": "review_required" }
+  }
+}
