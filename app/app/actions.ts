@@ -149,6 +149,21 @@ export async function deactivateAction(_prev: ActionState, form: FormData): Prom
   return done(kind === 'card' ? 'Tarjeta desactivada.' : 'Cuenta desactivada.');
 }
 
+/** "¿A qué cuenta fue?": the destination of an own transfer or a withdrawal (blank clears it). The database checks it all. */
+export async function setCounterpartyAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const id = form.get('id');
+  const acc = form.get('accountId');
+  if (!isUuid(id) || (acc !== '' && !isUuid(acc))) return { error: errorText('invalid_request') };
+  const { supabase, user } = await session();
+  if (!user) return { error: errorText('not_authenticated') };
+  const { error } = await supabase.rpc('set_transaction_counterparty', { p_id: id, p_account: acc || null });
+  if (error) {
+    const known: Record<string, string> = { invalid_account_currency: 'Esa cuenta está en otra moneda.', same_account: 'Elige otra cuenta: es la misma de origen.', withdrawal_needs_cash: 'Un retiro de cajero va a tu efectivo.' };
+    return { error: known[error.message] ?? errorText(error.message) };
+  }
+  return done(acc ? 'Destino guardado. Tu saldo ya lo refleja.' : 'Destino quitado.');
+}
+
 export async function deleteTransactionAction(_prev: ActionState, form: FormData): Promise<ActionState> {
   const id = form.get('id');
   if (!isUuid(id) || form.get('confirmDelete') !== '1') return { error: 'Marca la casilla para confirmar la eliminación.' };

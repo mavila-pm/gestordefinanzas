@@ -41,13 +41,13 @@ export async function loadMoneySources(supabase: SupabaseClient): Promise<MoneyS
   for (const c of [...accCps, ...usedCps]) if (!latestPer.has(c.ownerId) || c.asOf > latestPer.get(c.ownerId)!) latestPer.set(c.ownerId, c.asOf);
   const since = [...latestPer.values()].sort()[0] ?? null;
   const txRows = since
-    ? (await supabase.from('transactions').select('id,type,status,amount_minor,currency,occurred_at,account_id,card_id')
+    ? (await supabase.from('transactions').select('id,type,status,amount_minor,currency,occurred_at,account_id,card_id,counterparty_account_id')
       .gt('occurred_at', since).order('occurred_at', { ascending: false }).limit(TX_LIMIT)).data ?? []
     : [];
   const truncated = txRows.length >= TX_LIMIT;
   const txs: LiquidityTx[] = txRows.map((t) => ({
     id: t.id, type: t.type as TransactionType, status: t.status as TransactionStatus, amountMinor: Number(t.amount_minor), currency: t.currency as Currency,
-    occurredAt: t.occurred_at, accountId: t.account_id, cardId: t.card_id,
+    occurredAt: t.occurred_at, accountId: t.account_id, counterpartyAccountId: t.counterparty_account_id, cardId: t.card_id,
   }));
   const cardRows = cards.data ?? [];
   const engineCards = cardRows.map((c) => ({ id: c.id, kind: c.kind as 'credit' | 'debit', currency: c.currency as Currency }));

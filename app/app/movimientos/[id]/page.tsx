@@ -9,7 +9,7 @@ import { formatMoney } from '../../../../src/domain/money';
 import type { TransactionType } from '../../../../src/domain/types';
 import { reviewReasons } from '../../../../src/engine/review-reasons';
 import { CORRECTABLE_TYPES, formatLimaDateTime, isoToLimaInputs, isUuid, minorToInput, TYPE_LABEL } from '../../../../src/web/transaction-input';
-import { correctAction, createCardAction, deleteTransactionAction, reviewAction, splitAction } from '../../actions';
+import { correctAction, createCardAction, deleteTransactionAction, reviewAction, setCounterpartyAction, splitAction } from '../../actions';
 import { Icon } from '../../../../components/ui/icon';
 import { Sheet } from '../../../../components/ui/sheet';
 import { SplitEditor } from '../../../../components/split-editor';
@@ -33,12 +33,19 @@ export default async function TransactionDetail({ params, searchParams }: { para
   if (!data) notFound();
   const t = toLinked(data as never);
   const version = (data as unknown as { updated_at: string }).updated_at;
-  const [catalog, codes, audit, allocations] = await Promise.all([
+  const [catalog, codes, audit, allocations, dest, pockets] = await Promise.all([
     loadCatalog(supabase),
     ingestionCodesFor(supabase, [t.id]),
     supabase.from('audit_events').select('id,action,changes,created_at').eq('transaction_id', t.id).order('created_at'),
     supabase.from('transaction_allocations').select('category_id,amount_minor,note').eq('transaction_id', t.id).order('position'),
+    supabase.from('transactions').select('counterparty_account_id').eq('id', id).maybeSingle(),
+    supabase.from('accounts').select('id,alias,kind,currency,active').eq('active', true).order('created_at'),
   ]);
+  // "¿A qué cuenta fue?" (ADR-0020): an own transfer or a withdrawal moves money between the person's own pockets.
+  const destinationId = (dest.data as { counterparty_account_id: string | null } | null)?.counterparty_account_id ?? null;
+  const destinations = t.type === 'internal_transfer' || t.type === 'withdrawal'
+    ? (pockets.data ?? []).filter((a) => a.currency === t.currency && a.id !== t.accountId && (t.type !== 'withdrawal' || a.kind === 'cash'))
+    : [];
 
   const names = new Map<string, string>([
     ...catalog.categories.map((c) => [c.id, c.name] as const),
@@ -199,6 +206,26 @@ export default async function TransactionDetail({ params, searchParams }: { para
             </div>
             <button type="submit">Registrar tarjeta</button>
           </ActionForm>
+        </section>
+      )}
+
+      {(t.type === 'internal_transfer' || t.type === 'withdrawal') && (
+        <section className="card stack-sm" aria-labelledby="h-dest" data-testid="destination">
+          <h2 id="h-dest">{t.type === 'withdrawal' ? '¿Dónde quedó el efectivo?' : '¿A qué cuenta fue?'}</h2>
+          {destinations.length === 0 ? (
+            <p className="muted small">{t.type === 'withdrawal' ? 'Agrega tu efectivo en Cuentas y tarjetas para que este retiro lo sume.' : 'Agrega tus cuentas en Cuentas y tarjetas para indicar el destino.'} <Link href="/app/tarjetas">Ir a Cuentas y tarjetas</Link></p>
+          ) : (
+            <ActionForm action={setCounterpartyAction} label="Destino del dinero">
+              <input type="hidden" name="id" value={t.id} />
+              <label className="stack-sm"><span>{t.type === 'withdrawal' ? 'Efectivo' : 'Cuenta de destino'}</span>
+                <select name="accountId" defaultValue={destinationId ?? ''}>
+                  <option value="">Sin indicar</option>
+                  {destinations.map((a) => <option key={a.id} value={a.id}>{a.alias}</option>)}
+                </select></label>
+              <small className="muted">Así tu saldo baja en una cuenta y sube en la otra: no es gasto ni ingreso.</small>
+              <button type="submit" className="quiet">Guardar destino</button>
+            </ActionForm>
+          )}
         </section>
       )}
 

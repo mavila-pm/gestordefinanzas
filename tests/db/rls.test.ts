@@ -155,6 +155,8 @@ const AUTHENTICATED_DEFINER = [
   'set_demo_plan', 'set_transaction_split', 'start_plus_trial',
   // record_debt_payment (front C, 052): debt payment ledger write; owner from request_uid(), debt must be the caller's (ADR-0017).
   'record_debt_payment',
+  // set_transaction_counterparty (060): "¿A qué cuenta fue?"; owner from request_uid(), own tx + own active account, same currency (ADR-0020).
+  'set_transaction_counterparty',
 ].sort();
 
 describe.skipIf(!DATABASE_URL)('function EXECUTE grants (guard for future functions)', () => {
