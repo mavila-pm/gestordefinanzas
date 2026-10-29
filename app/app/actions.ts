@@ -158,7 +158,7 @@ export async function setCounterpartyAction(_prev: ActionState, form: FormData):
   if (!user) return { error: errorText('not_authenticated') };
   const { error } = await supabase.rpc('set_transaction_counterparty', { p_id: id, p_account: acc || null });
   if (error) {
-    const known: Record<string, string> = { invalid_account_currency: 'Esa cuenta está en otra moneda.', same_account: 'Elige otra cuenta: es la misma de origen.', withdrawal_needs_cash: 'Un retiro de cajero va a tu efectivo.' };
+    const known: Record<string, string> = { invalid_account_currency: 'Esa cuenta está en otra moneda.', same_account: 'Elige otra cuenta: es la misma de origen.', withdrawal_needs_cash: 'Un retiro de cajero va a tu efectivo.', source_required: 'Primero indica de qué cuenta salió (Corregir → Cuenta).' };
     return { error: known[error.message] ?? errorText(error.message) };
   }
   return done(acc ? 'Destino guardado. Tu saldo ya lo refleja.' : 'Destino quitado.');

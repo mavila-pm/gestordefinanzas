@@ -53,6 +53,8 @@ export function balanceEffect(tx: BalanceTx): BalanceDelta {
       return { accounts: acc(-1), cardUsed: credit ? { cardId: credit, deltaMinor: -a } : null, missing: tx.accountId ? null : 'source_account' };
     case 'internal_transfer':
     case 'withdrawal': {
+      // Without its source a move between own pockets moves nothing: +destination alone would create money.
+      if (!tx.accountId) return { ...none, missing: 'source_account' };
       const to = tx.counterpartyAccountId ?? null;
       const accounts = [...acc(-1), ...(to ? [{ accountId: to, deltaMinor: a }] : [])];
       const missing = !tx.accountId ? 'source_account' : to ? null : tx.type === 'withdrawal' ? 'cash_destination' : 'transfer_destination';

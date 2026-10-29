@@ -13,27 +13,38 @@ alter table public.transactions
   add constraint transactions_counterparty_distinct check (counterparty_account_id is null or account_id is null or counterparty_account_id <> account_id);
 create index transactions_counterparty on public.transactions (counterparty_account_id, user_id);
 
--- Insert: a withdrawal without destination goes to the cash pocket of its currency, when there is one.
--- Update: a movement corrected to another type loses its destination (the check above would refuse it otherwise).
+-- Insert: a withdrawal with a known source and no destination goes to the cash pocket of its currency (a movement
+-- without source never gets one: +cash without −bank would create money).
+-- Update of type / currency / source: a destination that no longer fits (not a transfer or withdrawal, another
+-- currency, the same account as the source, a withdrawal into a non-cash account) is cleared, never left invalid.
 create function public.transactions_cash_destination() returns trigger
 language plpgsql security definer set search_path = '' as $$
+declare v_acc record;
 begin
-  if new.type not in ('internal_transfer', 'withdrawal') then
+  if new.type not in ('internal_transfer', 'withdrawal') or new.account_id is null then
     new.counterparty_account_id := null;
     return new;
   end if;
   if tg_op = 'INSERT' and new.type = 'withdrawal' and new.counterparty_account_id is null then
     select a.id into new.counterparty_account_id from public.accounts a
-    where a.user_id = new.user_id and a.kind = 'cash' and a.active and a.currency = new.currency
-      and a.id is distinct from new.account_id;
+    where a.user_id = new.user_id and a.kind = 'cash' and a.active and a.currency = new.currency and a.id <> new.account_id;
+    return new;
+  end if;
+  if new.counterparty_account_id is not null then
+    select a.currency, a.kind into v_acc from public.accounts a where a.id = new.counterparty_account_id and a.user_id = new.user_id;
+    if not found or v_acc.currency <> new.currency or new.counterparty_account_id = new.account_id
+       or (new.type = 'withdrawal' and v_acc.kind <> 'cash') then
+      new.counterparty_account_id := null;
+    end if;
   end if;
   return new;
 end $$;
 revoke execute on function public.transactions_cash_destination() from public, anon, authenticated;
-create trigger transactions_cash_destination before insert or update of type on public.transactions
+create trigger transactions_cash_destination before insert or update of type, currency, account_id on public.transactions
   for each row execute function public.transactions_cash_destination();
 
 -- "¿A qué cuenta fue?": own active account, same currency, not the source; a withdrawal only to cash. null clears it.
+-- The source must be known first (−source +destination); every change is audited like a correction.
 create function public.set_transaction_counterparty(p_id uuid, p_account uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -42,9 +53,10 @@ declare
   v_acc record;
 begin
   if v_uid is null then raise exception 'not_authenticated' using errcode = '42501'; end if;
-  select t.type, t.currency, t.account_id into v_tx from public.transactions t where t.id = p_id and t.user_id = v_uid for update;
+  select t.type, t.currency, t.account_id, t.counterparty_account_id into v_tx from public.transactions t where t.id = p_id and t.user_id = v_uid for update;
   if not found then raise exception 'not_found' using errcode = 'P0002'; end if;
   if v_tx.type not in ('internal_transfer', 'withdrawal') then raise exception 'counterparty_not_applicable' using errcode = '22023'; end if;
+  if v_tx.account_id is null then raise exception 'source_required' using errcode = '22023'; end if;
   if p_account is not null then
     select a.currency, a.kind, a.active into v_acc from public.accounts a where a.id = p_account and a.user_id = v_uid;
     if not found or not v_acc.active then raise exception 'invalid_account' using errcode = '22023'; end if;
@@ -52,7 +64,10 @@ begin
     if p_account = v_tx.account_id then raise exception 'same_account' using errcode = '22023'; end if;
     if v_tx.type = 'withdrawal' and v_acc.kind <> 'cash' then raise exception 'withdrawal_needs_cash' using errcode = '22023'; end if;
   end if;
+  if v_tx.counterparty_account_id is not distinct from p_account then return; end if;
   update public.transactions set counterparty_account_id = p_account where id = p_id and user_id = v_uid;
+  insert into public.audit_events (user_id, transaction_id, action, changes)
+  values (v_uid, p_id, 'correct', jsonb_build_object('counterparty_account_id', jsonb_build_object('from', v_tx.counterparty_account_id, 'to', p_account)));
 end $$;
 grant create on schema public to app_writer;
 alter function public.set_transaction_counterparty(uuid, uuid) owner to app_writer;

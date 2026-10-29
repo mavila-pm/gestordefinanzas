@@ -126,6 +126,12 @@ describe('liquidity from accounts', () => {
     expect(run({ accounts: [acc('A')], checkpoints: [{ ...cp('A', 100), currency: 'USD' }] }).source).toBeNull();
   });
 
+  it('a withdrawal without its source never adds cash (no money created); it is reported as unassigned', () => {
+    const l = run({ accounts: [acc('A'), acc('CASH', 'cash')], checkpoints: [cp('A', 100000), cp('CASH', 0)],
+      txs: [tx({ type: 'withdrawal', accountId: null, counterpartyAccountId: 'CASH', amountMinor: 20000 })] });
+    expect(l).toMatchObject({ totalMinor: 100000, cashMinor: 0, status: 'partial', missing: [{ code: 'unassigned', count: 1, amountMinor: 20000 }] });
+  });
+
   it('inactive accounts are left out', () => {
     expect(run({ accounts: [{ ...acc('A'), active: false }], checkpoints: [cp('A', 1000)] }).source).toBeNull();
   });

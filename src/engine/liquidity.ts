@@ -91,7 +91,8 @@ export function liquidity(input: {
 
   for (const tx of input.txs) {
     if (tx.currency !== currency) continue; // a USD movement never touches a soles account
-    const touches = (tx.accountId && ids.has(tx.accountId)) || (tx.counterpartyAccountId && ids.has(tx.counterpartyAccountId));
+    // A movement without its source account touches nothing here (its destination alone would create money).
+    const touches = (tx.accountId && ids.has(tx.accountId)) || (tx.accountId && tx.counterpartyAccountId && ids.has(tx.counterpartyAccountId));
     if (!touches) {
       // No account named and not a credit card movement: the money left or arrived somewhere this balance cannot see.
       if (tx.status === 'confirmed' && !tx.accountId && firstAsOf !== null && Date.parse(tx.occurredAt) > firstAsOf
