@@ -1,3 +1,4 @@
+import { FirstVisitHint } from '../../../components/first-visit-hint';
 import Link from 'next/link';
 import { RegisterMenu } from '../../../components/register-menu';
 import { TxRow } from '../../../components/tx-row';
@@ -41,6 +42,7 @@ export default async function Incomes() {
         <div className="page-head"><h1>Ingresos</h1><p>Lo que entra, de dónde viene y lo que está por llegar.</p></div>
         <div className="actions"><RegisterMenu className="button" kind="income" /></div>
       </header>
+      <FirstVisitHint id="ingresos">Registra lo que te entra y de dónde viene: escribe «Recibí 5000 de Negocio 1» a Vels o usa el formulario.</FirstVisitHint>
 
       <section className="liq-grid" aria-label={`Ingresos de ${monthLabel(month)}`}>
         {currencies.map((c) => {

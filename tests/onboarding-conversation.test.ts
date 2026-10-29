@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { followUp } from '../lib/onboarding';
 import { domainWrites, validPatches } from '../src/ai/apply';
-import { answerFromDraft, clarify, finalSummary, mergePatches, pendingReply, setWork, upcomingFromDraft, workIn, WORK_HELP, yesNoReply } from '../src/ai/draft';
+import { answerFromDraft, canStart, clarify, finalSummary, mergePatches, pendingReply, profileReply, setWork, upcomingFromDraft, workIn, WORK_HELP, yesNoReply } from '../src/ai/draft';
 import { fold } from '../src/ai/text';
 import { interpret, readLoan } from '../src/ai/interpreter';
 import { emptyDraft, type Draft } from '../src/ai/types';
@@ -31,6 +31,8 @@ function converse(today: string, opening: boolean, messages: string[]): { draft:
     if (help) { said.push(help.text); continue; }
     if (opening && !draft.work) { const w = workIn(fold(m)); if (w) { draft = structuredClone(draft); setWork(draft, w); } }
     const answered = draft.pending;
+    const prof = profileReply(draft, m);
+    if (prof) { const next = followUp(prof, [], today, answered, null, m); draft = next.draft; said.push(next.body); continue; }
     let merged = pendingReply(draft, m);
     if (!merged) {
       const yn = yesNoReply(draft, m);
@@ -249,7 +251,7 @@ describe('review fixes: loan currency, amount ceiling, stored readings', () => {
 
 describe('the end: what comes until the next income, from the person + the engine', () => {
   it('lists the next payments chronologically with today\'s balance', () => {
-    const { said, draft } = chat('2026-10-09', 'me pagan 4500 el 30', 'tengo 5000, no tengo otros ingresos', 'agua 120 el 15, internet 90 el 20', 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '450', 'el 25', 'no tengo', 'unos 800', 'después');
+    const { said, draft } = chat('2026-10-09', 'me pagan 4500 el 30', 'tengo 5000, no tengo otros ingresos', 'agua 120 el 15, internet 90 el 20', 'no tengo más pagos', 'no tengo', 'sí, BCP', '2400', '450', 'el 25', 'no tengo', 'no tengo', 'unos 800', 'después', 'Ahorrar');
     expect(said.at(-1)).toBe('Listo. Este es el resumen de tus finanzas. Revísalo antes de continuar.');
     const end = followUp(draft, [], '2026-10-09', null, 'Mauro');
     expect(end.body).toBe('Listo, Mauro. Este es el resumen de tus finanzas. Revísalo antes de continuar.');
@@ -257,6 +259,25 @@ describe('the end: what comes until the next income, from the person + the engin
     expect(groups['Próximos pagos']).toEqual(['Agua · 15 oct · S/ 120', 'Internet · 20 oct · S/ 90', 'Tarjeta BCP · 25 oct · S/ 450']);
     expect(groups['Dinero actual']).toEqual(['Saldo de hoy · S/ 5,000']);
     expect(end.card.actions?.map((a) => a.label)).toEqual(['Corregir información', 'Confirmar y continuar']);
+  });
+});
+
+describe('mandatory first questions (UX audit §1.4): investments and main goal before the panel', () => {
+  it('asks whether there are investments and the main goal; "Ver mi resumen" waits for them', () => {
+    const before = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'no tengo', 'no tengo');
+    expect(before.said.at(-1)).toContain('¿Tienes alguna inversión?');
+    expect(canStart(before.draft)).toBe(false);
+    const yes = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'no tengo', 'no tengo', 'sí, un plazo fijo').draft;
+    expect(yes.investments).toBe(true);
+    const done = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'no tengo', 'no tengo', 'no tengo', 'unos 800', 'después', 'quiero salir de mis deudas');
+    expect(done.draft).toMatchObject({ investments: false, goal: 'salir_de_deudas' });
+    expect(canStart(done.draft)).toBe(true);
+    expect(done.said.at(-1)).toBe('Listo. Este es el resumen de tus finanzas. Revísalo antes de continuar.');
+  });
+  it('a goal in other words is kept as "otro"; an unreadable investments reply is not an answer', () => {
+    expect(profileReply({ ...emptyDraft(), pending: 'goal' }, 'viajar por el mundo')?.goal).toBe('otro');
+    expect(profileReply({ ...emptyDraft(), pending: 'group:investments' }, '¿qué cuenta como inversión?')).toBeNull();
+    expect(profileReply({ ...emptyDraft(), pending: 'balance' }, 'no')).toBeNull();
   });
 });
 
@@ -270,7 +291,7 @@ describe('subscriptions and the savings goal in the same conversation', () => {
     expect(chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'no tengo', 'no tengo').draft.done).toContain('subscriptions');
   });
   it('savings goal: an amount is stored as the monthly goal; "Después" leaves it unknown (never 0)', () => {
-    const base = [...START, 'no tengo más pagos', 'no tengo', 'no tengo', 'no tengo', 'unos 800'] as const;
+    const base = [...START, 'no tengo más pagos', 'no tengo', 'no tengo', 'no tengo', 'no tengo', 'unos 800'] as const;
     const asked = chat(TODAY, ...base);
     expect(asked.said.at(-1)).toContain('¿Cuánto te gustaría ahorrar cada mes?');
     const yes = chat(TODAY, ...base, '500').draft;
@@ -302,7 +323,7 @@ describe('opening: dependiente / independiente, one question at a time', () => {
   });
   it('independiente: dinero en cuentas → de dónde → próximo cobro → cuándo → frecuencia → otro ingreso', () => {
     const { draft, said } = fromOpening(TODAY, 'Independiente', '8,000', 'de mis clientes de diseño', '2,500', 'el 25', 'ocasional', 'no');
-    expect(said[0]).toBe('Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas?');
+    expect(said[0]).toBe('Genial. Saber esto nos ayuda a mejorar tu experiencia. ¿Cuánto dinero tienes actualmente en tus cuentas? Un número general es suficiente.');
     expect(said[1]).toContain('¿De dónde provienen normalmente tus ingresos?');
     expect(said[2]).toBe('Entiendo, ingresos de clientes de diseño. ¿Cuál es tu próximo cobro?');
     expect(said[3]).toContain('¿Cuándo esperas recibirlo?');
@@ -359,7 +380,7 @@ describe('regression: a doubt is never an answer (the work question stays pendin
       expect(r.draft.work ?? null, doubt).toBeNull();
     }
     expect(fromOpening(TODAY, '¿Qué es dependiente o independiente?', 'Dependiente').said[1]).toBe('Perfecto. ¿Cuánto recibes de sueldo al mes?');
-    expect(fromOpening(TODAY, 'no entiendo', 'Independiente').said[1]).toBe('Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas?');
+    expect(fromOpening(TODAY, 'no entiendo', 'Independiente').said[1]).toBe('Genial. Saber esto nos ayuda a mejorar tu experiencia. ¿Cuánto dinero tienes actualmente en tus cuentas? Un número general es suficiente.');
   });
   it('natural answers: "tengo un negocio", "trabajo en planilla", "hago ambos" (both incomes are registered)', () => {
     expect(fromOpening(TODAY, 'tengo un negocio').draft.work).toBe('independent');
@@ -499,7 +520,7 @@ describe('regression: the full real conversation of 2026-10-11 — every fact ex
     'te dije que pago luz 100 agua 100 y 1000 de alquiler cada 5 de cada mes',
     'si pago mi prestamo de mic arro 250 soles mesnaules cada 8 de cada mes y pago tambien  un prestamo de roberto mi amigo que me presto 100 y le pago 10 soles cada mes voy pagandole 30 soles asi que me faltan 70 que ire pagando 10 soles cada mes de aqui en adelante.',
     'bcp', 'Vehicular', 'no sé', '5', 'si', 'bcp', '1400', '10 soles pero mi pago mensual es de 100 soles', '19 de cada mes',
-    'si notion 24 dolares mensual y faceit 5 dolares', 'no sé', 'no sé', 'comida 500 compro normalmente cada 30 y transporte 300 en gasolina', '10,000 soles'] as const;
+    'si notion 24 dolares mensual y faceit 5 dolares', 'no sé', 'no sé', 'No tengo', 'comida 500 compro normalmente cada 30 y transporte 300 en gasolina', '10,000 soles', 'Ahorrar'] as const;
   const run = () => fromOpening('2026-10-11', ...CONVO);
 
   it('incomes: salary S/ 3,000 day 1 and ONE extra income "Diseñador" S/ 500 confirmed (never "aprox."), day 1, monthly', () => {
@@ -533,7 +554,10 @@ describe('regression: the full real conversation of 2026-10-11 — every fact ex
   it('savings S/ 10,000 > income S/ 3,500: a kind warning, the goal kept as said', () => {
     const { draft, said } = run();
     expect(draft.savings).toMatchObject({ amountMinor: 1000000, currency: 'PEN' });
-    expect(said.at(-1)).toBe('Ojo: tu meta de S/ 10,000 al mes supera tus ingresos conocidos (S/ 3,500 al mes). La guardo tal como me la dijiste; puedes ajustarla cuando quieras.\n\nListo. Este es el resumen de tus finanzas. Revísalo antes de continuar.');
+    expect(said.at(-2)).toContain('Ojo: tu meta de S/ 10,000 al mes supera tus ingresos conocidos (S/ 3,500 al mes). La guardo tal como me la dijiste; puedes ajustarla cuando quieras.');
+    expect(said.at(-2)).toContain('¿cuál es tu objetivo principal con Velsuno?');
+    expect(said.at(-1)).toBe('Listo. Este es el resumen de tus finanzas. Revísalo antes de continuar.');
+    expect(draft.goal).toBe('ahorrar');
   });
   it('one question per turn, none asked twice; what is written matches the summary exactly', () => {
     const { draft } = run();

@@ -4,6 +4,7 @@ import { loadPreferences } from '../../../../lib/preferences';
 import { loadCatalog } from '../../../../lib/queries';
 import { createSupabaseServerClient } from '../../../../lib/supabase/server';
 import { savePreferencesAction } from '../actions';
+import { GOAL_LABEL, MAIN_GOALS } from '../../../../src/web/preferences';
 
 export const metadata = { title: 'Finanzas · Ajustes' };
 
@@ -41,10 +42,32 @@ export default async function FinanceSettings() {
           ) : <input type="hidden" name="primaryAccountId" value="" />}
         </div>
       </ActionForm>
+      <ActionForm action={savePreferencesAction} label="Tu perfil" autoSubmit className="settings-section">
+        <input type="hidden" name="section" value="profile" />
+        <h2 className="settings-section-title">Tu perfil</h2>
+        <div className="settings-rows">
+          <fieldset className="bare segmented settings-choice">
+            <legend className="settings-row-label">Cómo trabajas</legend>
+            <div className="segments" role="radiogroup">
+              <label className="segment"><input type="radio" name="workType" value="dependent" defaultChecked={prefs.workType === 'dependent'} /><span>Dependiente</span></label>
+              <label className="segment"><input type="radio" name="workType" value="independent" defaultChecked={prefs.workType === 'independent'} /><span>Independiente</span></label>
+            </div>
+            <small className="muted">Se muestra junto a tu nombre y ordena tus ingresos.</small>
+          </fieldset>
+          <label className="settings-choice">
+            <span className="settings-row-label">Tu objetivo principal</span>
+            <select name="mainGoal" defaultValue={prefs.mainGoal ?? ''}>
+              <option value="">Sin elegir</option>
+              {MAIN_GOALS.map((g) => <option key={g} value={g}>{GOAL_LABEL[g]}</option>)}
+            </select>
+            <small className="muted">Vels lo usa para sugerirte lo que más te sirve.</small>
+          </label>
+        </div>
+      </ActionForm>
       <SettingsSection title="Tu dinero">
         <SettingsRow label="Cuentas y tarjetas" href="/app/tarjetas" />
         <SettingsRow label="Límites de gasto" href="/app/presupuestos" />
-        <SettingsRow label="Meta de ahorro" href="/app/plan" />
+        <SettingsRow label="Metas de ahorro e inversión" href="/app/balance" />
       </SettingsSection>
     </SettingsPage>
   );

@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { domainWrites, validPatches } from '../src/ai/apply';
 import { isReplay } from './idempotency';
 import type { ChatMessage, MessageCard } from '../src/ai/conversation';
-import { agendaLine, answerFromDraft, canStart, clarify, compactState, finalSummary, hasFacts, mergePatches, nextQuestion, pendingReply, setWork, shortReply, unreadNumbers, upcomingFromDraft, workIn, WORK_HELP, yesNoReply, type Changed } from '../src/ai/draft';
+import { agendaLine, answerFromDraft, canStart, profileReply, clarify, compactState, finalSummary, mergePatches, nextQuestion, pendingReply, setWork, shortReply, unreadNumbers, upcomingFromDraft, workIn, WORK_HELP, yesNoReply, type Changed } from '../src/ai/draft';
 import { limaToday, shortDate } from '../src/domain/dates';
 import { formatMoney } from '../src/domain/money';
 import { checkImage, IMAGE_ERROR_TEXT, imageReadKey, READ_REUSE_MINUTES } from '../src/ai/image';
@@ -107,6 +107,8 @@ export function followUp(draft: Draft, changed: Changed[], today: string = limaT
   let lead = shortReply(draft, changed, answered);
   const warning = savingsWarning(draft, changed);
   if (warning) lead = `${lead ? `${lead}\n` : ''}${warning}`;
+  // "No sé" to money today: calm, it is completed later in Cuentas y tarjetas (UX audit §1.3).
+  if (answered === 'balance' && (!draft.balance || draft.balance.status === 'unknown')) lead = 'No te preocupes, esta información la completamos más adelante.';
   // "Ya te dije que cobro el 5": acknowledged, and the fact is used (never asked a third time).
   if (/\b(ya te (lo )?(dije|conte|habia dicho)|te lo dije|ya lo dije)\b/.test(fold(said))) lead = `Tienes razón.${lead ? ` ${lead}` : ''}`;
   const paymentsReady = draft.obligations.length >= 2 && draft.obligations.every((o) => o.day !== null || draft.asked.includes(`obligation:${o.id}:day`));
@@ -157,6 +159,15 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
   }
   // "Soy independiente, cobro unos 3,000…": the work type is kept and the rest is read normally.
   if (!state.draft.work) { const w = workIn(fold(text)); if (w) setWork(state.draft, w); }
+  // "¿Tienes alguna inversión?" and "¿cuál es tu objetivo?": their own answers (never an amount or a movement).
+  const profiled = profileReply(state.draft, text);
+  if (profiled) {
+    const said = profiled.goal !== state.draft.goal ? 'Anotado.' : profiled.investments ? 'Perfecto, luego la agregas en Inversiones con sus detalles.' : 'Entendido.';
+    const next = followUp(profiled, [], limaToday(), state.draft.pending, name, text);
+    await save(supabase, userId, next.draft);
+    await say(supabase, userId, 'onboarding', 'velsuno', `${said} ${next.body}`, next.card);
+    return;
+  }
   // Replies only the pending question can place ("sí, el 15", a loan's entity or "36, llevo 10").
   const placed = pendingReply(state.draft, text);
   if (placed) {
@@ -175,7 +186,7 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
     await say(supabase, userId, 'onboarding', 'velsuno', next.body, next.card);
     return;
   }
-  if (isSmallTalk(text) && !state.draft.pending) { await say(supabase, userId, 'onboarding', 'velsuno', '¿Algo más que quieras contarme? Si no, puedes ver tu resumen.', { actions: hasFacts(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] }); return; }
+  if (isSmallTalk(text) && !state.draft.pending) { await say(supabase, userId, 'onboarding', 'velsuno', '¿Algo más que quieras contarme? Si no, puedes ver tu resumen.', { actions: canStart(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] }); return; }
 
   let read = interpret(text);
   // The work question waits for a choice: something unreadable is not an answer (no provider call, no skip).
@@ -199,13 +210,13 @@ export async function onboardingText(supabase: SupabaseClient, userId: string, r
     else if (r.reason !== 'unavailable' && r.reason !== 'failed') {
       await save(supabase, userId, state.draft);
       await say(supabase, userId, 'onboarding', 'velsuno', `${r.reason === 'ai_quota' ? 'Guardé todo lo que me contaste. Podemos seguir después.' : STOP_TEXT[r.reason]}`,
-        { stop: true, actions: hasFacts(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] });
+        { stop: true, actions: canStart(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] });
       return;
     }
   }
   if (!read.patches.length && !read.bare) {
     await say(supabase, userId, 'onboarding', 'velsuno', 'No te entendí del todo. Prueba con montos y días, por ejemplo: "me pagan 3,000 el 30" o "pago alquiler 1,200 el 1".',
-      { actions: hasFacts(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] });
+      { actions: canStart(state.draft) ? [{ kind: 'summary', label: 'Ver mi resumen' }] : [] });
     return;
   }
   const merged = mergePatches(state.draft, read.patches, read.bare, text);
@@ -223,6 +234,13 @@ export async function onboardingSummary(supabase: SupabaseClient, userId: string
   const state = await loadOnboarding(supabase);
   if (!state) return;
   const name = preferredName(await loadProfile(supabase));
+  // The panel opens only after the mandatory questions (UX audit §1.4): a summary tapped early keeps the conversation going.
+  if (!canStart(state.draft)) {
+    const next = followUp(state.draft, [], limaToday(), state.draft.pending, name);
+    await save(supabase, userId, next.draft);
+    await say(supabase, userId, 'onboarding', 'velsuno', `Antes de ver tu resumen me faltan unas preguntas. ${next.body}`, next.card);
+    return;
+  }
   await say(supabase, userId, 'onboarding', 'velsuno', closing(name), { summary: finalSummary(state.draft, limaToday()), actions: REVIEW_ACTIONS });
 }
 
@@ -303,6 +321,7 @@ export async function onboardingFinish(supabase: SupabaseClient, userId: string)
   const state = await loadOnboarding(supabase);
   if (!state) return { ok: false };
   if (state.status === 'completed') return { ok: true };
+  if (!canStart(state.draft)) return { ok: false };
   const w = domainWrites(state.draft, userId);
   const attempt = state.startedAt ? String(Date.parse(state.startedAt)) : '0';
   const applied: Record<string, string[]> = {};
@@ -325,7 +344,16 @@ export async function onboardingFinish(supabase: SupabaseClient, userId: string)
     const { data: cur } = await supabase.from('planning_settings').select('savings_goal_minor').eq('currency', w.savingsGoal.currency as string).maybeSingle();
     if (!cur || cur.savings_goal_minor === null) await supabase.from('planning_settings').upsert({ ...w.savingsGoal, updated_at: new Date().toISOString() });
   }
-  if (ok && w.settings) {
+  // Profile (UX audit §1.4, migration 059): how the person earns, whether there are investments / debts, the main goal.
+  if (ok) {
+    const d = state.draft;
+    await supabase.from('user_preferences').upsert({ user_id: userId,
+      work_type: d.work === 'independent' ? 'independent' : d.work ? 'dependent' : null,
+      has_investments: d.investments ?? null,
+      has_debts: d.debts.length > 0 ? true : d.done.includes('loans') || d.done.includes('debts') ? false : null,
+      main_goal: d.goal ?? null, updated_at: new Date().toISOString() });
+  }
+    if (ok && w.settings) {
     const { data: cur } = await supabase.from('planning_settings').select('essentials_monthly_minor').eq('currency', 'PEN').maybeSingle();
     if (!cur || cur.essentials_monthly_minor === null) await supabase.from('planning_settings').upsert(w.settings);
   }

@@ -1,3 +1,4 @@
+import { FirstVisitHint } from '../../../components/first-visit-hint';
 import Link from 'next/link';
 import { ActionForm } from '../../../components/action-form';
 import { Icon } from '../../../components/ui/icon';
@@ -144,6 +145,7 @@ export default async function CardsAndAccounts({ searchParams }: { searchParams:
           </Sheet>
         </div>
       </header>
+      <FirstVisitHint id="tarjetas">Empieza aquí: agrega tu tarjeta de débito con sus cuentas y tu efectivo. De aquí sale tu liquidez.</FirstVisitHint>
 
       <section className="stack" aria-labelledby="h-liq">
         <h2 id="h-liq">Tu liquidez</h2>

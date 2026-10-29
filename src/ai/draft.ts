@@ -5,7 +5,7 @@ import { incomeOccurrencesBetween, occurrencesBetween, type ExpectedIncome, type
 import { addDays, shortDate } from '../domain/dates';
 import { BANK_LABEL, bankIn, loanName, readLoan, subscriptionList } from './interpreter';
 import { findAmounts, findDays, fold, UNKNOWN } from './text';
-import type { Bare, DebtFact, Draft, FactStatus, Patch } from './types';
+import type { Bare, DebtFact, Draft, FactStatus, MainGoal, Patch } from './types';
 
 /**
  * Onboarding draft engine (ADR-0006): merges validated patches into the structured draft, decides the ONE next
@@ -374,7 +374,7 @@ export function nextQuestion(d: Draft): Question | null {
   // After each extra income is complete: "¿Tienes algún otro ingreso?" again (until "no").
   const moreQ = () => (others.length && !d.done.includes('incomes') ? ask(`income:other:${others.length}`, '¿Tienes algún otro ingreso?', ['No', 'Sí']) : null);
   const salaried = work === 'employee' || work === 'both';
-  const balanceQ = () => (d.balance === null ? ask('balance', work === 'independent' ? 'Perfecto. ¿Cuánto dinero tienes actualmente en tus cuentas?'
+  const balanceQ = () => (d.balance === null ? ask('balance', work === 'independent' ? 'Genial. Saber esto nos ayuda a mejorar tu experiencia. ¿Cuánto dinero tienes actualmente en tus cuentas? Un número general es suficiente.'
     : salaried ? '¿Cuánto dinero tienes hoy entre tus cuentas y efectivo?' : '¿Cuánto dinero tienes disponible hoy?', ['No sé']) : null);
   const otherQ = (text: string) => () => (d.done.includes('incomes') ? null : ask('income:other', text, ['No', 'Sí']));
   // Income first, in the order that fits how the person earns (§ dependiente / independiente).
@@ -452,8 +452,12 @@ export function nextQuestion(d: Draft): Question | null {
       () => (o.amountMinor === null && o.amountStatus === 'unknown' ? ask(`obligation:${o.id}:amount`, `¿Cuánto pagas de ${o.name}?`, ['No sé']) : null),
       () => (o.day === null && o.dayStatus === 'unknown' ? ask(`obligation:${o.id}:day`, `¿Qué día te cobran ${o.name}?`, ['No sé']) : null),
     ]),
+    // Investments set Velsuno apart (UX audit §1.4): only whether there are any; the details go in Inversiones later.
+    () => (d.investments == null ? ask('group:investments', '¿Tienes alguna inversión? Por ejemplo, un plazo fijo, un fondo, acciones o un negocio. Los detalles los completas después.', ['Sí', 'No tengo']) : null),
     () => (d.variable.length === 0 ? ask('variable:basics', '¿Cuánto gastas al mes en lo básico, como comida y transporte?', ['No sé']) : null),
     () => (d.savings == null ? ask('savings:goal', '¿Cuánto te gustaría ahorrar cada mes?', ['Todavía no sé']) : null),
+    // Last: what the person wants from the app (qualitative, it shapes Vels's suggestions).
+    () => (d.goal == null ? ask('goal', 'Para terminar, ¿cuál es tu objetivo principal con Velsuno?', GOAL_REPLIES) : null),
   ];
   for (const c of candidates) { const q = c(); if (q) return q; }
   return null;
@@ -842,7 +846,39 @@ export function unreadNumbers(folded: string, read: { patches: readonly Patch[];
 }
 
 /** "Con esto ya podemos empezar": an income (even partial) and the balance question answered or asked. */
-export const canStart = (d: Draft) => d.incomes.length > 0 && (d.balance !== null || d.asked.includes('balance'));
+/**
+ * The panel opens only after the mandatory first questions (UX audit §1.4): how the person earns, income, fixed
+ * payments and memberships, debts, investments and the main goal. Money today stays optional ("No sé" is fine).
+ * "Ver mi resumen" and "Confirmar y continuar" wait for this; until then Vels keeps asking.
+ */
+export const canStart = (d: Draft) =>
+  (d.work != null || d.incomes.length > 0)
+  && (d.incomes.length > 0 || d.done.includes('incomes'))
+  && d.done.includes('obligations')
+  && (d.done.includes('subscriptions') || d.obligations.some((o) => o.kind === 'subscription'))
+  && (d.debts.length > 0 || d.done.includes('loans') || d.done.includes('debts'))
+  && d.investments != null
+  && d.goal != null;
+
+export const GOAL_REPLIES = ['Controlar mis gastos', 'Ahorrar', 'Salir de deudas', 'Invertir', 'Planificar mis pagos'];
+
+/** "Sí, un plazo fijo" / "no tengo" to the investments question; the goal from its chip or free words. null = not read. */
+export function profileReply(d: Draft, text: string): Draft | null {
+  const t = fold(text).replace(/[.!¡¿?,]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t) return null;
+  if (d.pending === 'group:investments') {
+    const no = /^(no|nop|nada|ninguna|ninguno|no tengo( ninguna| inversiones)?|todavia no|aun no)$/.test(t);
+    const yes = !no && /^(si\b|claro|tengo|un |una |plazo fijo|fondo|acciones|cripto|etf|bonos|negocio|inmueble|afp)/.test(t);
+    if (!yes && !no) return null;
+    return { ...d, investments: yes, pending: null };
+  }
+  if (d.pending === 'goal') {
+    const goal: MainGoal = /gast/.test(t) ? 'controlar_gastos' : /ahorr/.test(t) ? 'ahorrar' : /deud|prestamo/.test(t) ? 'salir_de_deudas'
+      : /invert|inversion/.test(t) ? 'invertir' : /pag|planific|organiz/.test(t) ? 'planificar_pagos' : 'otro';
+    return { ...d, goal, pending: null };
+  }
+  return null;
+}
 export const hasFacts = (d: Draft) => d.incomes.length + d.obligations.length + d.debts.length + d.accounts.length + d.variable.length > 0 || d.balance !== null;
 
 // ── Summary (§64): only the main groups + what is still pending ───────────────────────────────────────

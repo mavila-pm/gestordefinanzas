@@ -1,3 +1,4 @@
+import { FirstVisitHint } from '../../../components/first-visit-hint';
 import Link from 'next/link';
 import { DebtsBlock } from '../../../components/debts-block';
 import { Icon } from '../../../components/ui/icon';
@@ -39,6 +40,7 @@ export default async function Debts({ searchParams }: { searchParams: Promise<{ 
         <div className="page-head"><h1>Deudas</h1><p>Préstamos y deudas con personas o entidades: cuánto falta y qué pagar primero.</p></div>
         <div className="actions"><Link href="/app/preguntar?tema=deuda" className="button quiet"><Icon name="chat" size={18} />Contárselo a Vels</Link></div>
       </header>
+      <FirstVisitHint id="deudas">Anota tus préstamos y lo que le debes a personas. Sus cuotas entran a tus próximos pagos y a tu Balance financiero.</FirstVisitHint>
 
       <section className="liq-grid" aria-label="Total de deudas">
         {totals.map((t) => (

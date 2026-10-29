@@ -66,7 +66,9 @@ describe('local interpreter (no provider)', () => {
   it('asks one question at a time, never twice, and lets the person start with partial data', () => {
     const { draft, asked } = talk('me pagan el 5', 'después', 'después', 'no tengo más', 'no sé');
     expect(new Set(asked).size).toBe(asked.length);
-    expect(canStart(draft)).toBe(true);
+    // Partial money data is fine; the panel still waits for the mandatory questions (payments, debts, investments, goal).
+    expect(canStart(draft)).toBe(false);
+    expect(canStart({ ...draft, done: [...draft.done, 'obligations', 'subscriptions', 'loans'], investments: false, goal: 'ahorrar' })).toBe(true);
     const s = summarize(draft);
     expect(s.pending).toContain('Monto de sueldo');
     expect(s.pending).toContain('Saldo de hoy');

@@ -22,6 +22,7 @@ import { TxRow } from '../../../components/tx-row';
 import { Icon } from '../../../components/ui/icon';
 import { ComingUp, FreeHero } from '../../../components/free-hero';
 import { LiquiditySummary } from '../../../components/liquidity-summary';
+import { WORK_LABEL } from '../../../src/web/preferences';
 import { loadMoneySources } from '../../../lib/money-sources';
 import { RegisterMenu } from '../../../components/register-menu';
 import { SavingsGoal } from '../../../components/savings-goal';
@@ -133,6 +134,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     <header className="home-head">
       <div>
         <h1>{firstName ? `Hola, ${firstName}.` : 'Hola.'}</h1>
+        {prefs.workType && <Link href="/app/ajustes/finanzas" className="state-chip active" data-testid="work-type" title="Cambiar en Ajustes">{WORK_LABEL[prefs.workType]}</Link>}
         <p className="slogan">Tu dinero, más claro.</p>
       </div>
       <RegisterMenu className="button" />

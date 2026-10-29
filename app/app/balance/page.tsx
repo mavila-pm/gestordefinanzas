@@ -1,3 +1,4 @@
+import { FirstVisitHint } from '../../../components/first-visit-hint';
 import Link from 'next/link';
 import { ActionForm } from '../../../components/action-form';
 import { Sheet } from '../../../components/ui/sheet';
@@ -74,6 +75,7 @@ export default async function Balance() {
   return (
     <main className="stack">
       <div className="page-head"><h1>Balance financiero</h1><p>Cómo repartes tus ingresos del mes: presupuesto, pagos, deudas, ahorro e inversión.</p></div>
+      <FirstVisitHint id="balance">Reparte tus ingresos: límites por categoría, pagos fijos, cuotas y tus metas de ahorro e inversión.</FirstVisitHint>
       {currencies.map((c) => {
         const s = planning.settings[c];
         const b = financialBalance({

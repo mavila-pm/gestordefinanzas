@@ -1,3 +1,4 @@
+import { FirstVisitHint } from '../../../components/first-visit-hint';
 import Link from 'next/link';
 import { ActionForm } from '../../../components/action-form';
 import { Icon } from '../../../components/ui/icon';
@@ -75,6 +76,7 @@ export default async function Investments() {
           </Sheet>
         </div>
       </header>
+      <FirstVisitHint id="inversiones">Agrega tus inversiones para seguir lo que aportaste y cuánto valen hoy. No cuentan como liquidez.</FirstVisitHint>
 
       <section className="liq-grid" aria-label="Total invertido">
         {currencies.map((c) => {

@@ -14,10 +14,20 @@ export interface Preferences {
   notifyReview: boolean;
   notifyMonthly: boolean;
   notifyLimits: boolean;
+  /** Onboarding profile (UX audit §1.4, §2.1): shown beside the name, editable in Ajustes → Finanzas. null = not said. */
+  workType: WorkType | null;
+  mainGoal: MainGoal | null;
 }
+export type WorkType = 'dependent' | 'independent';
+export const WORK_LABEL: Record<WorkType, string> = { dependent: 'Dependiente', independent: 'Independiente' };
+export const MAIN_GOALS = ['controlar_gastos', 'ahorrar', 'salir_de_deudas', 'invertir', 'planificar_pagos', 'otro'] as const;
+export type MainGoal = (typeof MAIN_GOALS)[number];
+export const GOAL_LABEL: Record<MainGoal, string> = {
+  controlar_gastos: 'Controlar mis gastos', ahorrar: 'Ahorrar', salir_de_deudas: 'Salir de deudas', invertir: 'Invertir', planificar_pagos: 'Planificar mis pagos', otro: 'Otro',
+};
 export const DEFAULT_PREFERENCES: Preferences = {
   velsStyle: 'balanced', velsProactive: true, primaryCurrency: 'PEN', primaryAccountId: null,
-  notifyUpcoming: true, notifyReview: true, notifyMonthly: true, notifyLimits: true,
+  notifyUpcoming: true, notifyReview: true, notifyMonthly: true, notifyLimits: true, workType: null, mainGoal: null,
 };
 export const VELS_STYLE_LABEL: Record<VelsStyle, string> = { brief: 'Breves', balanced: 'Equilibradas', detailed: 'Detalladas' };
 
@@ -39,6 +49,13 @@ export function parsePreferences(section: unknown, get: Get): Record<string, unk
     if (acc !== '' && acc !== null && acc !== undefined && !(typeof acc === 'string' && UUID.test(acc))) return null;
     return { primary_currency: cur, primary_account_id: typeof acc === 'string' && acc ? acc : null };
   }
+  if (section === 'profile') {
+    const work = get('workType');
+    const goal = get('mainGoal');
+    if (work !== 'dependent' && work !== 'independent' && work !== '' && work != null) return null;
+    if (goal !== '' && goal != null && !(MAIN_GOALS as readonly unknown[]).includes(goal)) return null;
+    return { work_type: work || null, main_goal: goal || null };
+  }
   if (section === 'notifications') {
     return { notify_upcoming: on('notifyUpcoming'), notify_review: on('notifyReview'), notify_monthly: on('notifyMonthly'), notify_limits: on('notifyLimits') };
   }
@@ -55,6 +72,8 @@ export function preferencesFrom(row: Record<string, unknown> | null | undefined)
     primaryAccountId: typeof row.primary_account_id === 'string' ? row.primary_account_id : null,
     notifyUpcoming: row.notify_upcoming !== false, notifyReview: row.notify_review !== false,
     notifyMonthly: row.notify_monthly !== false, notifyLimits: row.notify_limits !== false,
+    workType: row.work_type === 'dependent' || row.work_type === 'independent' ? row.work_type : null,
+    mainGoal: (MAIN_GOALS as readonly unknown[]).includes(row.main_goal) ? row.main_goal as MainGoal : null,
   };
 }
 

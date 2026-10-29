@@ -1,3 +1,4 @@
+import { FirstVisitHint } from '../../../components/first-visit-hint';
 import Link from 'next/link';
 import { RegisterMenu } from '../../../components/register-menu';
 import { TxRow } from '../../../components/tx-row';
@@ -41,6 +42,7 @@ export default async function Expenses() {
         <div className="page-head"><h1>Gastos</h1><p>En qué se va tu dinero, tus pagos fijos y lo que viene.</p></div>
         <div className="actions"><RegisterMenu className="button" kind="expense" /></div>
       </header>
+      <FirstVisitHint id="gastos">Aquí ves en qué se va tu dinero. Registra un gasto con Vels («Gasté 45 en almuerzo») o manualmente.</FirstVisitHint>
 
       <section className="liq-grid" aria-label={`Gastos de ${monthLabel(month)}`}>
         {currencies.map((c) => {

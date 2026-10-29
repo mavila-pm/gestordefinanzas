@@ -63,6 +63,10 @@ export interface Draft {
   work?: 'employee' | 'independent' | 'both' | null;
   /** Monthly savings goal the person stated (planning_settings.savings_goal_minor at "Empezar"); unknown ≠ 0. */
   savings?: { currency: Currency; amountMinor: number | null; status: FactStatus } | null;
+  /** "¿Tienes alguna inversión?" (UX audit §1.4): true / false once answered; details are completed later in Inversiones. */
+  investments?: boolean | null;
+  /** What the person wants from Velsuno (qualitative; it orders suggestions, never changes the math). */
+  goal?: MainGoal | null;
   /** Payments the person said do not apply ("no pago alquiler"): never asked about again. */
   declined?: string[];
   /** The question waiting for an answer: a bare "950" or "no sé" applies here. */
@@ -70,6 +74,8 @@ export interface Draft {
   /** Facts read from an image, shown for confirmation; never applied without it. */
   vision: Patch[] | null;
 }
+
+export type MainGoal = 'controlar_gastos' | 'ahorrar' | 'salir_de_deudas' | 'invertir' | 'planificar_pagos' | 'otro';
 
 export type DoneGroup = 'obligations' | 'debts' | 'cards' | 'loans' | 'subscriptions' | 'incomes';
 

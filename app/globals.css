@@ -1075,3 +1075,13 @@ html[data-motion="reduce"] .tw, html[data-motion="reduce"] .msg.fresh > .chat-ca
 }
 html[data-motion="reduce"] .auth-login-art .brand, html[data-motion="reduce"] .auth-login-claim, html[data-motion="reduce"] .auth-login-panel,
 html[data-motion="reduce"] .auth-orb-body, html[data-motion="reduce"] .auth-orb-halo { animation: none; }
+
+/* First-visit hint (UX audit §2.2): floats under the section title once, then never again on this device. */
+.first-hint { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-12); padding: var(--space-12) var(--space-16);
+  border-radius: 14px; background: var(--plus-bg); color: var(--text-primary); box-shadow: 0 6px 18px color-mix(in srgb, var(--text-primary) 10%, transparent);
+  animation: rise-in var(--dur-3) var(--ease-out) both; }
+.first-hint::before { content: ''; position: absolute; top: -6px; left: 24px; width: 12px; height: 12px; background: inherit; transform: rotate(45deg); }
+.first-hint p { margin: 0; flex: 1 1 220px; font-size: 14px; }
+.first-hint-tag { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--brand-accent); color: var(--brand-primary); }
+@media (prefers-reduced-motion: reduce) { .first-hint { animation-name: fade-in; } }
+html[data-motion="reduce"] .first-hint { animation-name: fade-in; }
