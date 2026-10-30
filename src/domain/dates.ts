@@ -10,6 +10,8 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Today in Lima as YYYY-MM-DD. */
 export const limaToday = (now: Date = new Date()) => iso(new Date(now.getTime() - 5 * 3600_000));
+/** Lima calendar day of an instant ("2026-10-11T02:00:00Z" → "2026-10-10"); a bare day is already one. Never slice a timestamp. */
+export const limaDay = (instant: string) => (/^\d{4}-\d{2}-\d{2}$/.test(instant) ? instant : iso(new Date(Date.parse(instant) - 5 * 3600_000)));
 export const addDays = (d: string, n: number) => iso(new Date(toDate(d).getTime() + n * 86_400_000));
 /** Whole days from a to b (negative when b is earlier). */
 export const daysBetween = (a: string, b: string) => Math.round((toDate(b).getTime() - toDate(a).getTime()) / 86_400_000);

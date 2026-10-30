@@ -18,6 +18,8 @@ import { knownSum, subscriptionTotals } from '../../../src/engine/subscriptions'
 import { historyStart, visibleMonth } from '../../../src/domain/entitlements';
 import { limaToday, shortDate } from '../../../src/domain/dates';
 
+export const metadata = { title: 'Análisis' };
+
 const TREND_MONTHS = 6;
 const monthsBetween = (a: string, b: string) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
 const shortMonth = (m: string) => monthLabel(m).split(' ')[0]!.toLowerCase();
@@ -261,15 +263,17 @@ export default async function Analysis({ searchParams }: { searchParams: Promise
       {/* H. Deudas */}
       {debts.length > 0 && (
         <section aria-labelledby="debt-h" className="card stack-sm" data-testid="an-debts">
-          <div className="row"><h2 id="debt-h">Deudas</h2><Link href="/app/compromisos#deudas" className="section-link">Ver<Icon name="chevron" size={16} /></Link></div>
+          <div className="row"><h2 id="debt-h">Deudas</h2><Link href="/app/deudas" className="section-link">Ver<Icon name="chevron" size={16} /></Link></div>
           {(['PEN', 'USD'] as Currency[]).filter((c) => debts.some((d) => d.currency === c)).map((c) => {
             const mine = debts.filter((d) => d.currency === c);
             const owed = mine.reduce((a, d) => a + d.balanceMinor, 0);
             const monthly = mine.reduce((a, d) => a + (d.installmentMinor ?? 0), 0);
+            const noAmount = mine.filter((d) => d.installmentMinor === null).length;
             return (
               <div key={c} className="stat-grid">
                 <div><span className="muted small">Deuda pendiente{c === 'USD' ? ' (US$)' : ''}</span><p className="big">{formatMoney({ amountMinor: owed, currency: c })}</p></div>
-                <div><span className="muted small">Cuotas al mes</span><p className="big">{monthly ? formatMoney({ amountMinor: monthly, currency: c }) : '—'}</p></div>
+                <div><span className="muted small">Cuotas al mes</span><p className="big">{monthly ? formatMoney({ amountMinor: monthly, currency: c }) : noAmount ? 'Sin monto' : '—'}</p>
+                  {noAmount > 0 && monthly > 0 && <small className="muted">{noAmount === 1 ? '+ 1 cuota sin monto' : `+ ${noAmount} cuotas sin monto`}</small>}</div>
               </div>
             );
           })}

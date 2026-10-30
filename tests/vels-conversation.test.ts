@@ -344,7 +344,7 @@ describe('without Gemini, out of quota, or with Gemini failing: honest copy, nev
     const { NOT_UNDERSTOOD } = await import('../lib/vels');
     gemini.fail = 'busy';
     const busy = await turn(OUTSIDE);
-    expect(busy.body).toBe('Tardé demasiado en responder. Intenta de nuevo en un momento.');
+    expect(busy.body).toBe('No pude responder eso ahora. Mientras tanto, pregúntame cuánto tienes disponible o si te alcanza para algo.');
     expect(busy.body).not.toBe(NOT_UNDERSTOOD);
     gemini.fail = 'failed';
     expect((await turn(OUTSIDE)).body).toBe(NOT_UNDERSTOOD);

@@ -4,7 +4,7 @@ import { login } from '../../auth/actions';
 import { safeNextPath } from '../../../src/web/auth-input';
 import { AuthScreen } from '../../../components/auth-screen';
 
-export const metadata = { title: 'Entrar · Velsuno' };
+export const metadata = { title: 'Entrar' };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
   const { next, error } = await searchParams;

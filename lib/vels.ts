@@ -2,7 +2,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadSubscriptions } from './subscriptions';
 import { closedPeriods, monthlyEquivalentMinor, nextCharge, subscriptionState } from '../src/engine/subscriptions';
-import { answer, compactView, detectIntent, proactiveNote, STYLE_INSTRUCTION, styleAnswer, velsSuggestions, type Answer, type View } from '../src/ai/vels-answers';
+import { answer, compactView, detectIntent, followUp, proactiveNote, STYLE_INSTRUCTION, styleAnswer, velsSuggestions, type Answer, type View } from '../src/ai/vels-answers';
 import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
 import { fold } from '../src/ai/text';
@@ -25,6 +25,9 @@ import { moveReserve, reserveMoveText } from './reserves';
 import { loadCardViews } from './cards';
 import { loadMessages, readImages } from './onboarding';
 import { loadPlanningData, planFor, planInputFor, planTimeline } from './planning';
+import { monthlySummary } from '../src/engine/monthly-summary';
+import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../src/infrastructure/supabase/transaction-row';
+import { limaMonthRange } from '../src/web/auth-input';
 
 /**
  * Vels turns (panel and /app/preguntar, §19-§22, §69): reads the structured financial state (planning engine),
@@ -33,6 +36,10 @@ import { loadPlanningData, planFor, planInputFor, planTimeline } from './plannin
  */
 const KEEP = 40;
 export const NOT_UNDERSTOOD = 'No te entendí bien. ¿Me lo dices de otra forma?';
+/** The model was slow or down: say so, and what still works right now (the engine answers these without it). */
+export const VELS_BUSY = 'No pude responder eso ahora. Mientras tanto, pregúntame cuánto tienes disponible o si te alcanza para algo.';
+/** A chat turn waits at most this long for Gemini, retry included (real data: 503 in ~2 s, timeouts at 15 s). */
+const CHAT_DEADLINE_MS = 12_000;
 export const NOT_AVAILABLE = 'Eso todavía no sé responderlo. Pregúntame por tu dinero disponible o tus pagos y lo vemos.';
 const SOCIAL: readonly Social[] = ['greeting', 'how', 'how_reply', 'thanks', 'ack', 'bye', 'capabilities', 'follow_up', 'open_order', 'open_spending'];
 const UNSURE = /\b(no se|ni idea|tu dime|donde sea|cualquiera|como quieras|por donde sea|no tengo idea)\b/;
@@ -72,6 +79,19 @@ async function view(supabase: SupabaseClient): Promise<View> {
   };
 }
 
+/** This Lima month's confirmed spending per currency, through the same engine as Gastos (financialEffect). */
+async function monthSpending(supabase: SupabaseClient, today: string): Promise<View['monthSpending']> {
+  const month = today.slice(0, 7);
+  const range = limaMonthRange(month)!;
+  const { data, error } = await supabase.from('transactions').select(TRANSACTION_SELECT).gte('occurred_at', range.from).lt('occurred_at', range.to).limit(3000);
+  if (error) return undefined; // unknown, never 0: the answer falls back to the honest "no pude"
+  const txs = ((data ?? []) as unknown as TransactionRow[]).map(rowToTransaction);
+  return Object.fromEntries((['PEN', 'USD'] as const).map((c) => {
+    const s = monthlySummary(txs, month, c);
+    return [c, { expensesMinor: Math.max(0, s.expensesMinor), pendingCount: s.pendingCount }];
+  }));
+}
+
 function toCard(a: Answer): MessageCard | null {
   const card: MessageCard = {};
   if (a.title) card.title = a.title;
@@ -85,6 +105,7 @@ function toCard(a: Answer): MessageCard | null {
   if (acts?.length) card.acts = acts;
   if (replies.length) card.replies = replies;
   if (a.pending) card.pending = a.pending;
+  if (a.sim) card.sim = a.sim;
   return Object.keys(card).length ? card : null;
 }
 
@@ -134,15 +155,17 @@ export async function velsTurn(supabase: SupabaseClient, userId: string, raw: st
   if (!pending && gapFor(v, null) === 'income' && detectIntent(text).k === 'unknown' && interpret(text).patches.some((p) => p.t === 'income')
     && await collectTurn(supabase, userId, text, 'income', {}, v)) { await prune(supabase); return; }
 
-  const intent = detectIntent(text);
+  // A follow-up of Vels's last message (the amount it asked for, a correction of a simulation) before a fresh reading.
+  const intent = followUp(text, last?.card) ?? detectIntent(text);
   if (await askIfMissing(supabase, userId, intent, v)) { await prune(supabase); return; }
+  if (intent.k === 'spent_month') v.monthSpending = await monthSpending(supabase, v.today);
   const a = answer(intent, v);
   if (a) { await say(supabase, userId, 'velsuno', a.text, styled(a)); await prune(supabase); return; }
 
   // Not recognised locally → Gemini interprets (structured, validated) → the engine answers. The model never computes money.
   const recent = history.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.body }));
   const ctx = { state: compactView(v), question: text };
-  const r = await infer(supabase, { operation: 'assistant_answer', system: `${VELS_ROUTE_SYSTEM}\n${STYLE_INSTRUCTION[prefs.velsStyle]}`, schema: VELS_ROUTE_SCHEMA,
+  const r = await infer(supabase, { operation: 'assistant_answer', deadlineMs: CHAT_DEADLINE_MS, system: `${VELS_ROUTE_SYSTEM}\n${STYLE_INSTRUCTION[prefs.velsStyle]}`, schema: VELS_ROUTE_SCHEMA,
     messages: [...recent, { role: 'user', content: `ESTADO:\n${ctx.state}\n\nPREGUNTA:\n${text}` }] }, (t) => validateVelsRoute(t, ctx) !== null);
   const route = r.ok ? validateVelsRoute(r.text, ctx) : null;
   if (route?.kind === 'intent' && await askIfMissing(supabase, userId, route.intent, v)) { await prune(supabase); return; }
@@ -152,7 +175,7 @@ export async function velsTurn(supabase: SupabaseClient, userId: string, raw: st
   else if (r.ok) await say(supabase, userId, 'velsuno', NOT_UNDERSTOOD);
   else if (r.reason === 'ai_quota') await say(supabase, userId, 'velsuno', STOP_TEXT.ai_quota, { stop: true, links: [{ label: 'Ver Plus', href: '/app/ajustes/plan' }] });
   // Timeout, provider error or rate limit: our side failed, so Vels says so (never "no te entendí", never a made-up answer).
-  else if (r.reason === 'busy') await say(supabase, userId, 'velsuno', STOP_TEXT.busy);
+  else if (r.reason === 'busy') await say(supabase, userId, 'velsuno', VELS_BUSY);
   // Only an answer that came back unusable is "not understood"; without Gemini, an honest way forward.
   else if (r.reason === 'failed') await say(supabase, userId, 'velsuno', NOT_UNDERSTOOD);
   else if (r.reason === 'unavailable') await say(supabase, userId, 'velsuno', NOT_AVAILABLE);

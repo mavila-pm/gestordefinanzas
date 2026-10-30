@@ -33,6 +33,11 @@ export interface FinancialBalance {
   lines: BalanceLine[];
   assignedMinor: number;
   unassignedMinor: number | null;
+  /**
+   * What 'sin asignar' is: exact · at_most (every income known, some assigned amount unknown: the real remainder is
+   * this or less) · partial (an income amount is unknown too) · unknown (no income base). Unknown is never 0.
+   */
+  unassignedKind: 'exact' | 'at_most' | 'partial' | 'unknown';
 }
 
 export function monthlyIncome(incomes: readonly IncomeRow[], currency: Currency, today: string): { amountMinor: number | null; unknown: number } {
@@ -57,15 +62,22 @@ export function financialBalance(input: BalanceInput): FinancialBalance {
   const fixed = input.fixed.filter((f) => f.currency === c);
   const debts = input.debts.filter((d) => d.currency === c && d.balanceMinor > 0);
   const sum = (xs: number[]) => xs.reduce((s, v) => s + v, 0);
+  // Only unknown items (2 installments without amount): the line is unknown, never "0.00".
+  const knownSum = (xs: number[]) => (xs.length ? sum(xs) : null);
   const savings = goalAmount(input.savings, inc);
   const investment = goalAmount(input.investment, inc);
   const lines: BalanceLine[] = [
     { key: 'budgets', amountMinor: sum(input.budgets.filter((b) => b.currency === c).map((b) => b.amountMinor)), unknownCount: 0 },
-    { key: 'fixed', amountMinor: sum(fixed.filter((f) => f.amountMinor !== null).map((f) => Math.round((f.amountMinor as number) * (FIXED_PER_MONTH[f.frequency] ?? 1)))), unknownCount: fixed.filter((f) => f.amountMinor === null).length },
-    { key: 'debts', amountMinor: sum(debts.filter((d) => d.installmentMinor !== null).map((d) => Math.min(d.installmentMinor as number, d.balanceMinor))), unknownCount: debts.filter((d) => d.installmentMinor === null).length },
+    { key: 'fixed', amountMinor: knownSum(fixed.filter((f) => f.amountMinor !== null).map((f) => Math.round((f.amountMinor as number) * (FIXED_PER_MONTH[f.frequency] ?? 1)))), unknownCount: fixed.filter((f) => f.amountMinor === null).length },
+    { key: 'debts', amountMinor: knownSum(debts.filter((d) => d.installmentMinor !== null).map((d) => Math.min(d.installmentMinor as number, d.balanceMinor))), unknownCount: debts.filter((d) => d.installmentMinor === null).length },
     { key: 'savings', amountMinor: savings, unknownCount: input.savings && savings === null ? 1 : 0 },
     { key: 'investment', amountMinor: investment, unknownCount: input.investment && investment === null ? 1 : 0 },
   ];
+  // A line with nothing in it (no fixed payments at all) is a real 0, not unknown.
+  for (const l of lines) if (l.amountMinor === null && l.unknownCount === 0 && (l.key === 'fixed' || l.key === 'debts')) l.amountMinor = 0;
   const assignedMinor = sum(lines.map((l) => l.amountMinor ?? 0));
-  return { currency: c, incomeMinor: inc.amountMinor, incomeUnknown: inc.unknown, lines, assignedMinor, unassignedMinor: inc.amountMinor === null ? null : inc.amountMinor - assignedMinor };
+  const unassignedMinor = inc.amountMinor === null ? null : inc.amountMinor - assignedMinor;
+  const unknownLines = lines.some((l) => l.unknownCount > 0);
+  const unassignedKind = unassignedMinor === null ? 'unknown' : inc.unknown > 0 ? 'partial' : unknownLines ? 'at_most' : 'exact';
+  return { currency: c, incomeMinor: inc.amountMinor, incomeUnknown: inc.unknown, lines, assignedMinor, unassignedMinor, unassignedKind };
 }

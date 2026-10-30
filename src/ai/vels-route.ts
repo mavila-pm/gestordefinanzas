@@ -1,5 +1,5 @@
 import type { Intent } from './vels-answers';
-import { findAmounts, fold } from './text';
+import { findAmounts, fold, spelledToDigits } from './text';
 
 /**
  * Vels → Gemini → structured interpretation → deterministic engine (ADR-0006). Used only when the local rules
@@ -69,11 +69,13 @@ export function amountToMinor(v: unknown): number | null {
 /**
  * The amount came from the person, not the model: it must equal (decimals included) an amount the local parser reads
  * in the question. The currency comes from that same reading (PEN unless the person wrote dólares/US$/$); a model
- * currency that disagrees is refused. Spelled-out amounts the parser cannot read are refused (never guessed).
+ * currency that disagrees is refused. Spelled-out amounts are normalized first (spelledToDigits); anything else the parser
+ * cannot read is refused (never guessed).
  */
 function groundedAmount(minor: number | null, modelCurrency: 'PEN' | 'USD' | null, question: string): { minor: number; currency: 'PEN' | 'USD' } | null {
   if (minor === null) return null;
-  const q = fold(question);
+  // "dos mil" is read as 2000 by the same reader the person's digits go through: still grounded in what they wrote.
+  const q = spelledToDigits(fold(question));
   // "el 15", "día 30": a day of the month, not an amount (only when no currency is written next to it).
   const isDay = (a: { minor: number; currency: string | null; index: number }) =>
     a.currency === null && a.minor <= 3100 && a.minor % 100 === 0 && /\b(el|dia|del|al|hasta el)\s*$/.test(q.slice(0, a.index));

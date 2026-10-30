@@ -18,6 +18,9 @@ const Chat = dynamic(loadChat, { ssr: false, loading: () => <div className="vels
  * <dialog>: focus trap, Escape); the conversation and openers load right after, never blocking the open. Same
  * server actions and financial core as the Vels page — no second system.
  */
+/** Screens that are a form or a list of links: the bubble would cover fields; Vels stays in the bottom nav / sidebar. */
+const FORM_ROUTES = ['/app/movimientos/nuevo', '/app/mas', '/app/ajustes', '/app/importar'];
+
 export function VelsBubble() {
   const path = usePathname();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -27,6 +30,7 @@ export function VelsBubble() {
     setState((s) => ({ messages: r.messages.length ? r.messages : [{ id: 'vels-hello', role: 'velsuno', body: r.greeting, card: null }], suggestions: r.suggestions, camera: r.camera, n: (s?.n ?? 0) + 1 }));
   }), []);
   if (path.startsWith('/app/preguntar')) return null; // the full Vels page is already open
+  if (FORM_ROUTES.some((r) => path.startsWith(r))) return null; // never over a form or the Más list (audit V04)
   const open = () => { dialog.current?.showModal(); void loadChat(); load(path); };
   const clear = () => startTransition(async () => { await clearAssistantAction(); load(path); });
   return (

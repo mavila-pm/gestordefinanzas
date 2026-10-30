@@ -4,7 +4,7 @@ import { NewPasswordForm } from '../../../components/new-password-form';
 import { registrationStep } from '../../../lib/registration';
 import { authUser, createSupabaseServerClient } from '../../../lib/supabase/server';
 
-export const metadata = { title: 'Crea tu contraseña · Velsuno' };
+export const metadata = { title: 'Crea tu contraseña' };
 
 export default async function CreatePasswordPage() {
   const supabase = await createSupabaseServerClient();

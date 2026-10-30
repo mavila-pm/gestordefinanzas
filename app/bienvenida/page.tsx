@@ -8,7 +8,7 @@ import { registrationStep } from '../../lib/registration';
 import { createSupabaseServerClient, authUser } from '../../lib/supabase/server';
 import { leaveOnboarding, onboardingAction } from './actions';
 
-export const metadata: Metadata = { title: 'Bienvenida · Velsuno' };
+export const metadata: Metadata = { title: 'Bienvenida' };
 
 /** First access (ADR-0006): a full-screen conversation instead of an empty dashboard or a long form. */
 export default async function Bienvenida() {

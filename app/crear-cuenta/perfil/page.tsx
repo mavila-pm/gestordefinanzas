@@ -5,7 +5,7 @@ import { registrationStep } from '../../../lib/registration';
 import { authUser, createSupabaseServerClient } from '../../../lib/supabase/server';
 import { limaToday } from '../../../src/domain/dates';
 
-export const metadata = { title: 'Cuéntanos sobre ti · Velsuno' };
+export const metadata = { title: 'Cuéntanos sobre ti' };
 
 export default async function ProfileStepPage() {
   const supabase = await createSupabaseServerClient();

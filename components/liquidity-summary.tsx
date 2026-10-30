@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { formatMoney, type Currency } from '../src/domain/money';
 import { plural } from '../src/domain/plural';
-import { shortDate } from '../src/domain/dates';
+import { limaDay, shortDate } from '../src/domain/dates';
 import type { Liquidity } from '../src/engine/liquidity';
 
 const m = (v: number | null, c: Currency) => (v === null ? 'Sin dato' : formatMoney({ amountMinor: v, currency: c }));
@@ -40,7 +40,7 @@ export function LiquiditySummary({ liquidity, creditAvailable, compact = false }
                 )}
                 <small className="muted">
                   {l.source === 'declared'
-                    ? `Es lo que nos dijiste${l.asOf ? ` el ${shortDate(l.asOf.slice(0, 10))}` : ''}. Agrega tus cuentas para que se actualice sola.`
+                    ? `Es lo que nos dijiste${l.asOf ? ` el ${shortDate(limaDay(l.asOf))}` : ''}. Agrega tus cuentas para que se actualice sola.`
                     : 'Se actualiza con cada ingreso y gasto confirmado.'}
                   {l.pendingCount ? ` ${plural(l.pendingCount, 'movimiento por revisar aún no cuenta', 'movimientos por revisar aún no cuentan')}.` : ''}
                 </small>

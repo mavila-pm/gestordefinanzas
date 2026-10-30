@@ -5,13 +5,13 @@ import { PASSWORD_HINT } from '../../../src/web/auth-input';
 import { updatePassword } from '../../auth/actions';
 import { AuthScreen } from '../../../components/auth-screen';
 
-export const metadata = { title: 'Nueva contraseña · Velsuno' };
+export const metadata = { title: 'Nueva contraseña' };
 
 export default async function ResetPasswordPage() {
   const supabase = await createSupabaseServerClient();
   if (!(await authUser(supabase))) redirect('/login?error=link');
   return (
-    <AuthScreen title="Crea una nueva contraseña">
+    <AuthScreen title="Crea una nueva contraseña" lead="Usarás esta contraseña para entrar." variant="access">
       <AuthForm
         action={updatePassword}
         submit="Guardar contraseña"

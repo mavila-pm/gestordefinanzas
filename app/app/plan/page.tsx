@@ -15,7 +15,7 @@ import { loadPreferences } from '../../../lib/preferences';
 import { monthlySummary } from '../../../src/engine/monthly-summary';
 import { rowToTransaction, TRANSACTION_SELECT, type TransactionRow } from '../../../src/infrastructure/supabase/transaction-row';
 import { limaMonth, limaMonthRange } from '../../../src/web/auth-input';
-import { shortDate } from '../../../src/domain/dates';
+import { limaDay, shortDate } from '../../../src/domain/dates';
 import { isUuid } from '../../../src/web/transaction-input';
 import {
   acceptEssentialsAction, decideSuggestionAction, linkIncomeAction, removeIncomeAction, markObligationPaidAction, patchObligationAction, recordBalanceAction, resolveVariationAction, saveIncomeAction, saveSettingsAction,
@@ -321,7 +321,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         <h2 id="g-setup" className="group-title">Tus datos</h2>
         <div className="rows">
           <div className="setting"><span className="setting-text"><strong>Saldo</strong><small className="muted">
-            {d.balances.PEN ? <>{formatMoney({ amountMinor: d.balances.PEN.amountMinor, currency: 'PEN' })} al {shortDate(new Date(Date.parse(d.balances.PEN.asOf) - 5 * 3600_000).toISOString().slice(0, 10))}</> : 'Sin indicar'}</small></span>
+            {d.balances.PEN ? <>{formatMoney({ amountMinor: d.balances.PEN.amountMinor, currency: 'PEN' })} al {shortDate(limaDay(d.balances.PEN.asOf))}</> : 'Sin indicar'}</small></span>
             <BalanceSheet c="PEN" current={d.balances.PEN?.amountMinor ?? null} /></div>
           <div className="setting"><span className="setting-text"><strong>Ingresos</strong><small className="muted">
             {d.incomes.length ? d.incomes.map((i) => `${i.name}${i.dayOfMonth ? ` · día ${i.dayOfMonth}${i.dayMax ? `–${i.dayMax}` : ''}` : ''}`).join(' · ') : 'Sin indicar'}</small></span>

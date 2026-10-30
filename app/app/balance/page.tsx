@@ -19,8 +19,8 @@ const LINE: Record<string, { label: string; href: string; cta: string }> = {
   budgets: { label: 'Presupuesto por categoría', href: '/app/presupuestos', cta: 'Límites' },
   fixed: { label: 'Pagos fijos y membresías', href: '/app/compromisos', cta: 'Pagos' },
   debts: { label: 'Cuotas de deudas', href: '/app/deudas', cta: 'Deudas' },
-  savings: { label: 'Meta de ahorro', href: '#metas', cta: '' },
-  investment: { label: 'Meta de inversión', href: '#metas', cta: '' },
+  savings: { label: 'Meta de ahorro al mes', href: '#metas', cta: '' },
+  investment: { label: 'Meta de inversión al mes', href: '#metas', cta: '' },
 };
 /** Categories suggested when the person has no limits yet (labels only, the person picks). */
 const SUGGESTED = ['Vivienda', 'Alimentación', 'Transporte', 'Servicios', 'Educación', 'Salud', 'Ocio'];
@@ -99,20 +99,22 @@ export default async function Balance() {
                   <div key={l.key} className="balance-row">
                     <span className="setting-text"><strong>{LINE[l.key]!.label}</strong>
                       <small className="muted">{l.key === 'savings' ? goalNote(s?.savingsGoal) : l.key === 'investment' ? goalNote(s?.investmentGoal) : ''}{l.unknownCount ? `${l.unknownCount === 1 ? ' 1 sin monto' : ` ${l.unknownCount} sin monto`}` : ''}</small></span>
-                    <span className="bal-right"><span className="amount">{l.amountMinor === null ? 'Sin definir' : m(l.amountMinor, c)}</span>
+                    <span className="bal-right"><span className="amount">{l.amountMinor === null ? (l.unknownCount ? 'Sin monto' : 'Sin definir') : m(l.amountMinor, c)}</span>
                       {LINE[l.key]!.cta && <Link href={LINE[l.key]!.href} className="small">{LINE[l.key]!.cta}</Link>}</span>
                   </div>
                 ))}
-                <div className="balance-row"><strong>Sin asignar</strong>
-                  <span className={`amount${b.unassignedMinor !== null && b.unassignedMinor < 0 ? ' error' : ''}`}>{b.unassignedMinor === null ? 'Sin dato' : b.unassignedMinor < 0 ? `Te faltan ${m(-b.unassignedMinor, c)}` : m(b.unassignedMinor, c)}</span></div>
+                <div className="balance-row"><span className="setting-text"><strong>Sin asignar</strong>
+                  {b.unassignedKind === 'at_most' && <small className="muted">Como máximo: faltan montos por completar.</small>}
+                  {b.unassignedKind === 'partial' && <small className="muted">Parcial: falta el monto de un ingreso.</small>}</span>
+                  <span className={`amount${b.unassignedMinor !== null && b.unassignedMinor < 0 ? ' error' : ''}`} data-testid={`unassigned-${c}`}>{b.unassignedMinor === null ? 'Sin dato' : b.unassignedMinor < 0 ? `Te faltan ${b.unassignedKind === 'at_most' ? 'al menos ' : ''}${m(-b.unassignedMinor, c)}` : m(b.unassignedMinor, c)}</span></div>
               </div>
             </section>
 
             <section className="card stack-sm" id="metas" aria-label="Metas">
               <h2>Metas{c === 'USD' ? ' en dólares' : ''}</h2>
-              <div className="balance-row"><span className="setting-text"><strong>Ahorro</strong><small className="muted">{s?.savingsGoal ? `${s.savingsGoal.mode === 'fixed' ? 'Monto fijo' : 'Porcentaje'}${goalNote(s.savingsGoal)}` : 'Sin meta'}</small></span>
+              <div className="balance-row"><span className="setting-text"><strong>Ahorro al mes</strong><small className="muted">{s?.savingsGoal ? `${s.savingsGoal.mode === 'fixed' ? 'Monto fijo' : 'Porcentaje'}${goalNote(s.savingsGoal)}` : 'Sin meta'}</small></span>
                 <span className="bal-right"><span className="amount">{s?.savingsGoalMinor != null ? m(s.savingsGoalMinor, c) : '—'}</span><GoalSheet kind="savings" currency={c} goal={s?.savingsGoal ?? null} investments={[]} investmentId={null} /></span></div>
-              <div className="balance-row"><span className="setting-text"><strong>Inversión</strong><small className="muted">{s?.investmentGoal ? `${s.investmentGoal.mode === 'fixed' ? 'Monto fijo' : 'Porcentaje'}${goalNote(s.investmentGoal)}${s.investmentGoalId ? ` · ${investments.find((i) => i.id === s.investmentGoalId)?.name ?? ''}` : ''}` : 'Sin meta'}</small></span>
+              <div className="balance-row"><span className="setting-text"><strong>Inversión al mes</strong><small className="muted">{s?.investmentGoal ? `${s.investmentGoal.mode === 'fixed' ? 'Monto fijo' : 'Porcentaje'}${goalNote(s.investmentGoal)}${s.investmentGoalId ? ` · ${investments.find((i) => i.id === s.investmentGoalId)?.name ?? ''}` : ''}` : 'Sin meta'}</small></span>
                 <span className="bal-right"><span className="amount">{b.lines.find((l) => l.key === 'investment')?.amountMinor != null ? m(b.lines.find((l) => l.key === 'investment')!.amountMinor!, c) : '—'}</span>
                   <GoalSheet kind="investment" currency={c} goal={s?.investmentGoal ?? null} investments={investments.filter((i) => i.currency === c).map((i) => ({ id: i.id, name: i.name }))} investmentId={s?.investmentGoalId ?? null} /></span></div>
               {investments.length === 0 && <small className="muted">Para apuntar tu meta a una inversión, agrégala en <Link href="/app/inversiones">Inversiones</Link>.</small>}

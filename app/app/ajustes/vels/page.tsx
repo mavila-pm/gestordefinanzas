@@ -39,7 +39,7 @@ export default async function VelsSettings() {
           </label>
         </div>
       </ActionForm>
-      <p className="muted small">Para limpiar la conversación, usa el menú de Vels.</p>
+      <p className="muted small">Para limpiar la conversación, abre Vels y toca «Limpiar» arriba (aparece cuando ya le escribiste).</p>
     </SettingsPage>
   );
 }

@@ -19,7 +19,9 @@ export interface MessageCard {
   /** Idempotency fingerprint of the photos read (never the image itself); server-side only. */
   readKey?: string;
   /** Assistant: what the next message answers (src/ai/vels-collect.ts); re-validated on read, rows are client-insertable. */
-  pending?: 'balance' | 'currency' | 'income' | 'income_date' | 'income_amount' | 'income_days';
+  pending?: 'balance' | 'currency' | 'income' | 'income_date' | 'income_amount' | 'income_days' | 'spend_amount';
+  /** Assistant: the simulation just answered (amount, currency), so "mejor treinta" can redo it; re-validated on read. */
+  sim?: { amountMinor: number; currency: 'PEN' | 'USD' };
   /** Assistant: the question to answer once the pending facts are in (validated by asResume). */
   resume?: unknown;
   /** Assistant: what the person already said in this exchange (validated by asDraft). */

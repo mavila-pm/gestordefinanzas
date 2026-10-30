@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { AuthScreen } from '../../../components/auth-screen';
 import { SignupForm } from '../../../components/signup-form';
 
-export const metadata = { title: 'Crear cuenta · Velsuno' };
+export const metadata = { title: 'Crear cuenta' };
 
 /**
  * Registration starts with the email only; password and profile come after the link (app/crear-cuenta). The same

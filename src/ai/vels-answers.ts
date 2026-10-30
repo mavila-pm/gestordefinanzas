@@ -1,4 +1,4 @@
-import { addDays, daysBetween, longDate, shortDate } from '../domain/dates';
+import { addDays, daysBetween, limaDay, longDate, shortDate } from '../domain/dates';
 import type { Currency } from '../domain/money';
 import type { IncomeMatch, TimelineItem } from '../engine/observed';
 import { compareDebtStrategies, reserveProgress, simulatePurchase, type MatchSuggestion, type Plan, type PlanInput, type Reserve } from '../engine/planning';
@@ -6,7 +6,7 @@ import { cardCycle, changeBill, delayIncome, extraDebtPayment, payDebt, type Sce
 import type { AssistantAct } from './conversation';
 import type { CardPosition } from '../engine/cards';
 import { money } from './draft';
-import { findAmounts, fold } from './text';
+import { findAmounts, fold, spelledToDigits } from './text';
 import { matchProvider } from '../domain/subscriptions';
 
 /**
@@ -22,6 +22,7 @@ export type Intent =
   | { k: 'estimate_basics'; amountMinor: number } | { k: 'apply_plan' }
   | { k: 'subs_total' } | { k: 'subs_paid'; name: string } | { k: 'subs_pause'; name: string }
   | { k: 'pref_zero_debt'; on: boolean } | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number }
+  | { k: 'spend_ask'; purpose: string | null } | { k: 'spent_month' } | { k: 'help_order' }
   | { k: 'reserve_status'; name: string; explicit: boolean } | { k: 'reserve_move'; name: string; direction: 'in' | 'out'; amountMinor: number; currency: Currency | null; explicit: boolean };
 
 const NAMES = ['carro', 'auto', 'alquiler', 'internet', 'luz', 'agua', 'gas', 'celular', 'telefono', 'tarjeta', 'seguro', 'colegio', 'universidad', 'netflix', 'spotify', 'gimnasio', 'prestamo', 'cable'];
@@ -71,8 +72,47 @@ function reserveIntent(t: string): ReserveIntent | null {
   return how ? { k: 'reserve_status', name: how[1]!.trim(), explicit: true } : null;
 }
 
+/** "para salir a cenar" → "la cena"; a few everyday words, else the noun phrase after "para" (short), else nothing. */
+const PURPOSES: Array<[RegExp, string]> = [
+  [/\bcen(a|ar)\b/, 'la cena'], [/\balm(uerzo|orzar)\b/, 'el almuerzo'], [/\bdesayun(o|ar)\b/, 'el desayuno'], [/\b(comer|comida)\b/, 'comida'],
+  [/\b(taxi|uber|movilidad|pasaje)\b/, 'movilidad'], [/\b(cine|pelicula)\b/, 'el cine'], [/\bregalo\b/, 'el regalo'],
+];
+function purposeOf(t: string): string | null {
+  for (const [re, label] of PURPOSES) if (re.test(t)) return label;
+  const m = t.match(/\bpara (?:comprar(?:me)? )?((?:un|una|unos|unas|el|la|los|las) [a-zñ]+(?: [a-zñ]+)?)\b/);
+  return m ? m[1]! : null;
+}
+
+/** The last simulation Vels answered (kept in its message card), read back defensively: the card is stored data. */
+export interface Sim { amountMinor: number; currency: Currency }
+const asSim = (x: unknown): Sim | null => {
+  const o = x as Partial<Sim> | null;
+  return o && Number.isSafeInteger(o.amountMinor) && (o.amountMinor as number) > 0 && (o.currency === 'PEN' || o.currency === 'USD') ? { amountMinor: o.amountMinor!, currency: o.currency } : null;
+};
+const CORRECTION = /^(?:no\b[ ,.]*)?(?:mejor|en vez|en lugar|y si|y con|y por|que tal|solo|solamente|y)\b|\ben (?:vez|lugar) de\b/;
+
+/**
+ * Follow-ups that only make sense after Vels's last message (audit T05/T06/T12): the amount asked for ("¿cuánto piensas
+ * gastar?" → "unos 60"), or a correction of the last simulation ("mejor treinta", "30 en vez de 80"). The new amount is
+ * simulated from the plan as it is now — never from the previous result, never added to it — and nothing is written.
+ */
+export function followUp(message: string, card: { pending?: unknown; sim?: unknown } | null | undefined): Intent | null {
+  if (!card) return null;
+  const t = spelledToDigits(fold(message));
+  const amounts = findAmounts(t);
+  if (card.pending === 'spend_amount') {
+    const a = amounts[0];
+    return a ? { k: 'can_spend', amountMinor: a.minor, currency: a.currency ?? 'PEN' } : null;
+  }
+  const sim = asSim(card.sim);
+  if (!sim || !amounts.length || !CORRECTION.test(t)) return null;
+  const pick = amounts.find((a) => a.minor !== sim.amountMinor) ?? amounts[0]!;
+  return { k: 'can_spend', amountMinor: pick.minor, currency: pick.currency ?? sim.currency };
+}
+
 export function detectIntent(message: string): Intent {
-  const t = fold(message);
+  // "ochenta soles", "dos mil" are read as 80 and 2000 by the same amount reader (audit T03/T11).
+  const t = spelledToDigits(fold(message));
   const reserve = reserveIntent(t);
   if (reserve?.explicit) return reserve;
   const other = detectOther(t);
@@ -89,6 +129,10 @@ function detectOther(t: string): Intent {
   if (service && /\b(pausa|pausar|pausala|cancela|cancelar|cancelala|dar de baja|da de baja|quita|quitar|ya no (pago|quiero))\b/.test(t)) return { k: 'subs_pause', name: service };
   if (service && /\b(cuanto|que tanto) (pague|he pagado|gaste|he gastado|me cobraron|me ha cobrado)\b/.test(t)) return { k: 'subs_paid', name: service };
   if (/\bsuscripcion(es)?\b/.test(t) && /\b(cuanto|cuantas|cuales|que|total|gasto|pago|cuestan)\b/.test(t)) return { k: 'subs_total' };
+  // "¿Cuánto gasté este mes?": confirmed spending of this month (financialEffect), never the balance.
+  if (/\bcuanto (he |llevo |voy |hemos )?(gaste|gastado|gastando|gastamos)\b/.test(t) && !amount) return { k: 'spent_month' };
+  // "Estoy perdido con mi plata, ¿me ayudas a ordenarme?": one step, not the whole plan card.
+  if (/\b(ordenar(me)?|ordename|ordenarnos|estoy perdid[oa]|no se por donde empezar|ayudame con mi (plata|dinero))\b/.test(t)) return { k: 'help_order' };
   // Vels (ADR-0011): card operating limit, organize until the next income, minimum vs total, "le debo X a Y", estimates.
   if (/\btarjeta\b/.test(t) && /\b(hasta cuanto|cuanto) (puedo|podria) (usar|gastar)\b|\blimite (real|de mi tarjeta)\b/.test(t)) return { k: 'card_limit' };
   // "Aplicar plan" (ADR-0013): saves reservations after confirmation; never pays or moves money.
@@ -114,6 +158,12 @@ function detectOther(t: string): Intent {
   if (hypo && amount && /\b(gast|compr)(o|ara|aria|ar)\b/.test(t)) return { k: 'can_spend', amountMinor: amount.minor, currency: amount.currency ?? 'PEN' };
   if (hypo && name && amount && /\b(sube|subiera|aumenta|aumentara|cuesta|costara|fuera)\b/.test(t)) return { k: 'what_bill', name, amountMinor: amount.minor };
   if (/\b(puedo|me alcanza|alcanza|podria) .*(gastar|comprar|pagar|para)\b|\bme alcanza\b/.test(t) && amount) return { k: 'can_spend', amountMinor: amount.minor, currency: amount.currency ?? 'PEN' };
+  // "¿Cuánto me quedaría si gasto 30?" is the same simulation.
+  if (amount && /\b(me )?quedari(a|an)\b/.test(t)) return { k: 'can_spend', amountMinor: amount.minor, currency: amount.currency ?? 'PEN' };
+  // "¿Me alcanza para salir a cenar?" without an amount: ask how much (one question), never answer with the balance.
+  if (!amount && /\b(me alcanza|alcanza|puedo gastar|podria gastar|me da) (para|en)\b/.test(t) && !/\b(fin de mes|llegar|quincena|proximo (sueldo|pago|ingreso)|mis (deudas|pagos|cuentas)|todo)\b/.test(t)) {
+    return { k: 'spend_ask', purpose: purposeOf(t) };
+  }
   if (/\bme alcanza\b|\bllego a fin de mes\b/.test(t)) return { k: 'free' };
   if (/\bpor que\b.*\b(libre|tengo solo|me queda|poco)\b|\bexplica(me)?\b.*\blibre\b|\bmuestrame por que\b/.test(t)) return { k: 'why_free' };
   if (/\b(cuanto|que) (puedo gastar|tengo libre|queda libre|me queda|tengo disponible)\b|\bdinero libre\b|\bcuanto (hay|queda) libre\b/.test(t)) return { k: 'free' };
@@ -153,6 +203,8 @@ export interface View {
   debtLinks?: Array<{ id: string; name: string; currency: Currency; balanceMinor: number; annualRateBp: number | null; obligationId: string | null }>;
   /** Apartados (active) with their saved amount, from the engine's loader (ADR-0017). */
   reserves?: Reserve[];
+  /** This Lima month's confirmed spending per currency (monthlySummary), loaded only for "¿cuánto gasté?". */
+  monthSpending?: Partial<Record<Currency, { expensesMinor: number; pendingCount: number }>>;
   /** Mis suscripciones (not ended): analytical monthly cost, next charge, and what was really paid this year. */
   subscriptions?: Array<{ id: string; name: string; currency: Currency; amountMinor: number | null; monthlyMinor: number | null; nextDate: string | null; paidYearMinor: number; paidYearCount: number }>;
 }
@@ -160,7 +212,10 @@ export type Action =
   | { type: 'link'; label: string; href: string }
   | { type: 'act'; label: string; act: AssistantAct; fields: Record<string, string> }
   | { type: 'reply'; label: string };
-export interface Answer { title?: string; text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' }
+export interface Answer {
+  title?: string; text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' | 'spend_amount';
+  /** A simulation answered (amount, currency), so a correction next turn can redo it. */ sim?: Sim;
+}
 
 const primary = (v: View) => v.plans.find((p) => p.base) ?? v.plans[0] ?? null;
 const RESERVES_LINK: Action = { type: 'link', label: 'Ver apartados', href: '/app/plan' };
@@ -175,6 +230,8 @@ function findReserves(v: View, name: string, currency: Currency | null = null): 
   const exact = all.filter((r) => words(r.name) === n);
   return exact.length ? exact : all.filter((r) => n.trim() !== '' && words(r.name).trim() !== '' && (words(r.name).includes(n) || n.includes(words(r.name))));
 }
+/** The day of an old balance ('11 oct'), or null when the balance is current. */
+const staleSince = (p: Plan) => (p.base?.kind === 'balance' && p.base.stale ? shortDate(limaDay(p.base.asOf)) : null);
 const PLAN_LINK: Action = { type: 'link', label: 'Ver Dinero disponible', href: '/app/plan' };
 /** Confirmation button for "Aplicar plan": carries what the person saw so a changed plan is not saved blindly. */
 const applyAct = (p: Plan): Action => ({ type: 'act', label: 'Aplicar plan', act: 'apply_plan', fields: { currency: p.currency, free: String(p.freeMinor), reserved: String(p.reservedMinor) } });
@@ -194,7 +251,7 @@ export function answer(intent: Intent, v: View): Answer | null {
       // An estimate is said like a person says it ("unos S/ 5,090"); the status itself is unchanged.
       const about = p.status !== 'confirmed' ? 'unos ' : '';
       return {
-        text: p.freeMinor >= 0 ? `Tienes ${about}${money(p.freeMinor, p.currency)} disponibles${until}.` : `Te faltan ${about}${money(-p.freeMinor, p.currency)} para cubrir lo que viene${until}.`,
+        text: `${staleSince(p) ? `Con tu saldo del ${staleSince(p)}: ` : ''}${p.freeMinor >= 0 ? `tienes ${about}${money(p.freeMinor, p.currency)} disponibles${until}.` : `te faltan ${about}${money(-p.freeMinor, p.currency)} para cubrir lo que viene${until}.`}`.replace(/^[a-z]/, (c) => c.toUpperCase()),
         rows: [{ label: 'Tienes', value: money(p.base!.amountMinor, p.currency) }, { label: 'Separado para pagos', value: money(p.reservedMinor, p.currency) }],
         actions: [PLAN_LINK],
       };
@@ -204,15 +261,40 @@ export function answer(intent: Intent, v: View): Answer | null {
       if (!plan) return { text: 'Aún no tengo tu saldo ni tu próximo ingreso para responder eso.', actions: [PLAN_LINK] };
       const sim = simulatePurchase(plan, intent.amountMinor);
       if (!sim) return { text: `Para saber si te alcanza necesito ${missingText(plan)?.replace(/\.$/, '').toLowerCase() ?? 'tu saldo de hoy'}.`, actions: [PLAN_LINK], pending: !plan.base ? 'balance' : undefined };
+      const memo = { sim: { amountMinor: intent.amountMinor, currency: plan.currency } };
+      // An old balance is said, not hidden: the answer is only as good as the last balance (audit §6).
+      const since = staleSince(plan);
       return sim.covered
-        ? { text: `Sí. Te quedarían ${sim.estimated ? 'unos ' : ''}${money(sim.afterMinor, plan.currency)} disponibles.` }
-        : { text: `Ahí no te alcanza: te faltarían ${money(sim.shortfallMinor, plan.currency)} sin tocar lo separado para pagos.`, actions: [PLAN_LINK] };
+        ? { text: `Sí. ${since ? `Con tu saldo del ${since}, te` : 'Te'} quedarían ${sim.estimated ? 'unos ' : ''}${money(sim.afterMinor, plan.currency)} disponibles.`, ...memo }
+        : { text: `Ahí no te alcanza: te faltarían ${money(sim.shortfallMinor, plan.currency)} sin tocar lo separado para pagos${since ? ` (según tu saldo del ${since})` : ''}.`, actions: [PLAN_LINK], ...memo };
+    }
+    case 'spend_ask':
+      return { text: `¿Cuánto piensas gastar${intent.purpose ? ` en ${intent.purpose}` : ''}?`, pending: 'spend_amount' };
+    case 'spent_month': {
+      const ms = v.monthSpending;
+      if (!ms) return null;
+      const parts = (['PEN', 'USD'] as Currency[]).filter((c) => (ms[c]?.expensesMinor ?? 0) > 0).map((c) => money(ms[c]!.expensesMinor, c));
+      const pending = (ms.PEN?.pendingCount ?? 0) + (ms.USD?.pendingCount ?? 0);
+      const wait = pending ? ` ${pending === 1 ? '1 movimiento por revisar aún no cuenta' : `${pending} movimientos por revisar aún no cuentan`}.` : '';
+      const link: Action = { type: 'link', label: 'Ver gastos', href: '/app/gastos' };
+      if (!parts.length) return { text: `Este mes aún no tienes gastos registrados.${wait}`, actions: [link] };
+      return { text: `Este mes llevas ${parts.join(' y ')} en gastos.${wait}`, actions: [link] };
+    }
+    case 'help_order': {
+      if (!p?.base) return { text: 'Claro, vamos por partes. Empecemos por hoy: ¿cuánto tienes en tus cuentas?', pending: 'balance' };
+      // The balance is known but not what comes next: say what is missing (never ask the balance again).
+      if (p.freeMinor === null) { const f = answer({ k: 'free' }, v)!; return { ...f, text: `Claro, vamos por partes. ${f.text}` }; }
+      const until = p.until ? ` hasta el ${longDate(p.until)}` : '';
+      return {
+        text: `Claro, vamos por partes. Tienes ${p.status !== 'confirmed' ? 'unos ' : ''}${money(Math.max(0, p.freeMinor), p.currency)} disponibles${until}. ¿Vemos qué pagos se vienen?`,
+        actions: [{ type: 'reply', label: '¿Qué pagos tengo pendientes?' }],
+      };
     }
     case 'balance': {
       const b = v.plans.find((x) => x.base?.kind === 'balance')?.base;
       if (!b || b.kind !== 'balance' || !p) return null;
       const c = v.plans.find((x) => x.base === b)!.currency;
-      return { text: b.stale ? `Tenías ${money(b.amountMinor, c)} el ${longDate(b.asOf.slice(0, 10))}. ¿Cuánto tienes hoy?` : `Tienes ${money(b.amountMinor, c)} disponibles.`, ...(b.stale ? { pending: 'balance' as const } : {}) };
+      return { text: b.stale ? `Tenías ${money(b.amountMinor, c)} el ${longDate(limaDay(b.asOf))}. ¿Cuánto tienes hoy?` : `Tienes ${money(b.amountMinor, c)} disponibles.`, ...(b.stale ? { pending: 'balance' as const } : {}) };
     }
     case 'next_income': {
       const n = v.plans.map((x) => x.nextIncome).filter((x) => x !== null).sort((a, b) => a!.date.localeCompare(b!.date))[0];

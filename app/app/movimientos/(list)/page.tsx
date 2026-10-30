@@ -100,7 +100,23 @@ export default async function Movements({ searchParams }: { searchParams: Promis
       )}
       <section aria-label="Lista de movimientos">
         {error && <p role="alert" className="notice error">No pudimos cargar los movimientos. Intenta de nuevo.</p>}
-        {!error && txs.length === 0 && <p className="muted">{f.q ? `Nada coincide con “${f.q}”.` : `Aún no hay movimientos${f.month !== 'all' ? ` en ${monthLabel(f.month).toLowerCase()}` : ''}.`}</p>}
+        {/* Empty (audit V07): a search or filter that matches nothing is not "no movements"; a real empty list says how to start. */}
+        {!error && txs.length === 0 && (f.q || activeFilters > 0 ? (
+          <div className="stack-sm" data-testid="movements-no-match">
+            <p className="muted">{f.q ? `Nada coincide con “${f.q}”.` : 'Ningún movimiento coincide con estos filtros.'}</p>
+            <p><Link href="/app/movimientos" className="quiet">Quitar filtros</Link></p>
+          </div>
+        ) : (
+          <div className="card stack-sm" data-testid="movements-empty">
+            <p><strong>Aún no hay movimientos{f.month !== 'all' ? ` en ${monthLabel(f.month).toLowerCase()}` : ''}.</strong></p>
+            <p className="muted small">Registra uno o pega el aviso de tu banco.</p>
+            <div className="actions">
+              <Link href="/app/movimientos/nuevo" className="button">Registrar movimiento</Link>
+              <Link href="/app/importar" className="button quiet">Pegar aviso del banco</Link>
+            </div>
+            {f.month !== 'all' && <p className="small"><Link href="/app/movimientos?month=all">Ver todos los meses</Link></p>}
+          </div>
+        ))}
         {txs.length > 0 && (
           <div data-testid="movement-list">
             {days.map(([day, items]) => (

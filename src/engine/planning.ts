@@ -6,7 +6,7 @@
  * Currencies are never mixed: one plan per currency.
  */
 import { formatMoney, type Currency } from '../domain/money';
-import { addDays, daysBetween } from '../domain/dates';
+import { addDays, daysBetween, limaDay } from '../domain/dates';
 import { financialEffect } from '../domain/financial-effect';
 import type { TransactionType } from '../domain/types';
 
@@ -299,7 +299,7 @@ export function buildPlan(input: PlanInput): Plan {
   const from = input.base?.kind === 'income' ? input.base.date : today;
   const missing: Missing[] = [];
   if (!input.base) missing.push({ code: 'balance', text: 'Indica cuánto tienes hoy en tu cuenta.' });
-  else if (input.base.kind === 'balance' && input.base.stale) missing.push({ code: 'balance_stale', text: `Tu saldo es del ${fmtDay(input.base.asOf.slice(0, 10))}. Actualízalo para afinar el cálculo.` });
+  else if (input.base.kind === 'balance' && input.base.stale) missing.push({ code: 'balance_stale', text: `Tu saldo es del ${fmtDay(limaDay(input.base.asOf))}. Actualízalo para afinar el cálculo.` });
 
   const expected = nextIncome(input.incomes, currency, from, input.settledIncomes);
   const delay = input.incomeDelayDays ?? 0;

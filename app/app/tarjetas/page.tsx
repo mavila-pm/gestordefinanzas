@@ -13,7 +13,7 @@ import { loadPlanningData } from '../../../lib/planning';
 import { loadCardViews } from '../../../lib/cards';
 import { loadMoneySources, type SourceAccount, type SourceCard } from '../../../lib/money-sources';
 import { formatMoney, type Currency } from '../../../src/domain/money';
-import { shortDate } from '../../../src/domain/dates';
+import { limaDay, shortDate } from '../../../src/domain/dates';
 import { plural } from '../../../src/domain/plural';
 import { limaDatePlus } from '../../../src/domain/billing';
 import { instrumentMonth } from '../../../src/engine/dashboard';
@@ -80,7 +80,7 @@ function AccountLine({ a }: { a: SourceAccount }) {
   return (
     <div className="balance-row" id={`a-${a.id}`}>
       <span className="setting-text"><strong>{a.alias}</strong>
-        <small className="muted">{a.currency === 'USD' ? 'Dólares' : 'Soles'}{a.balanceAsOf ? ` · desde el ${shortDate(a.balanceAsOf.slice(0, 10))}` : ''}</small></span>
+        <small className="muted">{a.currency === 'USD' ? 'Dólares' : 'Soles'}{a.balanceAsOf ? ` · desde el ${shortDate(limaDay(a.balanceAsOf))}` : ''}</small></span>
       <span className="bal-right"><span className={`amount${a.balanceMinor === null ? ' muted' : ''}`}>{m(a.balanceMinor, a.currency) ?? 'Sin saldo'}</span><BalanceSheet a={a} /></span>
     </div>
   );
@@ -201,7 +201,7 @@ export default async function CardsAndAccounts({ searchParams }: { searchParams:
                     <>
                       <dl className="sub-facts">
                         <Fact label="Línea total" value={m(limit, cur)} />
-                        <Fact label="Línea usada" value={m(used, cur)} note={card.usedAsOf ? '· al día' : view?.statement?.usedAsOf ? `al ${shortDate(view.statement.usedAsOf.slice(0, 10))}` : undefined} />
+                        <Fact label="Línea usada" value={m(used, cur)} note={card.usedAsOf ? '· al día' : view?.statement?.usedAsOf ? `al ${shortDate(limaDay(view.statement.usedAsOf))}` : undefined} />
                         <Fact label="Disponible del banco" value={m(available, cur)} note={usePct !== null ? `· usas el ${usePct}%` : undefined} />
                         <Fact label="Por pagar este ciclo" value={p?.billed ? m(p.billed.amountMinor, cur) : null} note={p?.billed && p.billed.status === 'estimated' ? '· estimado' : undefined} />
                         <Fact label="Pago mínimo" value={p?.billed ? m(p.billed.minimumMinor, cur) : null} />

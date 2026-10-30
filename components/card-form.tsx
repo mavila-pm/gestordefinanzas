@@ -13,7 +13,7 @@ import { BANKS, CARD_COLORS, COLOR_LABEL, MAX_ACCOUNTS, type CardColor } from '.
  */
 export function CardFormFields() {
   const [alias, setAlias] = useState('');
-  const [kind, setKind] = useState<'credit' | 'debit'>('credit');
+  const [kind, setKind] = useState<'credit' | 'debit'>('debit');
   const [bank, setBank] = useState('BCP');
   const [bankName, setBankName] = useState('');
   const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');

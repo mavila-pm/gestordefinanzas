@@ -89,4 +89,51 @@ export function findAmounts(t: string, skip: Array<{ index: number; end: number 
   return out;
 }
 
+/**
+ * Spelled-out amounts in everyday Spanish → digits, on folded text: "ochenta soles" → "80 soles", "dos mil" → "2000",
+ * "treinta y cinco" → "35", "dos mil quinientos" → "2500". The result goes through the same amount and day readers, so
+ * a spelled number is grounded exactly like a written one (never guessed). "un/una" stay words (articles); slang with
+ * regional values ("lucas") is left untouched here.
+ */
+const UNITS: Record<string, number> = {
+  uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, trece: 13, catorce: 14,
+  quince: 15, dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20, veintiuno: 21, veintiun: 21, veintidos: 22, veintitres: 23,
+  veinticuatro: 24, veinticinco: 25, veintiseis: 26, veintisiete: 27, veintiocho: 28, veintinueve: 29,
+};
+const TENS: Record<string, number> = { treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90 };
+const HUNDREDS: Record<string, number> = {
+  cien: 100, ciento: 100, doscientos: 200, doscientas: 200, trescientos: 300, trescientas: 300, cuatrocientos: 400, cuatrocientas: 400,
+  quinientos: 500, quinientas: 500, seiscientos: 600, seiscientas: 600, setecientos: 700, setecientas: 700, ochocientos: 800, ochocientas: 800,
+  novecientos: 900, novecientas: 900,
+};
+const numWord = (w: string) => w in UNITS || w in TENS || w in HUNDREDS || w === 'mil';
+
+export function spelledToDigits(t: string): string {
+  const tok = t.match(/[a-zñ]+|[^a-zñ]+/g) ?? [];
+  const out: string[] = [];
+  for (let i = 0; i < tok.length; i++) {
+    if (!numWord(tok[i]!)) { out.push(tok[i]!); continue; }
+    // A run of number words separated by single spaces; "y" only joins tens and a unit ("treinta y cinco").
+    const run: string[] = [tok[i]!];
+    let j = i;
+    while (j + 2 < tok.length && tok[j + 1] === ' ') {
+      const next = tok[j + 2]!;
+      if (numWord(next)) { run.push(next); j += 2; continue; }
+      if (next === 'y' && run.at(-1)! in TENS && tok[j + 3] === ' ' && (UNITS[tok[j + 4] ?? ''] ?? 99) <= 9) { run.push(tok[j + 4]!); j += 4; continue; }
+      break;
+    }
+    const after = tok.slice(j + 1, j + 3).join('');
+    if (/^\s*lucas?\b/.test(after) || (run.length === 1 && run[0] === 'uno')) { out.push(...tok.slice(i, j + 1)); i = j; continue; }
+    let total = 0; let cur = 0; let ok = true;
+    for (const w of run) {
+      if (w === 'mil') { if (total) { ok = false; break; } total = (cur || 1) * 1000; cur = 0; }
+      else cur += UNITS[w] ?? TENS[w] ?? HUNDREDS[w]!;
+    }
+    if (!ok) { out.push(...tok.slice(i, j + 1)); i = j; continue; }
+    out.push(String(total + cur));
+    i = j;
+  }
+  return out.join('');
+}
+
 export const LAST4 = /(?:terminad[ao] en|termina en|acaba en|finaliza en|••••|\*{2,}|x{3,})\s*(\d{4})\b/;

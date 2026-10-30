@@ -6,7 +6,7 @@ import { createSupabaseServerClient } from '../../../lib/supabase/server';
 import type { ChatMessage } from '../../../src/ai/conversation';
 import { assistantAction, clearAssistantAction } from './actions';
 
-export const metadata: Metadata = { title: 'Vels · Velsuno' };
+export const metadata: Metadata = { title: 'Vels' };
 
 
 /** Vels full page (ADR-0011; route kept as /app/preguntar for existing links). Same core as the Vels bubble. */

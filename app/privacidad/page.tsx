@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { LegalPage, type LegalSection } from '../../components/legal-page';
 import { PRIVACY_VERSION } from '../../src/web/legal';
 
-export const metadata: Metadata = { title: 'Política de Privacidad · Velsuno' };
+export const metadata: Metadata = { title: 'Política de Privacidad' };
 
 /*
  * Base text for professional legal review (docs/legal/README.md: LEGAL REVIEW REQUIRED BEFORE PRODUCTION).

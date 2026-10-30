@@ -34,9 +34,23 @@ describe('Balance financiero', () => {
     expect(b.lines.map((l) => [l.key, l.amountMinor, l.unknownCount])).toEqual([
       ['budgets', 60000, 0], ['fixed', 130000, 1], ['debts', 35000, 0], ['savings', 45000, 0], ['investment', 30000, 0],
     ]);
-    expect(b).toMatchObject({ incomeMinor: 450000, assignedMinor: 300000, unassignedMinor: 150000 });
+    expect(b).toMatchObject({ incomeMinor: 450000, assignedMinor: 300000, unassignedMinor: 150000, unassignedKind: 'at_most' });
     const over = financialBalance({ ...base, incomes: [{ currency: 'PEN', amountMinor: 1000, frequency: 'monthly' }], budgets: [{ currency: 'PEN', amountMinor: 5000 }] });
     expect(over.unassignedMinor).toBe(-4000);
     expect(financialBalance({ ...base, budgets: [{ currency: 'PEN', amountMinor: 5000 }] }).unassignedMinor).toBeNull();
+  });
+
+  it('unknown installments are "sin monto", never 0, and the remainder says it is at most (audit V02)', () => {
+    const inc = [{ currency: 'PEN' as const, amountMinor: 300000, frequency: 'monthly' as const }];
+    const b = financialBalance({ ...base, incomes: inc, debts: [{ currency: 'PEN', installmentMinor: null, balanceMinor: 50000 }, { currency: 'PEN', installmentMinor: null, balanceMinor: 9000 }] });
+    expect(b.lines.find((l) => l.key === 'debts')).toEqual({ key: 'debts', amountMinor: null, unknownCount: 2 });
+    expect(b).toMatchObject({ unassignedMinor: 300000, unassignedKind: 'at_most' });
+    // No debts at all: a real 0 and an exact remainder.
+    const none = financialBalance({ ...base, incomes: inc });
+    expect(none.lines.find((l) => l.key === 'debts')!.amountMinor).toBe(0);
+    expect(none.unassignedKind).toBe('exact');
+    // An income without amount: partial; no income: unknown.
+    expect(financialBalance({ ...base, incomes: [...inc, { currency: 'PEN', amountMinor: null, frequency: 'monthly' }] }).unassignedKind).toBe('partial');
+    expect(financialBalance(base).unassignedKind).toBe('unknown');
   });
 });

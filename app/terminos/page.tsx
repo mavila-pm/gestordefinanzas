@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { LegalPage, type LegalSection } from '../../components/legal-page';
 import { TERMS_VERSION } from '../../src/web/legal';
 
-export const metadata: Metadata = { title: 'Términos y Condiciones · Velsuno' };
+export const metadata: Metadata = { title: 'Términos y Condiciones' };
 
 /*
  * Base text for professional legal review (docs/legal/README.md: LEGAL REVIEW REQUIRED BEFORE PRODUCTION).

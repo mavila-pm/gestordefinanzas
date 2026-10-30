@@ -8,10 +8,12 @@ import { AuthOrb } from './ui/auth-orb';
  * Mobile/tablet: brand line, then the form (no photo). Desktop (≥ 1024 px): the photo fills the side
  * panel with a short line over a dark gradient; the slogan stays under the logo at every width. Decorative only (alt=""), optimized and lazy: the form renders first.
  */
-export function AuthScreen({ title, lead, step, variant, children }: { title: string; lead?: string; step?: string; variant?: 'login' | 'signup'; children: React.ReactNode }) {
+export function AuthScreen({ title, lead, step, variant, children }: { title: string; lead?: string; step?: string; variant?: 'login' | 'signup' | 'access'; children: React.ReactNode }) {
   if (variant === 'login') return <LoginScreen title={title} lead={lead}>{children}</LoginScreen>;
   // "Crea tu cuenta" (mockups 2026-10-30): the same screen, orb and motion as the login; its lead is the same on phone.
   if (variant === 'signup') return <LoginScreen title={title} lead={lead} narrowLead={lead} className="auth-signup">{children}</LoginScreen>;
+  // Password recovery and new password (audit V06): same screen as the login, flow unchanged.
+  if (variant === 'access') return <LoginScreen title={title} lead={lead} narrowLead={lead}>{children}</LoginScreen>;
   return (
     <main className="auth">
       <aside className="auth-art" aria-hidden="true">
