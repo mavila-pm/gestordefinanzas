@@ -82,4 +82,58 @@ describe('Vels in everyday Spanish', () => {
     expect(validateVelsRoute(JSON.stringify({ kind: 'intent', intent: 'can_spend', amount: '2000', currency: 'PEN' }), ctx)).toMatchObject({ kind: 'intent', intent: { k: 'can_spend', amountMinor: 200000 } });
     expect(validateVelsRoute(JSON.stringify({ kind: 'intent', intent: 'can_spend', amount: '3000', currency: 'PEN' }), ctx)).toBeNull();
   });
+
+  it('a negated request is not answered; the real one is (F09 and variants)', () => {
+    const next = (q: string) => detectIntent(q).k;
+    expect(next('No quiero saber si puedo gastar S/ 300; solo dime cuándo me pagan.')).toBe('next_income');
+    expect(next('ya no me digas el saldo, ¿cuándo cobro?')).toBe('next_income');
+    expect(next('Olvida lo de la cena; volvamos a mis pagos. ¿Qué pago primero?')).toBe('pay_first');
+    expect(next('no quiero saber cuánto tengo disponible, mejor dime qué pagos vienen')).toBe('upcoming');
+    // A refusal that is not about a question stays as it was.
+    expect(next('no quiero quedarme en cero')).toBe('pref_zero_debt');
+  });
+
+  it('a correction inside the same message uses the corrected amount, never just the last number (F16)', () => {
+    expect(detectIntent('¿Puedo gastar S/ 200 en la cena? Perdón, eran S/ 20.')).toMatchObject({ k: 'can_spend', amountMinor: 2000 });
+    expect(detectIntent('puedo gastar 150 en zapatillas? no, 50')).toMatchObject({ k: 'can_spend', amountMinor: 5000 });
+    expect(detectIntent('¿me alcanza para 300? me equivoqué, son 30')).toMatchObject({ k: 'can_spend', amountMinor: 3000 });
+    // Two numbers without a correction: the first (the second may be a day or a limit).
+    expect(detectIntent('¿puedo gastar 200 el 15?')).toMatchObject({ k: 'can_spend', amountMinor: 20000 });
+  });
+
+  it('short follow-ups keep their context, with or without opening marks (F08, F12)', () => {
+    const card = { sim: { amountMinor: 6000, currency: 'PEN' as const } };
+    expect(say('¿Y si al final son S/ 90?', view(), card)!.text).toMatch(/S\/ 857 disponibles/);
+    expect(say('¿y si son noventa?', view(), card)!.text).toMatch(/S\/ 857 disponibles/);
+    expect(say('al final son 100', view(), card)!.text).toMatch(/S\/ 847 disponibles/);
+    const free = say('¿Cuánto puedo gastar?')!;
+    expect(free.topic).toBe('free');
+    expect(followUp('¿Hasta cuándo?', { topic: free.topic })).toEqual({ k: 'next_income' });
+    expect(say('¿Hasta cuándo?', view(), { topic: 'free' })!.text).toMatch(/^El 31 de octubre/);
+    expect(followUp('¿Hasta cuándo?', null)).toBeNull();
+  });
+
+  it('two related questions get one answer each, in one reply (F15)', () => {
+    const a = say('¿Cuándo me pagan y cuánto tengo disponible?')!;
+    expect(a.text).toMatch(/^Te pagan el 31 de octubre\. Tienes (unos )?S\/ 947 disponibles/);
+    expect(detectIntent('¿Cuánto gasté este mes y qué pagos vienen?')).toMatchObject({ k: 'pair', a: { k: 'spent_month' }, b: { k: 'upcoming' } });
+  });
+
+  it('"en una frase, sin desglose" is honoured (F14)', async () => {
+    const { wantsBrief, styleAnswer } = await import('../src/ai/vels-answers');
+    expect(wantsBrief('Dime cuánto tengo disponible en una sola frase, sin desglose.')).toBe(true);
+    expect(wantsBrief('¿Cuánto tengo disponible?')).toBe(false);
+    const a = say('Dime cuánto tengo disponible en una sola frase, sin desglose.')!;
+    expect(a.rows?.length).toBeGreaterThan(0);
+    expect(styleAnswer(a, 'brief').rows).toBeUndefined();
+  });
+
+  it('a greeting with "¿cómo estás?" and a worried reply to "¿Y tú?" stay social (F01, F04)', async () => {
+    const { socialKind, socialReply } = await import('../src/ai/vels-social');
+    expect(socialKind('Hola Vels, ¿cómo estás?', null)).toBe('how');
+    expect(socialKind('buenas, ¿qué tal vas?', null)).toBe('how');
+    expect(socialKind('Bien, pero preocupado por mi plata.', 'how')).toBe('how_reply');
+    expect(socialReply('how_reply', 'Bien, pero preocupado por mi plata.', 0).text).toBe('Te entiendo. ¿Qué te preocupa más: llegar a fin de mes o algún pago?');
+    expect(socialReply('how_reply', 'cansado', 0).text).toBe('Vaya. Si algo de tu dinero te preocupa, lo vemos con calma.');
+  });
 });

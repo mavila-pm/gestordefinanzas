@@ -18,7 +18,9 @@ const ACK = /^(ok|okay|oki|okey|listo|ya|ya veo|si|dale|perfecto|genial|bien|ent
 const BYE = /^(chau|chao|adios|nos vemos|hasta (luego|manana|pronto)|bye)( vels)?$/;
 const CAPABILITIES = /^(ayuda|help|que (puedes|sabes) hacer|en que (me )?(puedes|podrias) ayudar|que haces|para que sirves)( vels)?$/;
 const FOLLOW_UP = /^(y )?(por que|porque|y eso|como asi|en serio|de verdad|o sea|a que te refieres|que quieres decir)( todo (bien|en orden))?$/;
-const HOW_REPLY = /^(yo )?(bien|muy bien|todo bien|mas o menos|ahi|ahi nomas|regular|mal|cansad[oa]|preocupad[oa]|estresad[oa]|tranquil[oa])( gracias)?( y tu)?$/;
+const HOW_REPLY = /^(yo )?(bien|muy bien|todo bien|mas o menos|ahi|ahi nomas|regular|mal|cansad[oa]|preocupad[oa]|estresad[oa]|tranquil[oa])( gracias)?( y tu)?( pero [a-zñ ]{2,60})?$/;
+/** "Hola Vels, ¿cómo estás?": a greeting in front of another social line is that line. */
+const LEADING_GREETING = /^(hola+|holi|hey|buenas?|buen(os)? (dias?|tardes|noches)|alo)( vels| velsuno)? /;
 const OPEN_ORDER = /^(quiero|necesito|me gustaria|ayudame a) (ordenar|organizar|controlar) (mis|mi) (gastos|finanzas|plata|dinero|cuentas)$/;
 const OPEN_SPENDING = /^(estoy|ando) gastando (mucho|demasiado|un monton)$|^gasto (mucho|demasiado)$/;
 
@@ -29,7 +31,7 @@ export function socialKind(message: string, lastVelsSocial: Social | null): Soci
   if (lastVelsSocial === 'how' && HOW_REPLY.test(t)) return 'how_reply';
   if (lastVelsSocial && FOLLOW_UP.test(t)) return 'follow_up';
   if (GREETING.test(t)) return 'greeting';
-  if (HOW.test(t)) return 'how';
+  if (HOW.test(t) || HOW.test(t.replace(LEADING_GREETING, ''))) return 'how';
   if (THANKS.test(t)) return 'thanks';
   if (BYE.test(t)) return 'bye';
   if (CAPABILITIES.test(t)) return 'capabilities';
@@ -58,7 +60,9 @@ export function socialReply(kind: Social, message: string, seed: number, name: s
   switch (kind) {
     case 'greeting': return { text: greeting(name, seed) };
     case 'how': return { text: pick(['Todo en orden por aquí. ¿Y tú?', 'Bien por aquí. ¿Y tú?', 'Aquí, lista para ayudarte. ¿Y tú?'], seed) };
-    case 'how_reply': return { text: /\b(mal|cansad|preocupad|estresad|regular|mas o menos)/.test(t) ? 'Vaya. Si algo de tu dinero te preocupa, lo vemos con calma.' : pick(['Me alegra.', 'Qué bueno.'], seed) };
+    case 'how_reply': return { text: /\b(preocupad|estresad)/.test(t) && /\b(plata|dinero|pagos?|deudas?|cuentas|sueldo|tarjeta)\b/.test(t)
+      ? 'Te entiendo. ¿Qué te preocupa más: llegar a fin de mes o algún pago?'
+      : /\b(mal|cansad|preocupad|estresad|regular|mas o menos)/.test(t) ? 'Vaya. Si algo de tu dinero te preocupa, lo vemos con calma.' : pick(['Me alegra.', 'Qué bueno.'], seed) };
     case 'follow_up': return { text: pick(['Solo una forma de decir que estoy lista para ayudarte.', 'Es una forma de decir que todo está en orden por aquí.'], seed) };
     case 'thanks': return { text: pick(['De nada.', 'Con gusto.', 'Para eso estoy.'], seed) };
     case 'ack': return { text: pick(['Bien.', 'Listo.', 'Aquí estoy si necesitas algo.'], seed) };

@@ -22,6 +22,8 @@ export interface MessageCard {
   pending?: 'balance' | 'currency' | 'income' | 'income_date' | 'income_amount' | 'income_days' | 'spend_amount';
   /** Assistant: the simulation just answered (amount, currency), so "mejor treinta" can redo it; re-validated on read. */
   sim?: { amountMinor: number; currency: 'PEN' | 'USD' };
+  /** Assistant: what the answer was about ('free'), for a short follow-up; re-validated on read. */
+  topic?: 'free';
   /** Assistant: the question to answer once the pending facts are in (validated by asResume). */
   resume?: unknown;
   /** Assistant: what the person already said in this exchange (validated by asDraft). */

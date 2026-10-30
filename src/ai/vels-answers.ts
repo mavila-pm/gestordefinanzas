@@ -22,7 +22,7 @@ export type Intent =
   | { k: 'estimate_basics'; amountMinor: number } | { k: 'apply_plan' }
   | { k: 'subs_total' } | { k: 'subs_paid'; name: string } | { k: 'subs_pause'; name: string }
   | { k: 'pref_zero_debt'; on: boolean } | { k: 'what_pay_debt'; amountMinor: number; target: string } | { k: 'what_delay'; days: number | null } | { k: 'what_bill'; name: string; amountMinor: number }
-  | { k: 'spend_ask'; purpose: string | null } | { k: 'spent_month' } | { k: 'help_order' }
+  | { k: 'spend_ask'; purpose: string | null } | { k: 'spent_month' } | { k: 'help_order' } | { k: 'pair'; a: Intent; b: Intent }
   | { k: 'reserve_status'; name: string; explicit: boolean } | { k: 'reserve_move'; name: string; direction: 'in' | 'out'; amountMinor: number; currency: Currency | null; explicit: boolean };
 
 const NAMES = ['carro', 'auto', 'alquiler', 'internet', 'luz', 'agua', 'gas', 'celular', 'telefono', 'tarjeta', 'seguro', 'colegio', 'universidad', 'netflix', 'spotify', 'gimnasio', 'prestamo', 'cable'];
@@ -89,16 +89,20 @@ const asSim = (x: unknown): Sim | null => {
   const o = x as Partial<Sim> | null;
   return o && Number.isSafeInteger(o.amountMinor) && (o.amountMinor as number) > 0 && (o.currency === 'PEN' || o.currency === 'USD') ? { amountMinor: o.amountMinor!, currency: o.currency } : null;
 };
-const CORRECTION = /^(?:no\b[ ,.]*)?(?:mejor|en vez|en lugar|y si|y con|y por|que tal|solo|solamente|y)\b|\ben (?:vez|lugar) de\b/;
+const CORRECTION = /^(?:no\b[ ,.]*)?(?:mejor|en vez|en lugar|y si|y con|y por|que tal|solo|solamente|al final|y)\b|\ben (?:vez|lugar) de\b|\bal final\b/;
+/** "¿Hasta cuándo?" right after the available money: until the next income. */
+const UNTIL = /^(?:y )?(?:hasta (?:cuando|que dia|que fecha)|para cuando|cuando (?:me pagan|cobro))\b/;
 
 /**
  * Follow-ups that only make sense after Vels's last message (audit T05/T06/T12): the amount asked for ("¿cuánto piensas
  * gastar?" → "unos 60"), or a correction of the last simulation ("mejor treinta", "30 en vez de 80"). The new amount is
  * simulated from the plan as it is now — never from the previous result, never added to it — and nothing is written.
  */
-export function followUp(message: string, card: { pending?: unknown; sim?: unknown } | null | undefined): Intent | null {
+export function followUp(message: string, card: { pending?: unknown; sim?: unknown; topic?: unknown } | null | undefined): Intent | null {
   if (!card) return null;
-  const t = spelledToDigits(fold(message));
+  // "¿Y si al final son S/ 90?": opening marks never hide the words that make it a follow-up.
+  const t = spelledToDigits(fold(message)).replace(/^[¿¡\s]+/, '');
+  if (card.topic === 'free' && UNTIL.test(t) && !findAmounts(t).length) return { k: 'next_income' };
   const amounts = findAmounts(t);
   if (card.pending === 'spend_amount') {
     const a = amounts[0];
@@ -110,17 +114,50 @@ export function followUp(message: string, card: { pending?: unknown; sim?: unkno
   return { k: 'can_spend', amountMinor: pick.minor, currency: pick.currency ?? sim.currency };
 }
 
+/**
+ * What the person says they do NOT want answered is removed before reading the question: "No quiero saber si puedo
+ * gastar S/ 300; solo dime cuándo me pagan" asks only when they get paid. The negated part ends at a pause (; : ? !,
+ * a period or comma not inside a number) or at the word that turns to the real request (solo, pero, sino, mejor, dime).
+ */
+const NEGATED = /\b(?:no (?:quiero|necesito) (?:saber|que me digas)|ya no (?:quiero saber|me digas)|no me (?:digas|repitas|muestres)|olvida(?:te de)?(?: lo de)?|deja lo de)\b(?:(?!\b(?:solo|pero|sino|mejor|dime|ahora)\b)(?:[^;:!?.,]|[.,](?=\d)))*/g;
+export const dropNegated = (t: string) => t.replace(NEGATED, ' ').replace(/^[\s;:!?.,]+/, '').replace(/\s+/g, ' ').trim();
+
+/** Two questions in one message ("¿cuándo me pagan y cuánto tengo disponible?") that both have a local answer. */
+const PAIRABLE: ReadonlyArray<Intent['k']> = ['free', 'next_income', 'upcoming', 'spent_month', 'pay_first'];
+function pairOf(t: string): Intent | null {
+  const parts = t.split(/\?|;|\s+y\s+(?=(?:cuanto|cuando|que|cuales|como|a cuanto)\b)/).map((x) => x.trim()).filter((x) => x.length > 3);
+  if (parts.length < 2) return null;
+  const found: Intent[] = [];
+  for (const part of parts) {
+    const i = detectOther(part);
+    if (PAIRABLE.includes(i.k) && !found.some((f) => f.k === i.k)) found.push(i);
+  }
+  return found.length >= 2 ? { k: 'pair', a: found[0]!, b: found[1]! } : null;
+}
+
 export function detectIntent(message: string): Intent {
   // "ochenta soles", "dos mil" are read as 80 and 2000 by the same amount reader (audit T03/T11).
-  const t = spelledToDigits(fold(message));
+  const t = dropNegated(spelledToDigits(fold(message)));
   const reserve = reserveIntent(t);
   if (reserve?.explicit) return reserve;
+  const pair = pairOf(t);
+  if (pair) return pair;
   const other = detectOther(t);
   return other.k === 'unknown' && reserve ? reserve : other;
 }
 
+/** "En una frase", "sin desglose", "corto": the answer goes without its rows (Ajustes → Vels "breve" for one turn). */
+export const wantsBrief = (message: string) => /\b(en una (sola )?frase|sin (desglose|detalle|detalles)|(bien )?(corto|breve)|solo (el|la) (numero|monto|cifra))\b/.test(fold(message));
+
+/**
+ * A correction inside the same message ("¿Puedo gastar S/ 200? Perdón, eran S/ 20", "150… no, 50"): the amount after
+ * the correction mark counts. Without such a mark the first amount stays (a second number can be a day, a limit or a
+ * comparison, never silently the answer).
+ */
+const SELF_FIX = /\b(?:perdon|perdona|me equivoque|quise decir|corrijo|mejor dicho|en realidad)\b|\bno,? (?=(?:s\/\.?|us\$|\$)?\s*\d)/;
 function detectOther(t: string): Intent {
-  const amount = findAmounts(t)[0];
+  const fix = SELF_FIX.exec(t);
+  const amount = (fix ? findAmounts(t.slice(fix.index))[0] : undefined) ?? findAmounts(t)[0];
   const name = nameIn(t);
   // Mis suscripciones: totals, what was paid for one service, and pausing (only in Velsuno; never cancels the service).
   // Some aliases are everyday words ("amazon", "office", "max"): they count only next to "suscripción" or the full name.
@@ -215,6 +252,7 @@ export type Action =
 export interface Answer {
   title?: string; text: string; rows?: Array<{ label: string; value: string }>; actions?: Action[]; pending?: 'balance' | 'spend_amount';
   /** A simulation answered (amount, currency), so a correction next turn can redo it. */ sim?: Sim;
+  /** What this answer was about, so a short follow-up ("¿hasta cuándo?") is read in context. */ topic?: 'free';
 }
 
 const primary = (v: View) => v.plans.find((p) => p.base) ?? v.plans[0] ?? null;
@@ -253,6 +291,7 @@ export function answer(intent: Intent, v: View): Answer | null {
       return {
         text: `${staleSince(p) ? `Con tu saldo del ${staleSince(p)}: ` : ''}${p.freeMinor >= 0 ? `tienes ${about}${money(p.freeMinor, p.currency)} disponibles${until}.` : `te faltan ${about}${money(-p.freeMinor, p.currency)} para cubrir lo que viene${until}.`}`.replace(/^[a-z]/, (c) => c.toUpperCase()),
         rows: [{ label: 'Tienes', value: money(p.base!.amountMinor, p.currency) }, { label: 'Separado para pagos', value: money(p.reservedMinor, p.currency) }],
+        topic: 'free',
         actions: [PLAN_LINK],
       };
     }
@@ -267,6 +306,13 @@ export function answer(intent: Intent, v: View): Answer | null {
       return sim.covered
         ? { text: `Sí. ${since ? `Con tu saldo del ${since}, te` : 'Te'} quedarían ${sim.estimated ? 'unos ' : ''}${money(sim.afterMinor, plan.currency)} disponibles.`, ...memo }
         : { text: `Ahí no te alcanza: te faltarían ${money(sim.shortfallMinor, plan.currency)} sin tocar lo separado para pagos${since ? ` (según tu saldo del ${since})` : ''}.`, actions: [PLAN_LINK], ...memo };
+    }
+    case 'pair': {
+      const a = answer(intent.a, v); const b = answer(intent.b, v);
+      if (!a || !b || a.pending || b.pending) return a?.pending ? a : b?.pending ? b : null;
+      // "El 1 de noviembre." reads as "Te pagan el 1 de noviembre." next to another sentence.
+      const say = (i: Intent, x: Answer) => (i.k === 'next_income' ? `Te pagan ${x.text.charAt(0).toLowerCase()}${x.text.slice(1)}` : x.text);
+      return { text: `${say(intent.a, a)} ${say(intent.b, b)}`, actions: [...(a.actions ?? []), ...(b.actions ?? [])].filter((x) => x.type === 'link').slice(0, 1) };
     }
     case 'spend_ask':
       return { text: `¿Cuánto piensas gastar${intent.purpose ? ` en ${intent.purpose}` : ''}?`, pending: 'spend_amount' };

@@ -2,7 +2,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadSubscriptions } from './subscriptions';
 import { closedPeriods, monthlyEquivalentMinor, nextCharge, subscriptionState } from '../src/engine/subscriptions';
-import { answer, compactView, detectIntent, followUp, proactiveNote, STYLE_INSTRUCTION, styleAnswer, velsSuggestions, type Answer, type View } from '../src/ai/vels-answers';
+import { answer, compactView, detectIntent, followUp, proactiveNote, wantsBrief, STYLE_INSTRUCTION, styleAnswer, velsSuggestions, type Answer, type View } from '../src/ai/vels-answers';
 import { validPatches, visionWrites } from '../src/ai/apply';
 import type { MessageCard } from '../src/ai/conversation';
 import { fold } from '../src/ai/text';
@@ -106,6 +106,7 @@ function toCard(a: Answer): MessageCard | null {
   if (replies.length) card.replies = replies;
   if (a.pending) card.pending = a.pending;
   if (a.sim) card.sim = a.sim;
+  if (a.topic) card.topic = a.topic;
   return Object.keys(card).length ? card : null;
 }
 
@@ -125,7 +126,8 @@ export async function velsTurn(supabase: SupabaseClient, userId: string, raw: st
   // One parallel step instead of three sequential round trips: the engine view doesn't depend on the thread.
   const [loaded, v, prefs] = await Promise.all([loadMessages(supabase, 'assistant', 8), view(supabase), loadPreferences(supabase), say(supabase, userId, 'user', text)]);
   // Ajustes → Vels: the style only changes presentation (rows, Gemini's length); the engine's numbers are the same.
-  const styled = (a: Answer) => toCard(styleAnswer(a, prefs.velsStyle));
+  // "En una frase, sin desglose" applies the brief style to this answer only.
+  const styled = (a: Answer) => toCard(styleAnswer(a, wantsBrief(text) ? 'brief' : prefs.velsStyle));
   const history = loaded.at(-1)?.role === 'user' && loaded.at(-1)?.body === text ? loaded.slice(0, -1) : loaded;
   const last = [...history].reverse().find((m) => m.role === 'velsuno');
 
