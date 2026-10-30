@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useId, useState } from 'react';
 import { signup, type FormState } from '../app/auth/actions';
 import { CapField } from './cap-field';
+import { Icon } from './ui/icon';
 
 /** Wait before another link can be requested (Supabase Auth also refuses faster resends server-side). */
 const RESEND_SECONDS = 60;
@@ -27,7 +28,8 @@ export function SignupForm() {
 
   if (sentTo) {
     return (
-      <form action={formAction} className="stack-sm sent" data-testid="signup-sent" aria-busy={pending}>
+      // key + .auth-swap: the new state fades in once; the request itself is never delayed by motion.
+      <form key="sent" action={formAction} className="stack-sm sent auth-swap" data-testid="signup-sent" aria-busy={pending}>
         <input type="hidden" name="email" value={sentTo} />
         <div role="status" className="stack-sm">
           <h2>Revisa tu correo</h2>
@@ -44,16 +46,16 @@ export function SignupForm() {
     );
   }
   return (
-    <form action={formAction} className="stack-sm auth-form" aria-busy={pending}>
+    <form key="email" action={formAction} className="stack-sm auth-form auth-swap" aria-busy={pending}>
       <div className="stack-sm field">
         <label htmlFor={`${id}-email`}>Correo electrónico</label>
         <input id={`${id}-email`} name="email" type="email" autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false}
-          required value={email} onChange={(e) => setEmail(e.target.value)}
+          required placeholder="tu@correo.com" value={email} onChange={(e) => setEmail(e.target.value)}
           aria-invalid={state.error ? true : undefined} aria-describedby={state.error ? `${id}-error` : undefined} />
       </div>
       <CapField scope="signup" resetKey={state.error ? state : undefined} />
       {state.error && <p role="alert" className="error" id={`${id}-error`}>{state.error}</p>}
-      <button type="submit" disabled={pending} className="wide">{pending ? 'Enviando…' : 'Continuar'}</button>
+      <button type="submit" disabled={pending} className="wide with-arrow"><span>{pending ? 'Enviando…' : 'Continuar'}</span><Icon name="arrow-right" size={20} /></button>
     </form>
   );
 }

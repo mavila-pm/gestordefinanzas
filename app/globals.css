@@ -1076,6 +1076,21 @@ html[data-motion="reduce"] .tw, html[data-motion="reduce"] .msg.fresh > .chat-ca
 html[data-motion="reduce"] .auth-login-art .brand, html[data-motion="reduce"] .auth-login-claim, html[data-motion="reduce"] .auth-login-panel,
 html[data-motion="reduce"] .auth-orb-body, html[data-motion="reduce"] .auth-orb-halo { animation: none; }
 
+/* "Crea tu cuenta" (variant signup of the login screen): same orb motion; entrance 220 ms / 4 px; the email form and
+   "Revisa tu correo" swap with a short fade (the request is never delayed); while sending, the form dims slightly. */
+.auth-signup .auth-login-art .brand, .auth-signup .auth-login-claim, .auth-signup .auth-login-panel { animation-duration: 220ms; }
+.auth-signup .auth-swap { animation: fade-in 180ms var(--ease-out) both; }
+.auth-signup form { transition: opacity var(--dur-1) var(--ease-out); }
+.auth-signup form[aria-busy="true"] { opacity: .8; }
+.auth-signup .sent h2 { margin: 0; font-size: 22px; line-height: 1.25; }
+.auth-signup .sent p { margin: 0; color: var(--text-secondary); }
+.auth-signup .sent p strong { color: var(--text-primary); }
+.auth-signup .sent button.secondary { min-height: 52px; border-radius: 14px; }
+.auth-signup .sent button.link { min-height: 44px; justify-self: center; }
+.auth-signup .auth-login-signup span { display: inline-flex; align-items: center; }
+@media (prefers-reduced-motion: reduce) { .auth-signup .auth-swap { animation-name: fade-in; } }
+html[data-motion="reduce"] .auth-signup .auth-swap { animation: none; }
+
 /* First-visit hint (UX audit §2.2): floats under the section title once, then never again on this device. */
 .first-hint { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-12); padding: var(--space-12) var(--space-16);
   border-radius: 14px; background: var(--plus-bg); color: var(--text-primary); box-shadow: 0 6px 18px color-mix(in srgb, var(--text-primary) 10%, transparent);
