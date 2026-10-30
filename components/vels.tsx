@@ -21,10 +21,10 @@ const Chat = dynamic(loadChat, { ssr: false, loading: () => <div className="vels
 export function VelsBubble() {
   const path = usePathname();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [state, setState] = useState<{ messages: ChatMessage[]; suggestions: string[]; n: number } | null>(null);
+  const [state, setState] = useState<{ messages: ChatMessage[]; suggestions: string[]; camera: boolean; n: number } | null>(null);
   const load = useCallback((p: string) => startTransition(async () => {
     const r = await velsOpenAction(p);
-    setState((s) => ({ messages: r.messages.length ? r.messages : [{ id: 'vels-hello', role: 'velsuno', body: r.greeting, card: null }], suggestions: r.suggestions, n: (s?.n ?? 0) + 1 }));
+    setState((s) => ({ messages: r.messages.length ? r.messages : [{ id: 'vels-hello', role: 'velsuno', body: r.greeting, card: null }], suggestions: r.suggestions, camera: r.camera, n: (s?.n ?? 0) + 1 }));
   }), []);
   if (path.startsWith('/app/preguntar')) return null; // the full Vels page is already open
   const open = () => { dialog.current?.showModal(); void loadChat(); load(path); };
@@ -44,7 +44,7 @@ export function VelsBubble() {
           </span>
         </div>
         {state
-          ? <Chat key={state.n} initial={state.messages} suggestions={state.suggestions} send={assistantAction} camera label="Conversación con Vels" placeholder="Escríbele a Vels" />
+          ? <Chat key={state.n} initial={state.messages} suggestions={state.suggestions} send={assistantAction} camera={state.camera} label="Conversación con Vels" placeholder="Escríbele a Vels" />
           : <div className="vels-loading" role="status" aria-label="Abriendo Vels"><span /><span /><span /></div>}
       </dialog>
     </>

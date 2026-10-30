@@ -195,6 +195,19 @@ describe('cards and loans, one question at a time', () => {
     expect(domainWrites(unknown, 'u1').debts).toHaveLength(0);
     expect(domainWrites(unknown, 'u1').deferred.join()).toContain('falta el saldo');
   });
+  it('t27: "debo en dos tarjetas: bcp 1,200 y bbva 800" → two card debts written as cards (never a loan, no BBVA account)', () => {
+    const { draft, said } = chat(TODAY, ...START, 'no tengo más pagos', 'no tengo', 'debo en dos tarjetas: bcp 1,200 y bbva 800');
+    expect(draft.debts).toMatchObject([
+      { kind: 'card', name: 'Tarjeta BCP', institution: 'BCP', balanceMinor: 120000, balanceStatus: 'confirmed' },
+      { kind: 'card', name: 'Tarjeta BBVA', institution: 'BBVA', balanceMinor: 80000, balanceStatus: 'confirmed' },
+    ]);
+    expect(draft.accounts).toEqual([]);
+    expect(said.at(-1)).toContain('¿Cuál es el pago mínimo de la tarjeta BCP?');
+    const w = domainWrites(draft, 'u1');
+    expect(w.debts.map((d) => [d.name, d.balance_minor, d.currency])).toEqual([['Tarjeta BCP', 120000, 'PEN'], ['Tarjeta BBVA', 80000, 'PEN']]);
+    expect(w.debts.some((d) => /Préstamo/.test(String(d.name)))).toBe(false);
+    expect(w.accounts).toEqual([]);
+  });
   it('"no tengo préstamos" / "no tengo tarjeta" close the groups (no empty loan or card)', () => {
     expect(interpret('no tengo préstamos').patches).toEqual([{ t: 'done', group: 'loans' }]);
     expect(interpret('no tengo tarjeta').patches).toEqual([{ t: 'done', group: 'cards' }]);

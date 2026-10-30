@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { interpret } from '../src/ai/interpreter';
-import { canStart, mergePatches, nextQuestion, summarize } from '../src/ai/draft';
+import { canStart, mergePatches, nextQuestion, summarize, unreadNumbers } from '../src/ai/draft';
+import { fold } from '../src/ai/text';
 import { sanitizeUserText } from '../src/ai/sanitize';
 import { emptyDraft, type Draft } from '../src/ai/types';
 
@@ -86,6 +87,52 @@ describe('interpreter regressions found by the benchmark', () => {
   });
 });
 
+describe('several card debts in one message (bench t27)', () => {
+  const cards = (m: string) => interpret(m).patches;
+  it('"debo en dos tarjetas: bcp 1,200 y bbva 800" → two card debts, never a loan, no invented bank account, nothing unread', () => {
+    const m = 'debo en dos tarjetas: bcp 1,200 y bbva 800';
+    const read = interpret(m);
+    expect(read.patches).toEqual([
+      { t: 'debt', kind: 'card', name: 'Tarjeta BCP', institution: 'BCP', balanceMinor: 120000 },
+      { t: 'debt', kind: 'card', name: 'Tarjeta BBVA', institution: 'BBVA', balanceMinor: 80000 },
+    ]);
+    expect(unreadNumbers(fold(m), read)).toBe(0);
+  });
+  it('variants: the amount before the card, "la de", approximate amounts, a due day and last 4 in its own part', () => {
+    const two = [{ kind: 'card', institution: 'BCP', balanceMinor: 120000 }, { kind: 'card', institution: 'BBVA', balanceMinor: 80000 }];
+    expect(cards('debo 1,200 en la tarjeta bcp y 800 en la tarjeta bbva')).toMatchObject(two);
+    expect(cards('tengo deuda en la tarjeta bcp de 1,200 y en la de bbva 800')).toMatchObject(two);
+    expect(cards('tarjeta bcp debo 1,200, tarjeta bbva debo 800')).toMatchObject(two);
+    expect(cards('debo en mis dos tarjetas de crédito, bcp como 1,200 y bbva unos 800')).toMatchObject([{ approx: true }, { approx: true }]);
+    expect(cards('tarjeta bcp terminada en 4821 debo 1,200 y bbva 800 vence el 20')).toMatchObject([
+      { institution: 'BCP', last4: '4821', balanceMinor: 120000 }, { institution: 'BBVA', balanceMinor: 80000, dueDay: 20 }]);
+    // PEN ≠ USD: each card keeps the currency said next to it.
+    expect(cards('debo en tarjetas: bcp us$ 300 y bbva 800')).toMatchObject([{ currency: 'USD', balanceMinor: 30000 }, { balanceMinor: 80000 }]);
+    expect(cards('debo 1,200 en la tarjeta bcp y 800 en la tarjeta bbva').some((p) => 'currency' in p)).toBe(false);
+    // "no sé" for one card stays unknown (never 0).
+    expect(cards('debo en la tarjeta bcp 1,200 y en la bbva no sé')).toMatchObject([{ balanceMinor: 120000 }, { institution: 'BBVA', unknownBalance: true }]);
+  });
+  it('a bank and an amount after a card subject continue as that bank\'s card (minimum kept apart); money in an account is not a card', () => {
+    expect(cards('mi tarjeta bcp debo 1,200, el mínimo 100 y bbva 800')).toEqual([
+      { t: 'debt', kind: 'card', name: 'Tarjeta BCP', institution: 'BCP', balanceMinor: 120000 },
+      { t: 'debt', kind: 'card', name: 'Tarjeta BCP', institution: 'BCP', minimumMinor: 10000 },
+      { t: 'debt', kind: 'card', name: 'Tarjeta BBVA', institution: 'BBVA', balanceMinor: 80000 },
+    ]);
+    const account = cards('mi tarjeta bcp, debo 1,200 y en bbva tengo 3000');
+    expect(account.filter((p) => p.t === 'debt')).toEqual([expect.objectContaining({ institution: 'BCP', balanceMinor: 120000 })]);
+    expect(account).toContainEqual({ t: 'account', institution: 'BBVA', kind: 'bank' });
+    expect(cards('tengo dos tarjetas, bcp y bbva')).toEqual([{ t: 'account', institution: 'BCP', kind: 'card' }, { t: 'account', institution: 'BBVA', kind: 'card' }]);
+  });
+  it('unchanged: one card, no cards, a card and a person, the same bank twice', () => {
+    expect(cards('debo 500 en la tarjeta')).toEqual([{ t: 'debt', kind: 'card', name: 'Tarjeta', balanceMinor: 50000 }]);
+    expect(cards('no tengo tarjetas')).toEqual([{ t: 'done', group: 'cards' }]);
+    expect(cards('no tengo tarjeta')).toEqual([{ t: 'done', group: 'cards' }]);
+    expect(cards('tengo tarjeta bcp y cuenta en bbva')).toEqual([{ t: 'account', institution: 'BCP', kind: 'card' }, { t: 'account', institution: 'BBVA', kind: 'bank' }]);
+    expect(cards('debo 1200 en la tarjeta bcp y 800 a mi mamá').some((p) => p.t === 'debt' && p.institution === 'BBVA')).toBe(false);
+    expect(cards('debo en la tarjeta bcp 1,200 y en la tarjeta bcp 800').filter((p) => p.t === 'debt')).toHaveLength(1);
+  });
+});
+
 describe('sanitizer (§16-§17)', () => {
   it('drops secrets and keeps only the last 4 digits of card/account numbers', () => {
     const s = sanitizeUserText('mi tarjeta 4557 8800 1234 4821, cvv 123, clave 998877, mi DNI 45678912, token: 554433, cuenta 191-12345678-0-12');
@@ -94,5 +141,32 @@ describe('sanitizer (§16-§17)', () => {
     expect(s.text).toContain('•••• 4821');
     expect(s.text).toContain('•••• 8012');
     expect(sanitizeUserText('me pagan 5,700 el 5').redacted).toBe(false);
+  });
+  it('the secret after a qualified label is dropped (never the qualifier), and IDs, OTPs and dotted card numbers too', () => {
+    const cases: Array<[string, string]> = [
+      ['clave sol MiClave2024', 'MiClave2024'], ['mi clave web es abc123', 'abc123'], ['mi contraseña es p@ss.word!', 'p@ss.word'],
+      ['mi DNI es 12345678', '12345678'], ['el código que me llegó es 482913', '482913'], ['tarjeta 4557.8800.1234.5678', '4557.8800'],
+      ['carnet de extranjeria 001234567', '001234567'], ['pasaporte 123456789', '123456789'], ['la clave de mi cuenta bcp es 1234', '1234'],
+      ['mi clave de 6 dígitos es 123456', '123456'], ['Carné de Extranjería N° 001234567', '001234567'], ['pasaporte n° AB123456', 'AB123456'], ['mi RUC 10456789123', '10456789123'],
+    ];
+    for (const [raw, secret] of cases) {
+      const s = sanitizeUserText(raw);
+      expect(s.redacted, raw).toBe(true);
+      expect(s.text, raw).not.toContain(secret);
+    }
+    expect(sanitizeUserText('clave sol MiClave2024').text).toBe('clave sol [omitido]');
+    expect(sanitizeUserText('tarjeta 4557.8800.1234.5678').text).toBe('tarjeta •••• 5678');
+  });
+  it('money and dates are never taken for secrets', () => {
+    for (const t of ['debo 500 en la tarjeta', 'pago 1,200 el 5', 'me pagan 5,700 el 5', 'olvidé mi clave. Me pagan 5,700 el 5', 'cobro 1.234.567 al año']) {
+      expect(sanitizeUserText(t), t).toEqual({ text: t, redacted: false });
+    }
+    // The amount next to a code or a PIN stays (only the code goes).
+    expect(sanitizeUserText('me llegó el código 482913 y debo 1500 soles').text).toBe('me llegó el código [omitido] y debo 1500 soles');
+    expect(sanitizeUserText('mi pin es 1234, debo 2,400 en la tarjeta bcp').text).toBe('mi pin es [omitido], debo 2,400 en la tarjeta bcp');
+    // Bench t29: secrets dropped, the card debt still read.
+    const t29 = sanitizeUserText('mi clave es 4455 y el cvv 123, debo 500 en la tarjeta').text;
+    expect(t29).not.toMatch(/4455|\b123\b/);
+    expect(interpret(t29).patches).toEqual([{ t: 'debt', kind: 'card', name: 'Tarjeta', balanceMinor: 50000 }]);
   });
 });

@@ -122,6 +122,47 @@ describe.skipIf(!DATABASE_URL)('AI usage, quotas and demo controls', () => {
     });
   });
 
+  it('failure diagnostics (ADR-0020): timeout and 429 keep their kind and status; validated; settles once; clients still cannot read calls', async () => {
+    const diag = (c: pg.PoolClient, id: number, outcome: string, cost: number, kind: string | null, status: number | null) =>
+      c.query('select public.ai_record($1, $2, $3, 0, 0, 0, 0, $4, 15001, 1, $5, $6, $7) as w', [id, 'gemini', 'gemini-3.8-flash', cost, outcome, kind, status]).then((r) => Number(r.rows[0].w));
+    let ids: number[] = [];
+    await asRole(pool, 'authenticated', USER_A, async (c) => {
+      const t = (await reserve(c)).call_id as number;
+      const q = (await reserve(c)).call_id as number;
+      const ok = (await reserve(c)).call_id as number;
+      ids = [t, q, ok];
+      // A timeout: no tokens for the person (weighted 0), its ceiling cost counted in the guards.
+      expect(await diag(c, t, 'timeout', 27000, 'timeout', null)).toBe(0);
+      expect(await diag(c, q, 'error', 0, 'rate_limited', 429)).toBe(0);
+      expect(await errorMessage(c, 'select public.ai_record($1, $2, $3, 0, 0, 0, 0, 0, 1, 1, $4, $5, $6)', [ok, 'gemini', 'm', 'ok', 'timeout', null])).toBe('bad_usage');
+      expect(await errorMessage(c, 'select public.ai_record($1, $2, $3, 0, 0, 0, 0, 0, 1, 1, $4, $5, $6)', [ok, 'gemini', 'm', 'error', 'Bad Kind!', null])).toBe('bad_usage');
+      expect(await errorMessage(c, 'select public.ai_record($1, $2, $3, 0, 0, 0, 0, 0, 1, 1, $4, $5, $6)', [ok, 'gemini', 'm', 'error', 'http', 999])).toBe('bad_usage');
+      // Settles exactly once, whichever signature is used.
+      expect(await errorMessage(c, 'select public.ai_record($1, $2, $3, 0, 0, 0, 0, 0, 1, 1, $4, $5, $6)', [t, 'gemini', 'm', 'error', 'http', 503])).toBe('bad_call');
+      expect(await errorMessage(c, 'select public.ai_record($1, $2, $3, 1, 1, 0, 0, 0, 1, 1, $4)', [q, 'x', 'y', 'ok'])).toBe('bad_call');
+      // The 11-argument form still works and leaves the diagnostics empty.
+      expect(await record(c, ok, 10, 5)).toBe(30);
+      expect(await errorCode(c, 'select error_kind, http_status from public.ai_calls')).toBe('42501');
+      expect(await errorCode(c, 'update public.ai_calls set error_kind = $1', ['x'])).toBe('42501');
+      expect((await c.query(`select est_cost_micro_usd::int c from public.ai_usage_daily`)).rows).toEqual([{ c: 27100 }]);
+      await c.query('commit'); await c.query('begin');
+    });
+    expect((await pool.query('select outcome, error_kind, http_status, input_tokens, est_cost_micro_usd from public.ai_calls where id = any($1) order by id', [ids])).rows).toEqual([
+      { outcome: 'timeout', error_kind: 'timeout', http_status: null, input_tokens: 0, est_cost_micro_usd: 27000 },
+      { outcome: 'error', error_kind: 'rate_limited', http_status: 429, input_tokens: 0, est_cost_micro_usd: 0 },
+      { outcome: 'ok', error_kind: null, http_status: null, input_tokens: 10, est_cost_micro_usd: 100 },
+    ]);
+    // B cannot settle (or label) A's call; anon cannot call either signature.
+    const pending = await asRole(pool, 'authenticated', USER_A, async (c) => { const id = (await reserve(c)).call_id as number; await c.query('commit'); await c.query('begin'); return id; });
+    await asRole(pool, 'authenticated', USER_B, async (c) => {
+      expect(await errorMessage(c, 'select public.ai_record($1, $2, $3, 0, 0, 0, 0, 0, 1, 1, $4, $5, $6)', [pending, 'gemini', 'm', 'error', 'http', 500])).toBe('bad_call');
+    });
+    expect((await pool.query('select outcome, error_kind from public.ai_calls where id = $1', [pending])).rows).toEqual([{ outcome: 'pending', error_kind: null }]);
+    await asRole(pool, 'anon', null, async (c) => {
+      expect(await errorCode(c, 'select public.ai_record(1, $1, $2, 0, 0, 0, 0, 0, 1, 1, $3, $4, $5)', ['gemini', 'm', 'error', 'http', 500])).toBe('42501');
+    });
+  });
+
   it('demo reset gives back only the onboarding allowance, and only to allowlisted users', async () => {
     await pool.query(`insert into public.ai_usage (user_id, bucket, weighted_tokens, camera_reads) values ($1, 'onboarding', 50000, 3), ($1, 'm:2026-01', 9, 0)`, [USER_A]);
     await asRole(pool, 'authenticated', USER_A, async (c) => {

@@ -3,8 +3,8 @@ import { matchProvider } from '../domain/subscriptions';
 import { formatMoney } from '../domain/money';
 import { incomeOccurrencesBetween, occurrencesBetween, type ExpectedIncome, type Obligation } from '../engine/planning';
 import { addDays, shortDate } from '../domain/dates';
-import { BANK_LABEL, bankIn, loanName, readLoan, subscriptionList } from './interpreter';
-import { findAmounts, findDays, fold, UNKNOWN } from './text';
+import { BANK_LABEL, bankIn, interpret, loanName, readLoan, subscriptionList } from './interpreter';
+import { findAmounts, findDays, fold, LAST4, UNKNOWN, type Amount } from './text';
 import type { Bare, DebtFact, Draft, FactStatus, MainGoal, Patch } from './types';
 
 /**
@@ -675,6 +675,8 @@ function sourceName(raw: string): string | null {
 export function pendingReply(d: Draft, text: string): MergeResult | null {
   const pending = d.pending ?? '';
   const t = fold(text).replace(/[.!¡¿?]/g, '').trim();
+  const unplaced = /^unplaced:(\d{1,11}):(PEN|USD)$/.exec(pending);
+  if (unplaced) return placeUnplaced(d, text, t, Number(unplaced[1]), unplaced[2] as Currency);
   if (pending === 'work') {
     const work = workIn(t);
     if (!work || /\d/.test(t)) return null; // facts in the same message: the normal reading keeps them
@@ -843,6 +845,53 @@ export function unreadNumbers(folded: string, read: { patches: readonly Patch[];
   }
   if (read.bare) count(read.bare.amountMinor, read.bare.day, read.bare.dayMax);
   return Math.max(0, numbers - used);
+}
+
+/**
+ * The amounts said in the message that the reading did not place (each said amount is matched once to a value the
+ * reading used; days and last 4 digits are not amounts). Without Gemini to read them, they are asked, never stored.
+ */
+export function unplacedAmounts(folded: string, read: { patches: readonly Patch[]; bare: Bare | null }): Amount[] {
+  const last4 = LAST4.exec(folded);
+  const said = findAmounts(folded, [...findDays(folded), ...(last4 ? [{ index: last4.index, end: last4.index + last4[0].length }] : [])]);
+  const used: number[] = [];
+  const use = (...v: Array<number | undefined>) => { for (const x of v) if (x !== undefined) used.push(x); };
+  for (const p of read.patches) {
+    if (p.t === 'income' || p.t === 'obligation' || p.t === 'variable') use(p.amountMinor);
+    else if (p.t === 'debt') use(p.balanceMinor, p.minimumMinor, p.usualPaymentMinor, p.principalMinor, p.installmentMinor);
+    else if (p.t === 'balance') use(p.amountMinor, p.bankMinor, p.cashMinor);
+  }
+  if (read.bare) use(read.bare.amountMinor);
+  return said.filter((a) => { const i = used.indexOf(a.minor); if (i < 0) return true; used.splice(i, 1); return false; });
+}
+/** The pending key of an unplaced amount: "unplaced:80000:PEN". */
+export const unplacedKey = (a: Pick<Amount, 'minor' | 'currency'>) => `unplaced:${a.minor}:${a.currency ?? 'PEN'}`;
+export const unplacedQuestion = (a: Pick<Amount, 'minor' | 'currency'>) => `¿A qué corresponde ${money(a.minor, a.currency ?? 'PEN')}?`;
+
+/**
+ * The answer to "¿A qué corresponde S/ 800?": the one thing named ("la tarjeta BBVA", "la luz", "a mi mamá le debo")
+ * gets THAT amount, exactly as it was said before. Numbers in the answer, or several things named, are read normally;
+ * "no sé" / "Omitir" leaves it out (nothing stored).
+ */
+function placeUnplaced(d: Draft, text: string, t: string, minor: number, currency: Currency): MergeResult | null {
+  if (/\d/.test(t)) return null;
+  if (UNKNOWN.test(t) || /^(omitir|nada|ninguno|ninguna|no|olvidalo|dejalo|da igual)$/.test(t)) {
+    const draft = structuredClone(d);
+    draft.pending = null;
+    return { draft, changed: [] };
+  }
+  const slots = interpret(text).patches.filter((p) => p.t === 'income' || p.t === 'obligation' || p.t === 'variable' || p.t === 'debt' || p.t === 'balance' || (p.t === 'account' && p.kind === 'card'));
+  if (slots.length !== 1) return null;
+  const p = slots[0]!;
+  let placed: Patch;
+  if (p.t === 'account') {
+    placed = { t: 'debt', kind: 'card', name: p.institution === 'OTRO' ? 'Tarjeta' : `Tarjeta ${BANK_LABEL[p.institution] ?? p.institution}`,
+      ...(p.institution !== 'OTRO' ? { institution: p.institution } : {}), balanceMinor: minor, currency };
+  } else if (p.t === 'debt') placed = { ...p, balanceMinor: minor, currency, unknownBalance: undefined };
+  else if (p.t === 'balance') placed = { t: 'balance', amountMinor: minor, currency };
+  else if (p.t === 'income' || p.t === 'obligation' || p.t === 'variable') placed = { ...p, amountMinor: minor, currency, unknownAmount: undefined };
+  else return null;
+  return mergePatches({ ...d, pending: null }, [placed], null);
 }
 
 /** "Con esto ya podemos empezar": an income (even partial) and the balance question answered or asked. */

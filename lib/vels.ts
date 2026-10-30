@@ -16,6 +16,7 @@ import { preferredName } from '../src/domain/profile';
 import { loadProfile } from './queries';
 import { loadPreferences } from './preferences';
 import { infer, STOP_TEXT } from './ai';
+import { aiAvailable } from '../src/ai/config';
 import { logLearning } from './learning';
 import { isReplay } from './idempotency';
 import { applyPlan } from './plan-applications';
@@ -31,7 +32,8 @@ import { loadPlanningData, planFor, planInputFor, planTimeline } from './plannin
  * rules do not cover, with a compact state + the last few messages. Thread is capped (older messages pruned).
  */
 const KEEP = 40;
-const NOT_UNDERSTOOD = 'No te entendí bien. ¿Me lo dices de otra forma?';
+export const NOT_UNDERSTOOD = 'No te entendí bien. ¿Me lo dices de otra forma?';
+export const NOT_AVAILABLE = 'Eso todavía no sé responderlo. Pregúntame por tu dinero disponible o tus pagos y lo vemos.';
 const SOCIAL: readonly Social[] = ['greeting', 'how', 'how_reply', 'thanks', 'ack', 'bye', 'capabilities', 'follow_up', 'open_order', 'open_spending'];
 const UNSURE = /\b(no se|ni idea|tu dime|donde sea|cualquiera|como quieras|por donde sea|no tengo idea)\b/;
 
@@ -149,10 +151,12 @@ export async function velsTurn(supabase: SupabaseClient, userId: string, raw: st
   else if (route?.kind === 'reply') await say(supabase, userId, 'velsuno', route.text.slice(0, 600));
   else if (r.ok) await say(supabase, userId, 'velsuno', NOT_UNDERSTOOD);
   else if (r.reason === 'ai_quota') await say(supabase, userId, 'velsuno', STOP_TEXT.ai_quota, { stop: true, links: [{ label: 'Ver Plus', href: '/app/ajustes/plan' }] });
-  else if (r.reason === 'unavailable' || r.reason === 'failed') {
-    // Timeout, provider error, rate limit, empty or invalid output: a friendly way forward, never a broken thread.
-    await say(supabase, userId, 'velsuno', r.reason === 'failed' ? NOT_UNDERSTOOD : 'Eso todavía no sé responderlo. Pregúntame por tu dinero disponible o tus pagos y lo vemos.');
-  } else await say(supabase, userId, 'velsuno', STOP_TEXT[r.reason], { stop: true });
+  // Timeout, provider error or rate limit: our side failed, so Vels says so (never "no te entendí", never a made-up answer).
+  else if (r.reason === 'busy') await say(supabase, userId, 'velsuno', STOP_TEXT.busy);
+  // Only an answer that came back unusable is "not understood"; without Gemini, an honest way forward.
+  else if (r.reason === 'failed') await say(supabase, userId, 'velsuno', NOT_UNDERSTOOD);
+  else if (r.reason === 'unavailable') await say(supabase, userId, 'velsuno', NOT_AVAILABLE);
+  else await say(supabase, userId, 'velsuno', STOP_TEXT[r.reason], { stop: true });
   await prune(supabase);
 }
 
@@ -357,11 +361,12 @@ export async function clearVels(supabase: SupabaseClient) {
 }
 
 /** Opening Vels (bubble or page): recent conversation + up to 3 openers from the real state and the current screen. */
-export async function velsOpen(supabase: SupabaseClient, path: string): Promise<{ messages: Awaited<ReturnType<typeof loadMessages>>; suggestions: string[]; greeting: string }> {
+export async function velsOpen(supabase: SupabaseClient, path: string): Promise<{ messages: Awaited<ReturnType<typeof loadMessages>>; suggestions: string[]; greeting: string; camera: boolean }> {
   const [messages, v, profile, prefs] = await Promise.all([loadMessages(supabase, 'assistant', KEEP), view(supabase), loadProfile(supabase), loadPreferences(supabase)]);
   // Shown only when the thread is empty (start of a conversation); the opener varies by day, not by reload.
   // Proactive suggestions (Ajustes → Vels): at most one useful line before the question, never a list.
   const hello = greeting(preferredName(profile), Number(v.today.slice(8, 10)));
   const note = prefs.velsProactive ? proactiveNote(v) : null;
-  return { messages, suggestions: velsSuggestions(v, path), greeting: note ? hello.replace(/ (¿[^?]*\?)$/, (_, q: string) => ` ${note} ${q}`) : hello };
+  // The camera needs Gemini: without it the control is not shown (it could only answer "todavía no está activa").
+  return { messages, suggestions: velsSuggestions(v, path), greeting: note ? hello.replace(/ (¿[^?]*\?)$/, (_, q: string) => ` ${note} ${q}`) : hello, camera: aiAvailable() };
 }

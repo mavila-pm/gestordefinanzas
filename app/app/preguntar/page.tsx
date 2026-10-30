@@ -22,7 +22,7 @@ export default async function VelsPage({ searchParams }: { searchParams: Promise
   const { tema } = await searchParams;
   const topic = tema ? TOPIC[tema] : undefined;
   const supabase = await createSupabaseServerClient();
-  const { messages, suggestions, greeting } = await velsOpen(supabase, '/app/preguntar');
+  const { messages, suggestions, greeting, camera } = await velsOpen(supabase, '/app/preguntar');
   const welcome: ChatMessage = { id: 'welcome', role: 'velsuno', body: greeting, card: null };
   return (
     <main className="assistant-page" id="main">
@@ -30,7 +30,7 @@ export default async function VelsPage({ searchParams }: { searchParams: Promise
         <VelsHeader as="h1" />
         {messages.length > 0 && <form action={clearAssistantAction}><button type="submit" className="link">Limpiar conversación</button></form>}
       </div>
-      <Chat initial={messages.length ? messages : [welcome]} suggestions={suggestions} send={assistantAction} camera label="Conversación con Vels"
+      <Chat initial={messages.length ? messages : [welcome]} suggestions={suggestions} send={assistantAction} camera={camera} label="Conversación con Vels"
         placeholder={topic?.placeholder ?? 'Escríbele a Vels'} draft={topic?.draft} />
     </main>
   );

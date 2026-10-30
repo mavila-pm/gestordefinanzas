@@ -1,5 +1,7 @@
 import type { Currency } from '../domain/money';
 import type { ObligationKind } from '../engine/planning';
+import { bankIn } from './interpreter';
+import { findAmounts, findDays, fold, UNKNOWN, type Amount } from './text';
 import type { Bare, Interpretation, Patch } from './types';
 
 /**
@@ -69,15 +71,215 @@ export function validatePatch(v: unknown): Patch | null {
   }
 }
 
-/** { "patches": [...], "bare": {...} } → Interpretation; null when the output is not usable at all. */
-export function validateInterpretation(text: string): Interpretation | null {
+/**
+ * { "patches": [...], "bare": {...} } → Interpretation; null when the output is not usable at all. With the person's
+ * (sanitized) message, every value is also GROUNDED in it (groundInterpretation): the model reads, it never adds.
+ */
+export function validateInterpretation(text: string, message?: string): Interpretation | null {
   const o = parseJsonObject(text);
   if (!o || !Array.isArray(o.patches) || o.patches.length > 20) return null;
   const patches = o.patches.map(validatePatch).filter((p): p is Patch => p !== null);
   const b = obj(o.bare);
   const bare: Bare | null = b ? clean({ amountMinor: minor(b.amount), currency: cur(b.currency), approx: bool(b.approx), day: day(b.day), dayMax: day(b.dayMax), unknown: bool(b.unknown),
     frequency: freq(b.frequency) }) : null;
-  return { patches, bare: bare && Object.keys(bare).length ? bare : null };
+  const read = { patches, bare: bare && Object.keys(bare).length ? bare : null };
+  return message === undefined ? read : groundInterpretation(read, message);
+}
+
+/**
+ * JSON Schema for Gemini structured output on onboarding extraction (responseJsonSchema). One flat patch shape with
+ * optional fields (easy to enforce); validatePatch + groundInterpretation still check everything that comes back.
+ */
+export const EXTRACT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    patches: {
+      type: 'array',
+      maxItems: 20,
+      items: {
+        type: 'object',
+        properties: {
+          t: { type: 'string', enum: ['income', 'obligation', 'debt', 'account', 'variable', 'balance', 'remove', 'done'] },
+          kind: { type: 'string', enum: [...KINDS, 'personal', 'bank'] },
+          name: { type: 'string', description: 'Nombre corto tal como lo dijo el usuario, sin números.' },
+          amount: { type: 'string', description: 'Monto escrito por el usuario, en decimales ("284.30"). Omitir si no lo dijo.' },
+          balance: { type: 'string', description: 'Deuda: lo que debe, escrito por el usuario. Omitir si no lo dijo.' },
+          minimum: { type: 'string', description: 'Tarjeta: pago mínimo escrito por el usuario. Omitir si no lo dijo.' },
+          currency: { type: 'string', enum: ['PEN', 'USD'] },
+          approx: { type: 'boolean' }, unknownAmount: { type: 'boolean' }, unknownBalance: { type: 'boolean' }, unknown: { type: 'boolean' },
+          day: { type: 'integer', minimum: 1, maximum: 31 }, dayMax: { type: 'integer', minimum: 1, maximum: 31 }, secondDay: { type: 'integer', minimum: 1, maximum: 31 },
+          dueDay: { type: 'integer', minimum: 1, maximum: 31 },
+          frequency: { type: 'string', enum: ['monthly', 'semimonthly'] }, isNew: { type: 'boolean' },
+          lender: { type: 'string' }, institution: { type: 'string', description: 'Banco mencionado (BCP, BBVA, INTERBANK…).' },
+          last4: { type: 'string', description: 'Solo los últimos 4 dígitos, si los dijo.' },
+          group: { type: 'string', enum: ['obligations', 'debts'] },
+        },
+        required: ['t'],
+      },
+    },
+    bare: {
+      type: 'object',
+      properties: {
+        amount: { type: 'string' }, currency: { type: 'string', enum: ['PEN', 'USD'] }, approx: { type: 'boolean' },
+        day: { type: 'integer', minimum: 1, maximum: 31 }, dayMax: { type: 'integer', minimum: 1, maximum: 31 }, unknown: { type: 'boolean' },
+        frequency: { type: 'string', enum: ['monthly', 'semimonthly'] },
+      },
+    },
+  },
+  required: ['patches'],
+};
+
+/** What the person's own message lets a model reading contain (folded text; fixed patterns only). */
+interface Ground { t: string; amounts: Amount[]; days: Set<number>; digits4: Set<string>; banks: Set<string>; unknown: boolean; dollars: boolean; soles: boolean }
+const DOLLARS = /\b(dolar|dolares|usd)\b|us\$|\$/;
+const SOLES = /\b(soles?|pen)\b|s\/|\blucas?\b/;
+const REMOVAL = /\b(quita|quitalo|quitala|quitar|elimina|eliminalo|eliminar|borra|borralo|borrar|saca|sacalo|ya no|no (pago|tengo|uso|pagamos|tenemos)|cancele|cancelar)\b/;
+const CLOSING = /\b(no|nada|ningun|ninguno|ninguna|sin|todo|listo)\b/;
+function groundOf(message: string): Ground {
+  const t = fold(message);
+  const days = findDays(t);
+  const daySet = new Set<number>(days.flatMap((d) => [d.day, d.dayMax, d.second].filter((x): x is number => x !== null)));
+  // A plain "15 y 30" (no "el") is readable as days too; never a number that is part of an amount ("15 mil", "1,500").
+  for (const m of t.matchAll(/(?<![\d.,/$])\b([1-9]|[12]\d|3[01])\b(?![.,]\d|\s*(?:mil|k\b|lucas?|soles?|dolares?|%))/g)) daySet.add(Number(m[1]));
+  return { t, amounts: findAmounts(t, days), days: daySet, digits4: new Set(t.match(/(?<!\d)\d{4}(?!\d)/g) ?? []), banks: new Set(bankIn(t)),
+    unknown: UNKNOWN.test(t), dollars: DOLLARS.test(t), soles: SOLES.test(t) };
+}
+
+/**
+ * The amount must be one the person wrote (decimals included); its currency comes from their words: a currency written
+ * next to it wins and a model currency that disagrees drops it; dollars without a marker next to the amount only when
+ * the message speaks of dollars and never of soles. Spelled-out amounts are not readable here: never guessed.
+ */
+function groundAmount(m: number | undefined, c: Currency | undefined, g: Ground): { minor: number; currency?: Currency } | null {
+  if (m === undefined) return null;
+  const hit = g.amounts.find((a) => a.minor === m && (!c || !a.currency || a.currency === c));
+  if (!hit) return null;
+  if (hit.currency) return { minor: m, currency: hit.currency };
+  if (c === 'USD') return g.dollars && !g.soles ? { minor: m, currency: 'USD' } : null;
+  return { minor: m };
+}
+const groundDay = (d: number | undefined, g: Ground) => (d !== undefined && g.days.has(d) ? d : undefined);
+const noDigits = (v: string | undefined) => { const s = v?.replace(/\d+/g, ' ').replace(/\s+/g, ' ').trim(); return s && s.length >= 2 ? s : undefined; };
+const named = (name: string, g: Ground) => { const n = fold(name); return n.length >= 3 && (g.t.includes(n) || n.split(' ').filter((w) => w.length >= 3).some((w) => g.t.includes(w))); };
+
+/** One validated patch, grounded: unreadable values are dropped (unknown stays unknown); null when nothing usable is left. */
+function groundPatch(p: Patch, g: Ground): Patch | null {
+  const money = (m: number | undefined, c: Currency | undefined, approx: boolean | undefined) => {
+    const a = groundAmount(m, c, g);
+    return a ? { minor: a.minor, currency: a.currency, approx: approx ? true as const : undefined } : null;
+  };
+  switch (p.t) {
+    case 'income': {
+      const a = money(p.amountMinor, p.currency, p.approx);
+      const income = clean({ t: 'income' as const, name: noDigits(p.name), amountMinor: a?.minor, currency: a?.currency, approx: a?.approx,
+        unknownAmount: !a && p.unknownAmount && g.unknown ? true : undefined, day: groundDay(p.day, g), dayMax: groundDay(p.dayMax, g), secondDay: groundDay(p.secondDay, g),
+        frequency: p.frequency, isNew: p.isNew });
+      // Nothing left that the person said: no income is created from it.
+      return Object.keys(income).length > 1 ? income : null;
+    }
+    case 'obligation': {
+      const name = noDigits(p.name);
+      if (!name) return null;
+      const a = money(p.amountMinor, p.currency, p.approx);
+      return clean({ t: 'obligation' as const, kind: p.kind, name, amountMinor: a?.minor, currency: a?.currency, approx: a?.approx,
+        unknownAmount: !a && p.unknownAmount && g.unknown ? true : undefined, day: groundDay(p.day, g), dayMax: groundDay(p.dayMax, g) });
+    }
+    case 'debt': {
+      const name = noDigits(p.name);
+      if (!name) return null;
+      const bal = money(p.balanceMinor, p.currency, p.approx);
+      const min = groundAmount(p.minimumMinor, bal?.currency ?? p.currency, g);
+      // PEN ≠ USD: a minimum in another currency than the balance is not kept.
+      const minOk = min && (!bal || (min.currency ?? 'PEN') === (bal.currency ?? 'PEN')) ? min : null;
+      return clean({ t: 'debt' as const, kind: p.kind, name, lender: noDigits(p.lender), institution: p.institution && g.banks.has(p.institution) ? p.institution : undefined,
+        last4: p.last4 && g.digits4.has(p.last4) ? p.last4 : undefined, currency: bal?.currency ?? minOk?.currency,
+        balanceMinor: bal?.minor, approx: bal?.approx, unknownBalance: !bal && p.unknownBalance && g.unknown ? true : undefined,
+        minimumMinor: minOk?.minor, dueDay: groundDay(p.dueDay, g) });
+    }
+    case 'account':
+      // An account the person did not name is never added ("uso BCP" → BCP; nothing else).
+      return g.banks.has(p.institution) ? clean({ t: 'account' as const, institution: p.institution, kind: p.kind, last4: p.last4 && g.digits4.has(p.last4) ? p.last4 : undefined }) : null;
+    case 'variable': {
+      const name = noDigits(p.name);
+      if (!name) return null;
+      const a = money(p.amountMinor, p.currency, p.approx);
+      return clean({ t: 'variable' as const, name, amountMinor: a?.minor, currency: a?.currency, approx: a?.approx, unknownAmount: !a && p.unknownAmount && g.unknown ? true : undefined });
+    }
+    case 'balance': {
+      const a = money(p.amountMinor, p.currency, undefined);
+      if (!a && !(p.unknown && g.unknown)) return null;
+      return clean({ t: 'balance' as const, amountMinor: a?.minor, currency: a?.currency, unknown: !a ? true : undefined });
+    }
+    case 'remove':
+      // Only what the person named, and only when they said to drop it.
+      return REMOVAL.test(g.t) && named(p.name, g) ? p : null;
+    case 'done':
+      return CLOSING.test(g.t) ? p : null;
+  }
+}
+
+/** A model reading checked against the message it read: every amount, day, last 4 and bank must be in it. */
+export function groundInterpretation(read: Interpretation, message: string): Interpretation {
+  const g = groundOf(message);
+  const patches = read.patches.map((p) => groundPatch(p, g)).filter((p): p is Patch => p !== null);
+  const b = read.bare;
+  let bare: Bare | null = null;
+  if (b) {
+    const a = groundAmount(b.amountMinor, b.currency, g);
+    bare = clean({ amountMinor: a?.minor, currency: a?.currency, approx: a && b.approx ? true : undefined, day: groundDay(b.day, g), dayMax: groundDay(b.dayMax, g),
+      unknown: b.unknown && g.unknown ? true : undefined, frequency: b.frequency });
+    if (!Object.keys(bare).length) bare = null;
+  }
+  return { patches, bare };
+}
+
+/** Field groups that travel together: a value from one reading is never mixed with the window or state of another. */
+const GROUPS: ReadonlyArray<readonly string[]> = [
+  ['amountMinor', 'approx', 'unknownAmount', 'currency'], ['day', 'dayMax', 'secondDay', 'approxDay', 'quincena', 'endHint'],
+  ['balanceMinor', 'approx', 'unknownBalance', 'currency'], ['minimumMinor', 'currency'], ['dueDay'], ['last4'], ['frequency'],
+];
+const near = (a: string | undefined, b: string | undefined) => { const x = fold(a ?? ''); const y = fold(b ?? ''); return !!x && !!y && (x.includes(y) || y.includes(x)); };
+function sameSubject(a: Patch, b: Patch): boolean {
+  if (a.t !== b.t) return false;
+  switch (a.t) {
+    case 'income': { const o = b as typeof a; return !a.isNew && !o.isNew ? true : near(a.name, o.name); }
+    case 'obligation': { const o = b as typeof a; return near(a.name, o.name) || (a.kind === o.kind && !['services', 'subscription', 'other'].includes(a.kind)); }
+    case 'debt': {
+      const o = b as typeof a;
+      if (a.kind !== o.kind) return false;
+      return a.kind === 'personal' ? near(a.lender ?? a.name, o.lender ?? o.name) : (a.institution ?? null) === (o.institution ?? null) || near(a.name, o.name);
+    }
+    case 'account': { const o = b as typeof a; return a.institution === o.institution && a.kind === o.kind; }
+    case 'variable': return near(a.name, (b as typeof a).name);
+    case 'balance': return true;
+    case 'remove': return near(a.name, (b as typeof a).name);
+    case 'done': return a.group === (b as typeof a).group;
+  }
+}
+
+/**
+ * A partial rules reading completed by a (grounded) model reading: the model adds what the rules missed; on the same
+ * subject the rules' facts win (manual correction > rule > inference), the model only fills a field group the rules
+ * left empty. Nothing is duplicated: a model fact about a subject the rules read joins that subject.
+ */
+export function mergeReadings(local: Interpretation, model: Interpretation): Interpretation {
+  const patches = local.patches.map((p) => ({ ...p }));
+  const extra: Patch[] = [];
+  for (const m of model.patches) {
+    const i = patches.findIndex((p) => sameSubject(p, m));
+    if (i < 0) {
+      // A model "remove X" never undoes something the rules read in the same message.
+      if (m.t === 'remove' && local.patches.some((p) => 'name' in p && near(p.name, m.name))) continue;
+      extra.push(m);
+      continue;
+    }
+    const target = patches[i] as Record<string, unknown>;
+    const add: Record<string, unknown> = { ...m };
+    for (const group of GROUPS) if (group.some((k) => target[k] !== undefined)) for (const k of group) delete add[k];
+    for (const [k, v] of Object.entries(add)) if (target[k] === undefined) target[k] = v;
+  }
+  const bare = local.bare ?? model.bare;
+  return { patches: [...patches, ...extra], bare };
 }
 
 // ── Vision extraction contract (§58): structured facts only, the engine decides ─────────────────────────
